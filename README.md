@@ -4,6 +4,10 @@ Xash3D ([pronounced](https://ipa-reader.com/?text=ks%C9%91%CA%82) `[ksɑʂ]`) FW
 
 Xash3D FWGS is a heavily modified fork of an original [Xash3D Engine](https://www.moddb.com/engines/xash3d-engine) by Unkle Mike.
 
+## actualmente el implementar GX nativo está resultado un poco complicado para este motor, yo seguiré trabajando de manera activa(solitaria) por el bien del proyecto
+
+## Por ahora llevo un 42% de compilación exitosa(la meta es el 100% claramente)
+
 ## Instalación y Ejecución 
 
 0) Renombrar `xash.dol` a `boot.dol` una vez compilado.
