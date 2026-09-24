@@ -23,7 +23,7 @@ static void R_ClearScreen( void )
 	R_Set2DMode( true );
 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 	GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 
@@ -65,7 +65,7 @@ static void CL_FillRGBA( int rendermode, float _x, float _y, float _w, float _h,
 	R_Set2DMode( true );
 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 
 	GX_SetBlendMode( GX_BM_BLEND,
 		(rendermode == kRenderTransAdd) ? GX_BL_SRCALPHA : GX_BL_SRCALPHA,

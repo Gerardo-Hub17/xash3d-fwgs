@@ -1,3 +1,4 @@
+#include <malloc.h>
 /*
 gx_backend.c - rendering backend (Wii GX native port)
 Copyright (C) 2010 Uncle Mike
@@ -92,7 +93,7 @@ void GX_LoadTexMatrix( int tmu, const float *matrix )
 	Assert( matrix != NULL );
 	Assert( tmu >= 0 && tmu < MAX_TEXTURE_UNITS );
 
-	Mtx34 gxmtx;
+	Mtx gxmtx;
 	for( int r = 0; r < 3; r++ )
 		for( int c = 0; c < 4; c++ )
 			gxmtx[r][c] = matrix[c * 4 + r];   // transpuesta respecto a column-major

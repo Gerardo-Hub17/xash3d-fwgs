@@ -644,7 +644,6 @@ extern convar_t	gl_overbright;
 extern convar_t gl_fog;
 extern convar_t	gl_litwater_force;
 
-extern convar_t	ref_gl_clear;
 
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;
@@ -666,8 +665,6 @@ extern convar_t r_ripple;
 extern convar_t r_ripple_updatetime;
 extern convar_t r_ripple_spawntime;
 extern convar_t r_large_lightmaps;
-extern convar_t r_drawentities;
-extern convar_t r_norefresh;
 
 #include "crtlib.h"
 
