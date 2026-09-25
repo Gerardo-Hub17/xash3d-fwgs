@@ -6,7 +6,7 @@ Xash3D FWGS is a heavily modified fork of an original [Xash3D Engine](https://ww
 
 ## actualmente el implementar GX nativo está resultado un poco complicado para este motor, yo seguiré trabajando de manera activa(solitaria) por el bien del proyecto
 
-## Por ahora llevo un 42% de compilación exitosa(la meta es el 100% claramente)
+## Ya compile GX al 100% Descarga ya el primer lanzamiento 
 
 ## Instalación y Ejecución 
 
