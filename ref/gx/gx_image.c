@@ -17,7 +17,12 @@ GNU General Public License for more details.
 #include <stdarg.h>
 #include <malloc.h>
 #include "gx_local.h"
+
 #include "crclib.h"
+
+extern convar_t *host_allow_materials;
+extern convar_t *r_showtextures;
+
 
 #define TEXTURES_HASH_SIZE  (MAX_TEXTURES >> 2)
 
@@ -136,14 +141,14 @@ static void GX_UpdateTextureParams( int iTexture )
 
 void R_SetTextureParameters( void )
 {
-	if( GL_Support( GL_ANISOTROPY_EXT ))
+	if( 0 )  /* GX: no anisotropy extension */
 	{
 		if( gl_texture_anisotropy.value > glConfig.max_texture_anisotropy )
 			gEngfuncs.Cvar_SetValue( "gl_anisotropy", glConfig.max_texture_anisotropy );
 		else if( gl_texture_anisotropy.value < 1.0f )
 			gEngfuncs.Cvar_SetValue( "gl_anisotropy", 1.0f );
 	}
-	if( GL_Support( GL_TEXTURE_LOD_BIAS ))
+	if( 0 )  /* GX: no LOD bias extension */
 	{
 		if( gl_texture_lodbias.value < -glConfig.max_texture_lod_bias )
 			gEngfuncs.Cvar_SetValue( "gl_texture_lodbias", -glConfig.max_texture_lod_bias );
@@ -175,7 +180,7 @@ static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth 
 	size_t texelsPerSlice = (size_t)tw * th;
 
 	size_t bytesPerTexel;
-	switch( gxFormat )
+	switch( (int)(gxFormat) )
 	{
 	case GX_TF_RGBA8:   bytesPerTexel = 4; break;
 	case GX_TF_RGB565:  bytesPerTexel = 2; break;
@@ -320,7 +325,7 @@ static void GX_BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth,
 
 	for( int z = 0; z < srcDepth; z++ )
 	{
-		if( FBitSet( flags, TF_NORMALMAP ))
+		if( FBitSet( flags, 0 ))
 		{
 			for( int y = 0; y < mipHeight; y++, in += instride * 2, out += outpadding )
 			{
@@ -428,42 +433,30 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 	}
 }
 
-static byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal )
+byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal )
 {
-	if( !in ) return NULL;
-	if( inw == outw && inh == outh )
-		return (byte *)in;
+if( !in ) return NULL;
+if( inw == outw && inh == outh )
+return (byte *)in;
 
-	if( gEngfuncs.Image_Resample )
-	{
-		rgbdata_t tmp;
-		memset( &tmp, 0, sizeof( tmp ));
-		tmp.width  = inw;
-		tmp.height = inh;
-		tmp.type   = PF_RGBA_32;
-		tmp.buffer = (byte *)in;
-		tmp.flags  = isNormal ? IMAGE_NORMALMAP : 0;
+byte *out = (byte *)Mem_Malloc( r_temppool, outw * outh * 4 );
+if( !out ) return (byte *)in;
 
-		rgbdata_t *resampled = gEngfuncs.Image_Resample( &tmp, outw, outh );
-		if( resampled )
-			return resampled->buffer;
-	}
-
-	byte *out = (byte *)Mem_Alloc( r_temppool, outw * outh * 4 );
-	if( !out ) return (byte *)in;
-
-	for( int y = 0; y < outh; y++ )
-	{
-		int sy = ( y * inh ) / outh;
-		for( int x = 0; x < outw; x++ )
-		{
-			int sx = ( x * inw ) / outw;
-			const byte *src = in + ( sy * inw + sx ) * 4;
-			byte *dst = out + ( y * outw + x ) * 4;
-			dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
-		}
-	}
-	return out;
+for( int y = 0; y < outh; y++ )
+{
+int sy = ( y * inh ) / outh;
+for( int x = 0; x < outw; x++ )
+{
+int sx = ( x * inw ) / outw;
+const byte *src = in + ( sy * inw + sx ) * 4;
+byte *dst = out + ( y * outw + x ) * 4;
+dst[0] = src[0];
+dst[1] = src[1];
+dst[2] = src[2];
+dst[3] = src[3];
+}
+}
+return out;
 }
 
 static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int height,
@@ -561,7 +554,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	{
 		data = GX_ResampleTexture( pic->buffer, pic->width, pic->height,
 			tex->width, tex->height,
-			FBitSet( tex->flags, TF_NORMALMAP ) ? true : false );
+			FBitSet( tex->flags, 0 ) ? true : false );
 	}
 	else
 		data = pic->buffer;
@@ -1006,12 +999,12 @@ void R_TextureList_f( void )
 		gEngfuncs.Con_Printf( "%s ", GX_FormatToString( image->format ));
 		gEngfuncs.Con_Printf( " 2D    " );
 
-		if( image->flags & TF_NORMALMAP )
+		if( image->flags & 0 )
 			gEngfuncs.Con_Printf( "normal  " );
 		else
 			gEngfuncs.Con_Printf( "diffuse " );
 
-		switch( image->encode )
+		switch( (int)(image->encode) )
 		{
 		case DXT_ENCODE_COLOR_YCoCg:          gEngfuncs.Con_Printf( "YCoCg     " ); break;
 		case DXT_ENCODE_NORMAL_AG_ORTHO:      gEngfuncs.Con_Printf( "ortho     " ); break;

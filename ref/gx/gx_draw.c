@@ -15,6 +15,7 @@ GNU General Public License for more details.
 */
 
 #include "gx_local.h"
+#include <malloc.h>
 #include <gccore.h>
 #include <ogc/gx.h>
 

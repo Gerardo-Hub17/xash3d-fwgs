@@ -15,6 +15,7 @@ GNU General Public License for more details.
 */
 
 #include "gx_local.h"
+
 #include "xash3d_mathlib.h"
 #include "mod_local.h"
 #include "atlas.h"
@@ -24,6 +25,9 @@ GNU General Public License for more details.
 static const float r_turbsin[] =
 {
 #include "warpsin.h"
+
+
+
 };
 
 typedef struct
@@ -791,7 +795,7 @@ static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
 
 	GX_SetupVtxFormat();
 
-	GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, p->numverts );
+	GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
 
 	float *v = p->verts[0];
 	for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
@@ -837,7 +841,7 @@ static void EmitWaterPolys( msurface_t *warp, qboolean reverse, qboolean ripples
 		else v = p->verts[0];
 
 		if( !useQuads )
-			GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, p->numverts );
+			GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
 
 		for( int i = 0; i < p->numverts; i++ )
 		{
@@ -905,7 +909,7 @@ static void EmitWaterLightPolys( msurface_t *warp, float soffset, float toffset,
 		float	*v = p->verts[0];
 
 		if( !useQuads )
-			GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, p->numverts );
+			GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
 
 		for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
 		{
@@ -945,7 +949,7 @@ static void DrawGLPolyChain( glpoly2_t *p, float soffset, float toffset, msurfac
 
 	for( ; p != NULL; p = p->chain )
 	{
-		GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, p->numverts );
+		GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
 
 		float *v = p->verts[0];
 		for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
@@ -1718,7 +1722,7 @@ void R_DrawBrushModel( cl_entity_t *e )
 	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 
-	if( r_showhull->value > 0.0f )
+            if( 0 )  /* r_showfull neutralizado */
 	{
 		GX_PushPolygonOffset( 1.0f, 2.0f );
 		gEngfuncs.R_DrawModelHull( clmodel );

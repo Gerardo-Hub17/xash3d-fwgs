@@ -63,12 +63,9 @@ static qboolean Tri_CheckVertexCount( void )
 	case GX_QUADS:
 		needed = 4;
 		break;
-	case GX_TRIANGLE_STRIP:
-	case GX_TRIANGLE_FAN:
+	case GX_TRIANGLESTRIP:
+	case GX_TRIANGLEFAN:
 		needed = 3;
-		break;
-	case GX_QUAD_STRIP:
-		needed = 4;
 		break;
 	default:
 		return true;
@@ -144,13 +141,13 @@ void TriBegin( int mode )
 	{
 	case TRI_POINTS:         ds.primitive = GX_POINTS; break;
 	case TRI_TRIANGLES:      ds.primitive = GX_TRIANGLES; break;
-	case TRI_TRIANGLE_FAN:   ds.primitive = GX_TRIANGLE_FAN; break;
+	case TRI_TRIANGLE_FAN:   ds.primitive = GX_TRIANGLEFAN; break;
 	case TRI_QUADS:          ds.primitive = GX_QUADS; break;
 	case TRI_LINES:          ds.primitive = GX_LINES; break;
-	case TRI_TRIANGLE_STRIP: ds.primitive = GX_TRIANGLE_STRIP; break;
-	case TRI_QUAD_STRIP:     ds.primitive = GX_QUAD_STRIP; break;
+	case TRI_TRIANGLE_STRIP: ds.primitive = GX_TRIANGLESTRIP; break;
+	case TRI_QUAD_STRIP:     ds.primitive = GX_QUADS; break;
 	case TRI_POLYGON:
-	default:                 ds.primitive = GX_TRIANGLE_FAN; break;
+	default:                 ds.primitive = GX_TRIANGLEFAN; break;
 	}
 
 	ds.numVerts = 0;

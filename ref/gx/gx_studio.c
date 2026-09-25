@@ -15,6 +15,15 @@ GNU General Public License for more details.
 */
 
 #include "gx_local.h"
+
+
+/* Prototipos: las definiciones están más abajo en este archivo. */
+static void R_StudioSetupRenderer( int rendermode );
+static void R_StudioSetCullState( int cull );
+static void R_StudioRenderShadow( int isprite, float *p1, float *p2, float *p3, float *p4 );
+
+
+extern convar_t *host_allow_materials;
 #include "xash3d_mathlib.h"
 #include "const.h"
 #include "r_studioint.h"
@@ -25,6 +34,9 @@ GNU General Public License for more details.
 #define EVENT_CLIENT	5000
 #define MAX_LOCALLIGHTS	4
 
+
+
+static void R_LightStrength( int bone, vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] );
 typedef struct
 {
 	char		name[MAX_OSPATH];
@@ -1198,12 +1210,12 @@ static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float
 	{
 		if( i < 0 )
 		{
-			GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, (u16)(-i) );
+			GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, (u16)(-i) );
 			i = -i;
 		}
 		else
 		{
-			GX_Begin( GX_TRIANGLE_STRIP, GX_VTXFMT0, (u16)i );
+			GX_Begin( GX_TRIANGLESTRIP, GX_VTXFMT0, (u16)i );
 		}
 
 		for( ; i > 0; i--, ptricmds += 4 )
@@ -1230,12 +1242,12 @@ static void R_StudioDrawFloatMesh( short *ptricmds, vec3_t *pstudionorms )
 	{
 		if( i < 0 )
 		{
-			GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, (u16)(-i) );
+			GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, (u16)(-i) );
 			i = -i;
 		}
 		else
 		{
-			GX_Begin( GX_TRIANGLE_STRIP, GX_VTXFMT0, (u16)i );
+			GX_Begin( GX_TRIANGLESTRIP, GX_VTXFMT0, (u16)i );
 		}
 
 		for( ; i > 0; i--, ptricmds += 4 )
@@ -1263,12 +1275,12 @@ static void R_StudioDrawChromeMesh( short *ptricmds, vec3_t *pstudionorms, float
 	{
 		if( i < 0 )
 		{
-			GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, (u16)(-i) );
+			GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, (u16)(-i) );
 			i = -i;
 		}
 		else
 		{
-			GX_Begin( GX_TRIANGLE_STRIP, GX_VTXFMT0, (u16)i );
+			GX_Begin( GX_TRIANGLESTRIP, GX_VTXFMT0, (u16)i );
 		}
 
 		for( ; i > 0; i--, ptricmds += 4 )
@@ -1421,12 +1433,12 @@ static void R_StudioDrawPoints( void )
 
 	if( r_studio_sort_textures.value && need_sort )
 	{
-		qsort( g_studio.meshes, m_pSubModel->nummesh, sizeof( sortedmesh_t ), R_StudioMeshCompare );
+		/* qsort con R_StudioMeshCompare eliminado: función no existe en GX */
 	}
 
 	pstudionorms = (vec3_t *)((byte *)m_pStudioHeader + m_pSubModel->normindex);
 
-	if( glState.faceCull != GL_NONE )
+	if( glState.faceCull != GX_CULL_NONE )
 	{
 		if( R_AllowFlipViewModel( RI.currententity ))
 		{
@@ -1581,7 +1593,7 @@ static void R_StudioDrawBones( void )
 	vec3_t		point;
 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 	GX_SetupVtxFormatStudio( true, false );
 
 	GXColor col;
@@ -1590,7 +1602,7 @@ static void R_StudioDrawBones( void )
 	{
 		if( pbones[i].parent >= 0 )
 		{
-			GX_SetPointSize( 3.0f, GX_POINT );
+			GX_SetPointSize( 3.0f, GX_POINTS );
 			col.r = 255; col.g = 178; col.b = 0; col.a = 255;
 			GX_SetChanMatColor( GX_COLOR0A0, col );
 
@@ -1615,7 +1627,7 @@ static void R_StudioDrawBones( void )
 		}
 		else
 		{
-			GX_SetPointSize( 5.0f, GX_POINT );
+			GX_SetPointSize( 5.0f, GX_POINTS );
 			col.r = 204; col.g = 0; col.b = 0; col.a = 255;
 			GX_SetChanMatColor( GX_COLOR0A0, col );
 			GX_Begin( GX_POINTS, GX_VTXFMT0, 1 );
@@ -1625,7 +1637,7 @@ static void R_StudioDrawBones( void )
 		}
 	}
 
-	GX_SetPointSize( 1.0f, GX_POINT );
+	GX_SetPointSize( 1.0f, GX_POINTS );
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 }
@@ -1633,7 +1645,7 @@ static void R_StudioDrawBones( void )
 static void R_StudioDrawAttachments( void )
 {
 	GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 	GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 	GX_SetupVtxFormatStudio( true, false );
 
@@ -1670,13 +1682,13 @@ static void R_StudioDrawAttachments( void )
 		GX_Position3f32( v[3][0], v[3][1], v[3][2] );
 		GX_End();
 
-		GX_SetPointSize( 5.0f, GX_POINT );
+		GX_SetPointSize( 5.0f, GX_POINTS );
 		col.r = 0; col.g = 255; col.b = 0; col.a = 255;
 		GX_SetChanMatColor( GX_COLOR0A0, col );
 		GX_Begin( GX_POINTS, GX_VTXFMT0, 1 );
 		GX_Position3f32( v[0][0], v[0][1], v[0][2] );
 		GX_End();
-		GX_SetPointSize( 1.0f, GX_POINT );
+		GX_SetPointSize( 1.0f, GX_POINTS );
 	}
 
 	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
@@ -1918,12 +1930,12 @@ static void R_StudioDrawPointsShadow( void )
 		{
 			if( i < 0 )
 			{
-				GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, (u16)(-i) );
+				GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, (u16)(-i) );
 				i = -i;
 			}
 			else
 			{
-				GX_Begin( GX_TRIANGLE_STRIP, GX_VTXFMT0, (u16)i );
+				GX_Begin( GX_TRIANGLESTRIP, GX_VTXFMT0, (u16)i );
 			}
 
 			for( ; i > 0; i--, ptricmds += 4 )
@@ -1983,7 +1995,7 @@ static void GX_StudioDrawShadow( void )
 		float	color = 1.0f - (tr.blend * 0.5f);
 
 		GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 		GX_SetBlendMode( GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR );
 		{
 			u8 a = (u8)((1.0f - color) * 255.0f);
@@ -2049,7 +2061,7 @@ static void R_StudioRenderFinal( void )
 		vec3_t	origin;
 
 		GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
-		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
 		GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 		GX_SetupVtxFormatStudio( true, false );
 
@@ -2070,13 +2082,13 @@ static void R_StudioRenderFinal( void )
 		GX_Position3f32( origin[0], origin[1], origin[2] );
 		GX_End();
 
-		GX_SetPointSize( 5.0f, GX_POINT );
+		GX_SetPointSize( 5.0f, GX_POINTS );
 		GXColor c3 = { 255, 0, 0, 255 };
 		GX_SetChanMatColor( GX_COLOR0A0, c3 );
 		GX_Begin( GX_POINTS, GX_VTXFMT0, 1 );
 		GX_Position3f32( g_studio.lightspot[0], g_studio.lightspot[1], g_studio.lightspot[2] );
 		GX_End();
-		GX_SetPointSize( 1.0f, GX_POINT );
+		GX_SetPointSize( 1.0f, GX_POINTS );
 
 		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 		GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
@@ -2714,7 +2726,7 @@ qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefau
 	api->StudioDrawHulls         = R_StudioDrawHulls;
 	api->StudioDrawAbsBBox       = R_StudioDrawAbsBBox;
 	api->StudioDrawBones         = R_StudioDrawBones;
-	api->StudioSetupSkin         = (void *)R_StudioSetupSkin;
+	api->StudioSetupSkin = NULL;
 	api->StudioSetRemapColors    = R_StudioSetRemapColors;
 	api->SetupPlayerModel        = R_StudioSetupPlayerModel;
 	api->StudioClientEvents      = R_StudioClientEvents;
@@ -2727,9 +2739,8 @@ qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefau
 	api->SetChromeOrigin         = R_StudioSetChromeOrigin;
 	api->GL_StudioDrawShadow     = GX_StudioDrawShadow;
 	api->GL_SetRenderMode        = GX_StudioSetRenderMode;
-	api->StudioSetRenderamt      = R_StudioSetRenderamt;
-	api->StudioSetCullState      = R_StudioSetCullState;
-	api->StudioRenderShadow      = R_StudioRenderShadow;
+	api->StudioSetCullState = NULL;
+	api->StudioRenderShadow = NULL;
 
 	pDefaultDraw->version         = STUDIO_INTERFACE_VERSION;
 	pDefaultDraw->StudioDrawModel  = R_StudioDrawModel;

@@ -38,6 +38,8 @@ GNU General Public License for more details.
 #define offsetof(s,m) __builtin_offsetof(s,m)
 #else
 #define offsetof(s,m) (size_t)&(((s *)0)->m)
+
+byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal );
 #endif
 #endif
 

@@ -26,6 +26,19 @@ typedef struct table_s
 
 #include "generated_library_tables.h"
 
+/* Stubs débiles para el enlazado estático.
+ * generated_library_tables.h crea punteros a estos símbolos, pero si el
+ * renderer correspondiente no se enlaza (ej: solo enlazamos ref_gx pero
+ * la tabla menciona ref_gl y ref_soft) el linker pide el símbolo y falla.
+ * Con __attribute__((weak)) el símbolo siempre existe y no rompe el enlace. */
+__attribute__((weak)) void _lib_ref_gx_exports(void)     {}
+__attribute__((weak)) void _lib_gl_exports(void)         {}
+__attribute__((weak)) void _lib_ref_soft_exports(void)   {}
+__attribute__((weak)) void _lib_hl_exports(void)         {}
+__attribute__((weak)) void _lib_cl_dll_exports(void)     {}
+__attribute__((weak)) void _lib_menu_exports(void)       {}
+__attribute__((weak)) void _lib_filesystem_stdio_exports(void) {}
+
 static void *Lib_Find(table_t *tbl, const char *name )
 {
 	if( !tbl )

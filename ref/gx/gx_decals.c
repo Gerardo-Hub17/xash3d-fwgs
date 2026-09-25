@@ -94,8 +94,8 @@ static decal_t *R_DecalAlloc( decal_t *pdecal )
 {
 	int	limit = MAX_RENDER_DECALS;
 
-	if( r_decals->value < limit )
-		limit = r_decals->value;
+	if( ref_r_decals->value < limit )
+		limit = ref_r_decals->value;
 
 	if( !limit ) return NULL;
 
@@ -680,7 +680,7 @@ static void GX_DrawDecalPolygon( float *verts, int numVerts )
 	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ, GX_F32, 0 );
 	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
 
-	GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, numVerts );
+	GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, numVerts );
 
 	for( int i = 0; i < numVerts; i++, verts += VERTEXSIZE )
 	{

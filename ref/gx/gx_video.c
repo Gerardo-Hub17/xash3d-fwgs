@@ -339,62 +339,6 @@ void GX_OnContextCreated( void )
 	GX_InitExtensions();
 }
 
-qboolean R_Init( void )
-{
-	if( glw_state.initialized )
-		return true;
+/* Neutralizado: duplicado con gx_rmain.c */
 
-	GX_InitCommands();
-	GL_InitRandomTable();
-
-	GX_SetDefaultState();
-
-	r_temppool = Mem_AllocPool( "Render Zone" );
-
-	GX_SetupAttributes( 0 );
-	GX_OnContextCreated();
-
-	tr.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
-	tr.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );
-	tr.viewent = (cl_entity_t *)ENGINE_GET_PARM( PARM_GET_VIEWENT_PTR );
-	tr.texgammatable = (byte *)ENGINE_GET_PARM( PARM_GET_TEXGAMMATABLE_PTR );
-	tr.lightgammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
-	tr.screengammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
-	tr.lineargammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
-	tr.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
-
-	GX_SetDefaults();
-	R_CheckVBO();
-	R_InitImages();
-	R_StudioInit();
-	R_AliasInit();
-	R_ClearDecals();
-	R_ClearScene();
-
-	return true;
-}
-
-void R_Shutdown( void )
-{
-	if( !glw_state.initialized )
-		return;
-
-	GX_RemoveCommands();
-	R_ShutdownImages();
-
-	Mem_FreePool( &r_temppool );
-
-	GX_DrawDone();
-	VIDEO_SetBlack( TRUE );
-	VIDEO_Flush();
-	VIDEO_WaitVSync();
-
-	if( gxvid.fifo )
-	{
-		free( gxvid.fifo );
-		gxvid.fifo = NULL;
-	}
-
-	glw_state.initialized = false;
-	gx_video_initialized = false;
-}
+/* Neutralizado: duplicado con gx_rmain.c */

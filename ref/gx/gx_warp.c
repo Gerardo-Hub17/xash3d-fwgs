@@ -278,7 +278,7 @@ void R_AddSkyBoxSurface( msurface_t *fa )
 		glpoly2_t *p = fa->polys;
 
 		GX_SetupVtxFormat();
-		GX_Begin( GX_TRIANGLE_FAN, GX_VTXFMT0, p->numverts );
+		GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
 		float *v = p->verts[0];
 		for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
 		{

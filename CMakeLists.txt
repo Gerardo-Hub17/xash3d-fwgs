@@ -11,7 +11,7 @@ project(xash3d C CXX)
 set(XASH_LOW_MEMORY "2" CACHE STRING "engine memory profile: 0 normal, 1 low engine limits, 2 low protocol limits")
 
 find_package(PkgConfig REQUIRED)
-find_package(SDL2 REQUIRED)
+# find_package(SDL2 REQUIRED)  # pkg_check_modules lo cubre
 find_package(BZip2 REQUIRED)
 pkg_check_modules(SDL2 IMPORTED_TARGET sdl2)
 pkg_check_modules(OPENGL IMPORTED_TARGET opengl)
@@ -92,7 +92,7 @@ set_property(CACHE XASH_RENDERER PROPERTY STRINGS gl soft)
 
 if(XASH_RENDERER STREQUAL "gl")
     set(XASH_REF_LIB ref_gx)
-    set(XASH_REF_DEFINE XASH_REF_GL_ENABLED=1)
+    set(XASH_REF_DEFINE XASH_REF_GX_ENABLED=1)
 else()
     set(XASH_REF_LIB ref_soft)
     set(XASH_REF_DEFINE XASH_REF_SOFT_ENABLED=1)
@@ -103,7 +103,6 @@ message(STATUS "Renderer: ${XASH_REF_LIB}")
 # GX renderer (for Wii)
 # ------------------------------------------------------------------------------
 file(GLOB REF_GX_SOURCES
-    ref/common/*
     ref/gx/*
 )
 add_library(ref_gx STATIC ${REF_GX_SOURCES})
@@ -127,6 +126,28 @@ target_compile_definitions(ref_gx PRIVATE
     -DREF_DLL=1
     -DXASH_GL_STATIC=1
 )
+
+# Renombrar las funciones Tri* del renderer para que no choquen con las
+# del motor (engine/client/dll_int/cl_game.c). Solo es necesario porque el
+# enlazado es estático.
+target_compile_definitions(ref_gx PRIVATE
+    -DTriRenderMode=GX_TriRenderMode
+    -DTriColor4ub=GX_TriColor4ub
+    -DTriColor4f=GX_TriColor4f
+    -DTriBrightness=GX_TriBrightness
+    -DTriWorldToScreen=GX_TriWorldToScreen
+    -DTriSpriteTexture=GX_TriSpriteTexture
+    -DTriCullFace=GX_TriCullFace
+    -DTriBegin=GX_TriBegin
+    -DTriEnd=GX_TriEnd
+    -DTriVertex3f=GX_TriVertex3f
+    -DTriVertex3fv=GX_TriVertex3fv
+    -DTriTexCoord2f=GX_TriTexCoord2f
+    -DTriFog=GX_TriFog
+    -DTriFogParams=GX_TriFogParams
+    -DTriGetMatrix=GX_TriGetMatrix
+)
+
 
 target_compile_options(ref_gx PRIVATE
     -fpermissive
@@ -212,6 +233,7 @@ list(REMOVE_ITEM ENGINE_SOURCES
 add_executable(xash ${ENGINE_SOURCES}
 engine/platform/posix/sys_posix.c
 engine/common/http/net_http_xash.c
+    stubs/renderer_exports.c
 )
 
 # Default resolution per renderer
@@ -274,12 +296,12 @@ target_include_directories(xash PUBLIC
 )
 
 target_link_libraries(xash PUBLIC
-    filesystem_stdio
+        filesystem_stdio
     hl
     cl_dll
     ${XASH_REF_LIB}
     menu
-    SDL2::SDL2main
+    PkgConfig::SDL2
     BZip2::BZip2
     Opus::opus
     library_suffix
@@ -385,6 +407,12 @@ if(XASH_OGC_GECKO_WAIT)
 endif()
 
 # Wii specific: generate symbol list and .dol
+dkp_target_generate_symbol_list(ref_gx)
+dkp_target_generate_symbol_list(hl)
+dkp_target_generate_symbol_list(cl_dll)
+dkp_target_generate_symbol_list(menu)
+dkp_target_generate_symbol_list(filesystem_stdio)
+dkp_target_generate_symbol_list(public)
 dkp_target_generate_symbol_list(xash)
 ogc_create_dol(xash)
 
@@ -404,7 +432,5 @@ target_compile_options(xash PUBLIC
 )
 
 target_link_options(xash PUBLIC
-    -Wl,--gc-sections
-    -fwhole-program
-    -Wl,--build-id=none
+            -Wl,--build-id=none
 )
