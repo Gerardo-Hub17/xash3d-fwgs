@@ -20,8 +20,6 @@ GNU General Public License for more details.
 #include <string.h>
 
 // Definición de la variable global (solo estaba declarada en el header)
-float gx_pending_texcoord[MAX_TEXTURE_UNITS][2];
-
 static inline int tmu_to_gx_texmap( int tmu )
 {
 	return ( GX_TEXMAP0 + tmu );

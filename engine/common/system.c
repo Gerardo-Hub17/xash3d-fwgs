@@ -384,6 +384,15 @@ before call this
 */
 void Sys_Error( const char *error, ... )
 {
+{
+va_list _dbg_copy;
+char _dbg_buf[1024];
+va_start(_dbg_copy, error);
+vsnprintf(_dbg_buf, sizeof(_dbg_buf), error ? error : "(null)", _dbg_copy);
+va_end(_dbg_copy);
+OGC_DebugPrint("[E] %s\n", _dbg_buf);
+}
+
 	va_list	argptr;
 	char	text[MAX_PRINT_MSG];
 
@@ -462,6 +471,7 @@ print into window console
 */
 void Sys_Print( const char *pMsg )
 {
+	OGC_DebugPrint("[P] %s", pMsg ? pMsg : "(null)");
 #if !XASH_DEDICATED
 	if( !Host_IsDedicated() )
 	{

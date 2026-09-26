@@ -105,7 +105,7 @@ message(STATUS "Renderer: ${XASH_REF_LIB}")
 file(GLOB REF_GX_SOURCES
     ref/gx/*
 )
-add_library(ref_gx STATIC ${REF_GX_SOURCES})
+add_library(ref_gx SHARED ${REF_GX_SOURCES})
 
 target_include_directories(ref_gx PUBLIC
     3rdparty/library_suffix/include
@@ -231,9 +231,9 @@ list(REMOVE_ITEM ENGINE_SOURCES
 )
 
 add_executable(xash ${ENGINE_SOURCES}
+    stubs/ref_gx_exports.c
 engine/platform/posix/sys_posix.c
 engine/common/http/net_http_xash.c
-    stubs/renderer_exports.c
 )
 
 # Default resolution per renderer
@@ -434,3 +434,5 @@ target_compile_options(xash PUBLIC
 target_link_options(xash PUBLIC
             -Wl,--build-id=none
 )
+# Puente de simbolos para GX (independiente del soft)
+target_sources(xash PRIVATE ref/gx/gx_soft_bridge.c)

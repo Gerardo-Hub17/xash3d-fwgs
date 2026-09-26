@@ -518,4 +518,9 @@ qboolean VoiceCapture_Lock( qboolean lock );
 	#define INLINE_NANOSLEEP1() sleep(1)
 #endif // generic
 
+
+/* Debug log a SD (Wii). */
+void OGC_DebugPrint(const char *fmt, ...);
+void OGC_DebugInit(void);
+
 #endif // PLATFORM_H

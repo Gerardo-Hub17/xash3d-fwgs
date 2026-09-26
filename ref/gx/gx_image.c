@@ -1187,3 +1187,16 @@ void R_ShowTextures( void )
 
 	GX_DrawDone();
 }
+// ============================================================
+// Sistema de gestión de texturas nativo para GX (Wii)
+// Implementado para eliminar la dependencia del renderizador soft
+// ============================================================
+
+
+// ============================================================
+// Definición mínima de gl_state para GX (independiente del soft)
+// ============================================================
+// El motor base espera una variable global llamada gl_state.
+// Como GX no usa el sistema de texturas del soft, la definimos
+// como un array de bytes vacío para satisfacer al enlazador.
+unsigned char gl_state[4096];
