@@ -251,13 +251,20 @@ void OGC_ButtonsFrame( void )
 	if( WPAD_Probe( WPAD_CHAN_0, &type ) == WPAD_ERR_NONE && type == WPAD_EXP_CLASSIC )
 	{
 		static int once_classic = 0;
-		if (!once_classic) { NG_Log("Classic Controller detectado\n"); once_classic = 1; }
-	{
+		if (!once_classic) {
+			NG_Log("Classic Controller detectado\n");
+			once_classic = 1;
+		}
 		OGC_EmitButtons( ogc_map_classic, ARRAYSIZE( ogc_map_classic ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_buttons_held );
 	}
 	else
 	{
+		static int once_wiimote = 0;
+		if (!once_wiimote) {
+			NG_Log("Wiimote / Nunchuk (sin Classic)\n");
+			once_wiimote = 1;
+		}
 		OGC_EmitButtons( ogc_map_wiimote, ARRAYSIZE( ogc_map_wiimote ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_buttons_held );
 	}
