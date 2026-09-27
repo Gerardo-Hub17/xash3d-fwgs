@@ -62,9 +62,25 @@ jobs:
 
       - name: Resolve Wii crash addresses
         run: |
-          echo "=== Toolchain ==="
-          which powerpc-eabi-addr2line
-          powerpc-eabi-addr2line --version || true
+          echo "=== DEVKITPRO ==="
+          echo "$DEVKITPRO"
+          echo "=== DEVKITPPC ==="
+          echo "$DEVKITPPC"
+
+          echo "=== Searching addr2line ==="
+          find "$DEVKITPRO" -type f -name "powerpc-eabi-addr2line" -print
+
+          ADDR2LINE=$(find "$DEVKITPRO" -type f -name "powerpc-eabi-addr2line" -print -quit)
+
+          if [ -z "$ADDR2LINE" ]; then
+            echo "ERROR: powerpc-eabi-addr2line not found"
+            echo "=== PowerPC tools found ==="
+            find "$DEVKITPRO" -type f -name "powerpc-eabi-*" -print | head -50
+            exit 1
+          fi
+
+          echo "Using: $ADDR2LINE"
+          "$ADDR2LINE" --version || true
 
           echo "=== Resolving crash addresses ==="
           for elf in $(find build -type f -name "*.elf"); do
@@ -72,7 +88,7 @@ jobs:
             echo "ELF: $elf"
             echo "========================================"
 
-            powerpc-eabi-addr2line -f -C -e "$elf" \
+            "$ADDR2LINE" -f -C -e "$elf" \
               0x803B7EA8 \
               0x803B0F7C \
               0x80392968 \
