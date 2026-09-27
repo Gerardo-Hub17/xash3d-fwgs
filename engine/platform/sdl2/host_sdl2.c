@@ -423,13 +423,32 @@ SDLash_RunEvents
 */
 void Platform_RunEvents( void )
 {
-	SDL_Event event;
+SDL_Event event;
 
-	while( host.status != HOST_CRASHED && !host.shutdown_issued && SDL_PollEvent( &event ) )
-		SDLash_EventHandler( &event );
+#if XASH_OGC
+/* Evitar OGC_PumpKeyboardEvents: corrompe colas LWP de libogc
+ * cuando se usa WPAD_ScanPads en paralelo (in_ogc.c).
+ * El teclado USB casi nunca se usa en Wii y los botones
+ * del Wiimote/Classic ya los leemos nosotros.
+ */
+SDL_PumpEvents(); /* aún necesitamos joystick/mouse/IR */
+while( host.status != HOST_CRASHED && !host.shutdown_issued &&
+       SDL_PeepEvents( &event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT ) == 1 )
+{
+/* Ignorar eventos de teclado */
+if( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
+    event.type == SDL_TEXTEDITING || event.type == SDL_TEXTINPUT )
+continue;
+
+SDLash_EventHandler( &event );
+}
+#else
+while( host.status != HOST_CRASHED && !host.shutdown_issued && SDL_PollEvent( &event ) )
+SDLash_EventHandler( &event );
+#endif
 
 #if XASH_PSVITA
-	PSVita_InputUpdate();
+PSVita_InputUpdate();
 #endif
 }
 

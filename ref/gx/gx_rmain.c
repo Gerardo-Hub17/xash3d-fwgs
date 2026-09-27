@@ -331,7 +331,6 @@ static float R_GetFarClip( void )
 
 void R_SetupFrustum( void )
 {
-    AngleVectors( RI.rvp.viewangles, RI.vforward, RI.vright, RI.vup );
 
     if( !r_lockfrustum.value )
     {
@@ -482,6 +481,7 @@ static void R_SetupFrame( void )
     if( !gl_nosort.value )
     {
         qsort( tr.draw_list->trans_entities, tr.draw_list->num_trans_entities,
+
                sizeof( cl_entity_t* ), R_TransEntityCompare );
     }
 
