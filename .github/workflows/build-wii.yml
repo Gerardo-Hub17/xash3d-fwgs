@@ -19,6 +19,14 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Clone hlsdk-portable
+        run: |
+          git clone https://github.com/Gerardo-Hub17/hlsdk-portable.git hlsdk-portable
+
+      - name: Clone mainui_cpp
+        run: |
+          git clone https://github.com/Gerardo-Hub17/mainui_cpp.git mainui_cpp
+
       - name: Install dependencies
         run: |
           apt-get update
