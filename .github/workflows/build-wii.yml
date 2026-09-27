@@ -19,24 +19,29 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Clone hlsdk-portable
+      - name: Clone hlsdk-portable (as sibling)
         run: |
-          git clone https://github.com/Gerardo-Hub17/hlsdk-portable.git hlsdk-portable
+          git clone https://github.com/Gerardo-Hub17/hlsdk-portable.git "$GITHUB_WORKSPACE/../hlsdk-portable"
 
-      - name: Clone mainui_cpp
+      - name: Clone mainui_cpp (as sibling)
         run: |
-          git clone https://github.com/Gerardo-Hub17/mainui_cpp.git mainui_cpp
+          git clone https://github.com/Gerardo-Hub17/mainui_cpp.git "$GITHUB_WORKSPACE/../mainui_cpp"
+
+      - name: Verify cloned directories
+        run: |
+          echo "=== Workspace ==="
+          pwd
+          echo "=== Parent ==="
+          ls -la "$GITHUB_WORKSPACE/.."
+          echo "=== hlsdk-portable check ==="
+          ls "$GITHUB_WORKSPACE/../hlsdk-portable/cl_dll/ev_hldm.cpp" 2>&1 || echo "MISSING ev_hldm.cpp"
+          echo "=== mainui_cpp check ==="
+          ls "$GITHUB_WORKSPACE/../mainui_cpp/link_helper.cpp" 2>&1 || echo "MISSING link_helper.cpp"
 
       - name: Install dependencies
         run: |
           apt-get update
           apt-get install -y cmake git build-essential
-
-      - name: Verify devkitPPC
-        run: |
-          echo "DEVKITPRO=$DEVKITPRO"
-          echo "DEVKITPPC=$DEVKITPPC"
-          ls $DEVKITPRO/cmake/
 
       - name: Configure CMake
         run: |
