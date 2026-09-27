@@ -1,0 +1,59 @@
+name: Build Xash3D Wii (ref-gx)
+
+on:
+  push:
+    branches:
+      - ref-gx
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:latest
+      options: --user root
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake git build-essential
+
+      - name: Verify devkitPPC
+        run: |
+          echo "DEVKITPRO=$DEVKITPRO"
+          echo "DEVKITPPC=$DEVKITPPC"
+          ls $DEVKITPRO/cmake/
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake \
+            -DXASH_RENDERER=ref_gx \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cd build
+          make -j$(nproc)
+
+      - name: Find generated files
+        run: |
+          find build -name "*.dol" -o -name "*.elf" | head -20
+
+      - name: Upload xash.dol artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xash-wii-ref-gx
+          path: |
+            build/*.dol
+            build/xash.dol
+          if-no-files-found: warn
+          retention-days: 30
