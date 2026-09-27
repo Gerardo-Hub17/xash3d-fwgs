@@ -19,6 +19,16 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Inspect libogc WPAD
+        run: |
+          echo "=== DEVKITPRO ==="
+          echo "$DEVKITPRO"
+          echo "=== wpad.h ==="
+          find "$DEVKITPRO" -name wpad.h -print
+          echo "=== WPAD definitions ==="
+          grep -R -n -E "WPADData|WPAD_Data|WPAD_Probe|ir\\." \
+            "$DEVKITPRO" --include='wpad.h' 2>/dev/null | head -150
+
       - name: Clone hlsdk-portable with submodules
         run: |
           git clone --recursive https://github.com/Gerardo-Hub17/hlsdk-portable.git "$GITHUB_WORKSPACE/../hlsdk-portable"
