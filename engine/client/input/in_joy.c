@@ -275,6 +275,14 @@ void Joy_AxisMotionEvent( engineAxis_t engineAxis, short value )
 {
     // Anti-drift: ignore small values to prevent camera drift
     if( (engineAxis == JOY_AXIS_YAW || engineAxis == JOY_AXIS_PITCH) && value > -8192 && value < 8192 ) value = 0;
+
+    // Clamp de seguridad para Wii: evitar valores extremos que crasheen GX
+    if( engineAxis == JOY_AXIS_YAW || engineAxis == JOY_AXIS_PITCH )
+    {
+        if( value > 30000 ) value = 30000;
+        if( value < -30000 ) value = -30000;
+    }
+
 	if( engineAxis >= MAX_AXES )
 		return;
 

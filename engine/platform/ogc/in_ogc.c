@@ -394,6 +394,12 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
     if( isnan( view->angles[YAW] ) || isinf( view->angles[YAW] ) ) view->angles[YAW] = 0;
     if( isnan( view->angles[PITCH] ) || isinf( view->angles[PITCH] ) ) view->angles[PITCH] = 0;
 
+    // Clamp duro para Wii: evitar valores fuera de rango que rompan GX
+    if( view->angles[PITCH] > 89.0f ) view->angles[PITCH] = 89.0f;
+    if( view->angles[PITCH] < -89.0f ) view->angles[PITCH] = -89.0f;
+    while( view->angles[YAW] > 180.0f ) view->angles[YAW] -= 360.0f;
+    while( view->angles[YAW] < -180.0f ) view->angles[YAW] += 360.0f;
+
 	VectorCopy( view->angles, view->curstate.angles );
 	VectorCopy( view->angles, view->latched.prevangles );
 }
