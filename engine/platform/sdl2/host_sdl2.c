@@ -431,7 +431,9 @@ SDL_Event event;
  * El teclado USB casi nunca se usa en Wii y los botones
  * del Wiimote/Classic ya los leemos nosotros.
  */
-SDL_PumpEvents(); /* aún necesitamos joystick/mouse/IR */
+/* TEMP TEST: SDL_PumpEvents() entra en OGC_PumpKeyboardEvents()
+ * y actualmente provoca un DSI en Wii. */
+
 while( host.status != HOST_CRASHED && !host.shutdown_issued &&
        SDL_PeepEvents( &event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT ) == 1 )
 {
