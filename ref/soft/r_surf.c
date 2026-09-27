@@ -775,7 +775,7 @@ void R_InitCaches( void )
 	}
 	else
 	{
-    size = 32 * 1024 * 1024; // 32 Mb para Wii
+    size = 2 * 1024 * 1024; // 32 Mb para Wii
 
 		pix = vid.width * vid.height * 2;
 		if( pix > 64000 )

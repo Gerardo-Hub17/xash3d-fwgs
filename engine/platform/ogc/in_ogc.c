@@ -376,6 +376,8 @@ centre while the pointer moves independently, which looks wrong.
 void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 {
 	float sway;
+    if( ogc_pointer[0] < -1.0f || ogc_pointer[0] > 1.0f ) return;
+    if( ogc_pointer[1] < -1.0f || ogc_pointer[1] > 1.0f ) return;
 
 	if( !view || !wii_ir.value )
 		return;
@@ -389,6 +391,8 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 	// the pointer value as-is.
 	view->angles[YAW]   -= ogc_pointer[0] * sway;
 	view->angles[PITCH] += ogc_pointer[1] * sway;
+    if( isnan( view->angles[YAW] ) || isinf( view->angles[YAW] ) ) view->angles[YAW] = 0;
+    if( isnan( view->angles[PITCH] ) || isinf( view->angles[PITCH] ) ) view->angles[PITCH] = 0;
 
 	VectorCopy( view->angles, view->curstate.angles );
 	VectorCopy( view->angles, view->latched.prevangles );

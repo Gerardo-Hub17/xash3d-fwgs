@@ -172,6 +172,7 @@ static void Joy_ProcessTrigger( const engineAxis_t engineAxis, short value )
 	// update axis values
 	joyaxis[engineAxis].prevval = joyaxis[engineAxis].val;
 	joyaxis[engineAxis].val = value;
+    if( engineAxis == JOY_AXIS_YAW || engineAxis == JOY_AXIS_PITCH ) Con_Printf( "[JOY] Axis %d = %d\n", engineAxis, value );
 
 	if( joyaxis[engineAxis].val > trigThreshold &&
 		joyaxis[engineAxis].prevval <= trigThreshold ) // ignore random press
@@ -248,6 +249,7 @@ static void Joy_ProcessStick( const engineAxis_t engineAxis, short value )
 	// update axis values
 	joyaxis[engineAxis].prevval = joyaxis[engineAxis].val;
 	joyaxis[engineAxis].val = value;
+    if( engineAxis == JOY_AXIS_YAW || engineAxis == JOY_AXIS_PITCH ) Con_Printf( "[JOY] Axis %d = %d\n", engineAxis, value );
 
 	// fwd/side axis simulate hat movement
 	if( ( engineAxis == JOY_AXIS_SIDE || engineAxis == JOY_AXIS_FWD ) &&
@@ -271,6 +273,8 @@ Axis events
 */
 void Joy_AxisMotionEvent( engineAxis_t engineAxis, short value )
 {
+    // Anti-drift: ignore small values to prevent camera drift
+    if( (engineAxis == JOY_AXIS_YAW || engineAxis == JOY_AXIS_PITCH) && value > -8192 && value < 8192 ) value = 0;
 	if( engineAxis >= MAX_AXES )
 		return;
 
@@ -571,6 +575,7 @@ Main init procedure
 */
 void Joy_Init( void )
 {
+    memset( joyaxis, 0, sizeof( joyaxis ) ); // Inicializar ejes a cero
 	Cmd_AddRestrictedCommand( "joy_calibrate_gyro", Joy_CalibrateGyro_f, "calibrate gamepad gyroscope. You must to put gamepad on stationary surface" );
 
 	Cvar_RegisterVariable( &joy_pitch );
