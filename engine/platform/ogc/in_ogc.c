@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include <wiiuse/wpad.h>
 #include <ogc/pad.h>
+#include "netgecko.h"
 
 /*
 The remote's IR sensor arrives from SDL as an absolute pointer, not as
@@ -153,6 +154,10 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_buttons );
 	Cvar_RegisterVariable( &wii_showinput );
 
+/* NetGecko - cambia la IP por la de tu Android */
+NG_Init("192.168.18.232", 4000);
+NG_Log("NetGecko listo - OGC_InputInit\n");
+
 #if XASH_OGC_AIMTEST
 	// The aim maths cannot be exercised without a real pointer, so check it
 	// against known positions at startup instead. At a 90 degree horizontal
@@ -244,6 +249,9 @@ void OGC_ButtonsFrame( void )
 	}
 
 	if( WPAD_Probe( WPAD_CHAN_0, &type ) == WPAD_ERR_NONE && type == WPAD_EXP_CLASSIC )
+	{
+		static int once_classic = 0;
+		if (!once_classic) { NG_Log("Classic Controller detectado\n"); once_classic = 1; }
 	{
 		OGC_EmitButtons( ogc_map_classic, ARRAYSIZE( ogc_map_classic ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_buttons_held );
