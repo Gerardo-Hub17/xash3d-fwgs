@@ -19,18 +19,22 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Inspect libogc WPAD
+      - name: Inspect libogc Nunchuk and IR
         run: |
           HEADER="$DEVKITPRO/libogc/include/wiiuse/wpad.h"
+          INCLUDE="$DEVKITPRO/libogc/include"
 
-          echo "=== WPAD HEADER ==="
-          echo "$HEADER"
+          echo "=== WPAD HEADER: 1-175 ==="
+          sed -n '1,175p' "$HEADER"
 
-          echo "=== NUNCHUK Y ESTRUCTURAS ==="
-          grep -n -A35 -B10 -E 'struct nunchuk|struct ir_t|typedef struct.*WPADData|WPADData' "$HEADER"
+          echo "=== IR STRUCTURE ==="
+          grep -R -n -A35 -B5 'struct ir_t' "$INCLUDE/wiiuse" --include='*.h'
 
-          echo "=== FUNCIONES DE LECTURA ==="
-          grep -n -E 'WPAD_Data|WPAD_IR|WPAD_ScanPads|WPAD_SetDataFormat|WPAD_SetVRes' "$HEADER"
+          echo "=== EXPANSION STRUCTURE ==="
+          grep -R -n -A60 -B5 'struct expansion_t' "$INCLUDE/wiiuse" --include='*.h'
+
+          echo "=== NUNCHUK STRUCTURE ==="
+          grep -R -n -A40 -B5 'struct nunchuk_t' "$INCLUDE/wiiuse" --include='*.h'
 
       - name: Clone hlsdk-portable with submodules
         run: |
