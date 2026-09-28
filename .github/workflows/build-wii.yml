@@ -21,14 +21,16 @@ jobs:
 
       - name: Inspect libogc WPAD
         run: |
-          echo "=== TODOS LOS HEADERS WPAD ==="
-          find "$DEVKITPRO" -type f -name wpad.h -print
+          HEADER="$DEVKITPRO/libogc/include/wiiuse/wpad.h"
 
-          echo "=== HEADERS DE LIBOGC ==="
-          find "$DEVKITPRO" -path '*libogc*' -name wpad.h -print
+          echo "=== WPAD HEADER ==="
+          echo "$HEADER"
 
-          echo "=== DEFINICIONES WPAD ==="
-          find "$DEVKITPRO" -path '*libogc*' -name wpad.h -exec grep -n -E 'WPADData|WPADStatus|WPAD_Read|WPAD_Data|WPAD_Probe|WPAD_ScanPads|WPAD_SetDataFormat|WPAD_SetVRes|nunchuk|ir' {} +
+          echo "=== NUNCHUK Y ESTRUCTURAS ==="
+          grep -n -A35 -B10 -E 'struct nunchuk|struct ir_t|typedef struct.*WPADData|WPADData' "$HEADER"
+
+          echo "=== FUNCIONES DE LECTURA ==="
+          grep -n -E 'WPAD_Data|WPAD_IR|WPAD_ScanPads|WPAD_SetDataFormat|WPAD_SetVRes' "$HEADER"
 
       - name: Clone hlsdk-portable with submodules
         run: |
