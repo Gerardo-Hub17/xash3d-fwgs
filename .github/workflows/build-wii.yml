@@ -21,25 +21,14 @@ jobs:
 
       - name: Inspect libogc WPAD
         run: |
-          echo "=== DEVKITPRO ==="
-          echo "$DEVKITPRO"
+          echo "=== TODOS LOS HEADERS WPAD ==="
+          find "$DEVKITPRO" -type f -name wpad.h -print
 
-          WPAD_H=$(find "$DEVKITPRO" -name wpad.h -print -quit)
+          echo "=== HEADERS DE LIBOGC ==="
+          find "$DEVKITPRO" -path '*libogc*' -name wpad.h -print
 
-          if [ -z "$WPAD_H" ]; then
-            echo "ERROR: wpad.h not found"
-            exit 1
-          fi
-
-          echo "=== HEADER: $WPAD_H ==="
-          echo "=== WPADData definition ==="
-          grep -n -A100 -B15 "WPADData" "$WPAD_H"
-
-          echo "=== Nunchuk and IR fields ==="
-          grep -n -E -A15 -B5 "nunchuk|ir;|js;|WPAD_IR|WPAD_NUNCHUK" "$WPAD_H"
-
-          echo "=== WPAD functions ==="
-          grep -n -E "WPAD_Data|WPAD_Probe|WPAD_ScanPads|WPAD_SetDataFormat" "$WPAD_H"
+          echo "=== DEFINICIONES WPAD ==="
+          find "$DEVKITPRO" -path '*libogc*' -name wpad.h -exec grep -n -E 'WPADData|WPADStatus|WPAD_Read|WPAD_Data|WPAD_Probe|WPAD_ScanPads|WPAD_SetDataFormat|WPAD_SetVRes|nunchuk|ir' {} +
 
       - name: Clone hlsdk-portable with submodules
         run: |
