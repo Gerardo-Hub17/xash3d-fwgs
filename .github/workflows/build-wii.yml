@@ -36,6 +36,19 @@ jobs:
           echo "=== NUNCHUK STRUCTURE ==="
           grep -R -n -A40 -B5 'struct nunchuk_t' "$INCLUDE/wiiuse" --include='*.h'
 
+      - name: Inspect Wii input structures
+        run: |
+          HEADER="$DEVKITPRO/libogc/include/wiiuse/wiiuse.h"
+
+          echo "=== JOYSTICK STRUCTURE ==="
+          sed -n '424,470p' "$HEADER"
+
+          echo "=== EXPANSION STRUCTURE ==="
+          sed -n '545,562p' "$HEADER"
+
+          echo "=== WPAD DATA FORMAT ==="
+          grep -n -A15 -B5 'WPAD_SetDataFormat' "$DEVKITPRO/libogc/include/wiiuse/wpad.h"
+
       - name: Clone hlsdk-portable with submodules
         run: |
           git clone --recursive https://github.com/Gerardo-Hub17/hlsdk-portable.git "$GITHUB_WORKSPACE/../hlsdk-portable"
