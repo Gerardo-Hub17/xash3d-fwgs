@@ -23,11 +23,23 @@ jobs:
         run: |
           echo "=== DEVKITPRO ==="
           echo "$DEVKITPRO"
-          echo "=== wpad.h ==="
-          find "$DEVKITPRO" -name wpad.h -print
-          echo "=== WPAD definitions ==="
-          grep -R -n -E "WPADData|WPAD_Data|WPAD_Probe|ir\\." \
-            "$DEVKITPRO" --include='wpad.h' 2>/dev/null | head -150
+
+          WPAD_H=$(find "$DEVKITPRO" -name wpad.h -print -quit)
+
+          if [ -z "$WPAD_H" ]; then
+            echo "ERROR: wpad.h not found"
+            exit 1
+          fi
+
+          echo "=== HEADER: $WPAD_H ==="
+          echo "=== WPADData definition ==="
+          grep -n -A100 -B15 "WPADData" "$WPAD_H"
+
+          echo "=== Nunchuk and IR fields ==="
+          grep -n -E -A15 -B5 "nunchuk|ir;|js;|WPAD_IR|WPAD_NUNCHUK" "$WPAD_H"
+
+          echo "=== WPAD functions ==="
+          grep -n -E "WPAD_Data|WPAD_Probe|WPAD_ScanPads|WPAD_SetDataFormat" "$WPAD_H"
 
       - name: Clone hlsdk-portable with submodules
         run: |
