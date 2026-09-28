@@ -426,13 +426,16 @@ void Platform_RunEvents( void )
 SDL_Event event;
 
 #if XASH_OGC
-/* Evitar OGC_PumpKeyboardEvents: corrompe colas LWP de libogc
- * cuando se usa WPAD_ScanPads en paralelo (in_ogc.c).
- * El teclado USB casi nunca se usa en Wii y los botones
- * del Wiimote/Classic ya los leemos nosotros.
+/*
+ * Do not call SDL_PumpEvents() on Wii.
+ *
+ * libogc's SDL keyboard event pump enters OGC_PumpKeyboardEvents()
+ * and conflicts with the WPAD polling performed by in_ogc.c,
+ * causing a DSI crash.
+ *
+ * Wii controller input is handled directly by OGC_ButtonsFrame().
+ * Consume only events already present in SDL's queue.
  */
-/* TEMP TEST: SDL_PumpEvents() entra en OGC_PumpKeyboardEvents()
- * y actualmente provoca un DSI en Wii. */
 
 while( host.status != HOST_CRASHED && !host.shutdown_issued &&
        SDL_PeepEvents( &event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT ) == 1 )
