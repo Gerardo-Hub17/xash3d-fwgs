@@ -1312,7 +1312,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 			"alias +usereload \"+use; +reload\"\n"
 			"alias -usereload \"-use; -reload\"\n"
 			"bind A_BUTTON \"+jump\"\n"
-			"bind B_BUTTON \"+usereload\"\n"
+			"bind B_BUTTON \"+use\"\n"
 			"bind X_BUTTON \"+reload\"\n"
 			"bind Y_BUTTON \"impulse 100\"\n"
 			"bind L1_BUTTON \"+duck\"\n"
