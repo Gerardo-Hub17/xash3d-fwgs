@@ -102,6 +102,7 @@ static decal_t *R_DecalAlloc( decal_t *pdecal )
 	if( !pdecal )
 	{
 		int	count = 0;
+		qboolean found = false;
 
 		do
 		{
@@ -111,7 +112,25 @@ static decal_t *R_DecalAlloc( decal_t *pdecal )
 			pdecal = &gDecalPool[gDecalCount];
 			gDecalCount++;
 			count++;
-		} while( FBitSet( pdecal->flags, FDECAL_PERMANENT ) && count < limit );
+
+			/* Si este slot no es permanente, usarlo */
+			if( !FBitSet( pdecal->flags, FDECAL_PERMANENT ))
+			{
+				found = true;
+				break;
+			}
+		} while( count < limit );
+
+		/* Si todos los slots estan ocupados, reciclar el primero */
+		if( !found )
+		{
+			pdecal = &gDecalPool[0];
+			gDecalCount = 1;
+		}
+
+		/* Verificacion de seguridad */
+		if( !pdecal )
+			return NULL;
 	}
 
 	R_DecalUnlink( pdecal );

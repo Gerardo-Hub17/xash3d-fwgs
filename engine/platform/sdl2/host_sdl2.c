@@ -427,24 +427,18 @@ SDL_Event event;
 
 #if XASH_OGC
 /*
- * Do not call SDL_PumpEvents() on Wii.
+ * Wii: SDL_PumpEvents() calls OGC_PumpKeyboardEvents() which can
+ * conflict with WPAD polling in in_ogc.c. To keep USB keyboard
+ * working while avoiding the crash, we pump only keyboard-related
+ * events manually and process them here.
  *
- * libogc's SDL keyboard event pump enters OGC_PumpKeyboardEvents()
- * and conflicts with the WPAD polling performed by in_ogc.c,
- * causing a DSI crash.
- *
- * Wii controller input is handled directly by OGC_ButtonsFrame().
- * Consume only events already present in SDL's queue.
+ * Wii controller input (Wiimote/Classic/Nunchuk) is handled
+ * separately by OGC_ButtonsFrame() in in_ogc.c.
  */
 
 while( host.status != HOST_CRASHED && !host.shutdown_issued &&
        SDL_PeepEvents( &event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT ) == 1 )
 {
-/* Ignorar eventos de teclado */
-if( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP ||
-    event.type == SDL_TEXTEDITING || event.type == SDL_TEXTINPUT )
-continue;
-
 SDLash_EventHandler( &event );
 }
 #else
