@@ -385,33 +385,32 @@ centre while the pointer moves independently, which looks wrong.
 */
 void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 {
-	float sway;
-    if( ogc_pointer[0] < -1.0f || ogc_pointer[0] > 1.0f ) return;
-    if( ogc_pointer[1] < -1.0f || ogc_pointer[1] > 1.0f ) return;
+    float dyaw, dpitch;
 
-	if( !view || !wii_ir.value )
-		return;
+    if( !view || !wii_ir.value )
+        return;
 
-	sway = wii_ir_gunsway.value;
-	if( sway == 0.0f )
-		return;
+    // Calcula el offset angular real (mismo que el disparo), asi el arma
+    // apunta EXACTAMENTE al crosshair, no solo se inclina un poco.
+    if( !OGC_GetPointerAngles( &dyaw, &dpitch ))
+        return;
 
-	// yaw follows the pointer left/right, pitch follows up/down. Screen y
-	// grows downwards while pitch is positive downwards too, so both take
-	// the pointer value as-is.
-	view->angles[YAW]   -= ogc_pointer[0] * sway;
-	view->angles[PITCH] += ogc_pointer[1] * sway;
-    if( isnan( view->angles[YAW] ) || isinf( view->angles[YAW] ) ) view->angles[YAW] = 0;
-    if( isnan( view->angles[PITCH] ) || isinf( view->angles[PITCH] ) ) view->angles[PITCH] = 0;
+    // Blindaje NaN/Inf
+    if( isnan( dyaw ) || isinf( dyaw ) ) dyaw = 0.0f;
+    if( isnan( dpitch ) || isinf( dpitch ) ) dpitch = 0.0f;
 
-    // Clamp duro para Wii: evitar valores fuera de rango que rompan GX
+    // Aplica el offset angular al arma
+    view->angles[YAW]   += dyaw;
+    view->angles[PITCH] += dpitch;
+
+    // Clamp duro para Wii
     if( view->angles[PITCH] > 89.0f ) view->angles[PITCH] = 89.0f;
     if( view->angles[PITCH] < -89.0f ) view->angles[PITCH] = -89.0f;
     while( view->angles[YAW] > 180.0f ) view->angles[YAW] -= 360.0f;
     while( view->angles[YAW] < -180.0f ) view->angles[YAW] += 360.0f;
 
-	VectorCopy( view->angles, view->curstate.angles );
-	VectorCopy( view->angles, view->latched.prevangles );
+    VectorCopy( view->angles, view->curstate.angles );
+    VectorCopy( view->angles, view->latched.prevangles );
 }
 
 /*

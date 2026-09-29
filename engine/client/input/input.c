@@ -571,7 +571,7 @@ static void IN_CollectInput( float *forward, float *side, float *pitch, float *y
 	// El IR solo modifica usercmd.viewangles (disparo) en cl_main.c
 	// y viewent.angles (arma) en cl_view.c.
 	// Descomentar la linea de abajo si se quiere volver al comportamiento anterior.
-	// OGC_PointerMove( pitch, yaw );
+        OGC_PointerMove( pitch, yaw );
 #endif
 
 	IN_GyroFinalizeMove( forward, side, pitch, yaw );
