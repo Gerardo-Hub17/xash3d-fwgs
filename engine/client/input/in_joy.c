@@ -172,7 +172,7 @@ static void Joy_ProcessTrigger( const engineAxis_t engineAxis, short value )
 	// update axis values
 	joyaxis[engineAxis].prevval = joyaxis[engineAxis].val;
 	joyaxis[engineAxis].val = value;
-    if( wii_showinput.value || 1 ) Con_Printf( "[JOY] Axis %d = %d\n", engineAxis, value );
+    Con_Printf( "[JOY] Axis %d = %d\n", engineAxis, value );
 
 	if( joyaxis[engineAxis].val > trigThreshold &&
 		joyaxis[engineAxis].prevval <= trigThreshold ) // ignore random press
