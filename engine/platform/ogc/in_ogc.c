@@ -423,49 +423,90 @@ Adds the pointer's contribution to the view angles.
 */
 void OGC_PointerMove( float *pitch, float *yaw )
 {
-	int   px, py;
-	float nx, ny, deadzone, scale;
+    WPADData *data;
+    u32 type = WPAD_EXP_NONE;
+    float nx, ny, deadzone, scale;
 
-	if( !wii_ir.value || refState.width <= 0 || refState.height <= 0 )
-	{
-		ogc_pointer[0] = ogc_pointer[1] = 0.0f;
-		return;
-	}
+    // Tolerancia de perdida de IR: no congelar por micro-parpadeos
+    static int ir_lost_frames = 0;
 
-	Platform_GetMousePos( &px, &py );
+    #define IR_TOLERANCE_FRAMES 5
 
-	// -1..1 across the screen, 0 at the centre
-	nx = ( px / (float)refState.width  ) * 2.0f - 1.0f;
-	ny = ( py / (float)refState.height ) * 2.0f - 1.0f;
+    if( !wii_ir.value || refState.width <= 0 || refState.height <= 0 )
+        return;
 
-	nx = bound( -1.0f, nx, 1.0f );
-	ny = bound( -1.0f, ny, 1.0f );
+    if( WPAD_Probe( WPAD_CHAN_0, &type ) != WPAD_ERR_NONE )
+        return;
 
-	ogc_pointer[0] = nx;
-	ogc_pointer[1] = ny;
+    // Classic Controller: no usar su estado como puntero IR.
+    if( type == WPAD_EXP_CLASSIC )
+        return;
 
-	deadzone = bound( 0.0f, wii_ir_deadzone.value, 0.95f );
+    data = WPAD_Data( WPAD_CHAN_0 );
 
-	// how far past the box we are, renormalised so the turn ramps up from
-	// nothing at the edge of the box to full speed at the edge of the screen
-	scale = 1.0f - deadzone;
-	if( scale <= 0.0f )
-		return;
+    // Si se pierde el IR, contar frames antes de congelar
+    if( !data || !data->ir.valid )
+    {
+        ir_lost_frames++;
+        if( wii_showinput.value && ( ir_lost_frames % 30 ) == 1 )
+            Con_Printf( "^1[IR]^7 PERDIDO frame=%d\n", ir_lost_frames );
+        if( ir_lost_frames > IR_TOLERANCE_FRAMES )
+            return;
+        // Dentro de tolerancia: no actualizar pero no congelar
+        return;
+    }
 
-	if( fabs( nx ) > deadzone )
-	{
-		float over = ( fabs( nx ) - deadzone ) / scale;
+    ir_lost_frames = 0;
 
-		if( nx < 0 ) over = -over;
-		*yaw -= over * wii_ir_yawspeed.value * (float)host.realframetime;
-	}
+    // Log de datos crudos del IR (cada ~1 segundo)
+    if( wii_showinput.value )
+    {
+        static int log_tick = 0;
+        if( ( log_tick % 60 ) == 0 )
+            Con_Printf( "[IR] valid=%d x=%d y=%d sx=%d sy=%d", 
+                (int)data->ir.valid, (int)data->ir.x, (int)data->ir.y, 
+                (int)data->ir.sx, (int)data->ir.sy );
+        log_tick++;
+    }
 
-	if( fabs( ny ) > deadzone )
-	{
-		float over = ( fabs( ny ) - deadzone ) / scale;
 
-		if( ny < 0 ) over = -over;
-		*pitch += over * wii_ir_pitchspeed.value * (float)host.realframetime;
-	}
+    nx = ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f;
+    ny = ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f;
+
+    nx = bound( -1.0f, nx, 1.0f );
+    ny = bound( -1.0f, ny, 1.0f );
+
+    ogc_pointer[0] = nx;
+    ogc_pointer[1] = ny;
+
+    deadzone = bound( 0.0f, wii_ir_deadzone.value, 0.95f );
+    scale = 1.0f - deadzone;
+
+    if( scale <= 0.0f )
+        return;
+
+    // Blindaje NaN/Inf antes de aplicar
+    if( isnan( nx ) || isinf( nx ) ) nx = 0.0f;
+    if( isnan( ny ) || isinf( ny ) ) ny = 0.0f;
+
+    if( fabs( nx ) > deadzone )
+    {
+        float over = ( fabs( nx ) - deadzone ) / scale;
+        if( nx < 0.0f ) over = -over;
+
+        *yaw -= over * wii_ir_yawspeed.value * (float)host.realframetime;
+
+        if( isnan( *yaw ) || isinf( *yaw ) ) *yaw = 0.0f;
+    }
+
+    if( fabs( ny ) > deadzone )
+    {
+        float over = ( fabs( ny ) - deadzone ) / scale;
+        if( ny < 0.0f ) over = -over;
+
+        *pitch += over * wii_ir_pitchspeed.value * (float)host.realframetime;
+
+        if( isnan( *pitch ) || isinf( *pitch ) ) *pitch = 0.0f;
+    }
 }
 #endif // XASH_OGC
