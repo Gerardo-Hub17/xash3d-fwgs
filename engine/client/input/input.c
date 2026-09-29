@@ -567,7 +567,11 @@ static void IN_CollectInput( float *forward, float *side, float *pitch, float *y
 	}
 
 #if XASH_OGC
-	OGC_PointerMove( pitch, yaw );
+	// FASE 5: El IR NO debe modificar cl.viewangles (camara).
+	// El IR solo modifica usercmd.viewangles (disparo) en cl_main.c
+	// y viewent.angles (arma) en cl_view.c.
+	// Descomentar la linea de abajo si se quiere volver al comportamiento anterior.
+	// OGC_PointerMove( pitch, yaw );
 #endif
 
 	IN_GyroFinalizeMove( forward, side, pitch, yaw );
