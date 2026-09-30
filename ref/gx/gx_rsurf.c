@@ -1328,6 +1328,60 @@ static void R_RenderLightmapForSurface( msurface_t *fa )
 	}
 }
 
+static void DrawGLPolyBatchChain( msurface_t *head )
+{
+    int total_tris = 0;
+    msurface_t *s;
+    glpoly2_t *p;
+
+    if( !head )
+        return;
+
+    // Contar triangulos de TODAS las superficies de la cadena
+    for( s = head; s != NULL; s = s->texturechain )
+    {
+        for( p = s->polys; p != NULL; p = p->chain )
+        {
+            if( p->numverts >= 3 )
+                total_tris += p->numverts - 2;
+        }
+    }
+
+    if( total_tris == 0 )
+        return;
+
+    GX_SetupVtxFormat();
+    GX_Begin( GX_TRIANGLES, GX_VTXFMT0, total_tris * 3 );
+
+    // Emitir TODOS los triangulos de TODAS las superficies
+    for( s = head; s != NULL; s = s->texturechain )
+    {
+        for( p = s->polys; p != NULL; p = p->chain )
+        {
+            float *base = p->verts[0];
+            float *v0 = base;
+            int i;
+
+            for( i = 1; i < p->numverts - 1; i++ )
+            {
+                float *v1 = base + i * VERTEXSIZE;
+                float *v2 = base + (i + 1) * VERTEXSIZE;
+
+                GX_TexCoord2f32( v0[3], v0[4] );
+                GX_Position3f32( v0[0], v0[1], v0[2] );
+
+                GX_TexCoord2f32( v1[3], v1[4] );
+                GX_Position3f32( v1[0], v1[1], v1[2] );
+
+                GX_TexCoord2f32( v2[3], v2[4] );
+                GX_Position3f32( v2[0], v2[1], v2[2] );
+            }
+        }
+    }
+
+    GX_End();
+}
+
 static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 {
 	r_stats.c_world_polys++;
@@ -1353,7 +1407,7 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 
 	R_RenderFullbrightForSurface( fa, t );
 	R_RenderDetailsForSurface( fa, t );
-	DrawGLPoly( fa->polys, 0.0f, 0.0f );
+	// DrawGLPoly( fa->polys, 0.0f, 0.0f );  // BATCHED
 	R_RenderDecalsForSurface( fa, cull_type );
 	R_RenderLightmapForSurface( fa );
 }
@@ -1401,8 +1455,14 @@ static void R_DrawTextureChains( void )
 			continue;
 		}
 
-		for( ; s != NULL; s = s->texturechain )
-			R_RenderBrushPoly( s, CULL_VISIBLE );
+			{
+				msurface_t *batch_head = s;
+				for( ; s != NULL; s = s->texturechain )
+					R_RenderBrushPoly( s, CULL_VISIBLE );
+
+				GX_Bind( XASH_TEXTURE0, t->gl_texturenum );
+				DrawGLPolyBatchChain( batch_head );
+			}
 		t->texturechain = NULL;
 	}
 }
