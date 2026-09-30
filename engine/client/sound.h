@@ -49,7 +49,7 @@ extern poolhandle_t sndpool;
 #define MAX_CHANNELS         (256 + MAX_DYNAMIC_CHANNELS) // Scourge Of Armagon has too many static sounds on hip2m4.bsp
 #endif
 #define MAX_RAW_CHANNELS     48
-#define MAX_RAW_SAMPLES      16384
+#define MAX_RAW_SAMPLES      8192
 #define SND_CLIP_DISTANCE    1000.0f
 
 extern int idsp_room;
