@@ -100,6 +100,13 @@ void SCR_DrawFPS( int height )
 
 		if( cl_showfps.value == 2 )
 			Q_snprintf( fpsstring, sizeof( fpsstring ), "fps: ^1%4i min, ^3%4i cur, ^2%4i max", minfps, curfps, maxfps );
+#if XASH_OGC
+		else if( cl_showfps.value == 3 )
+		{
+			extern double g_gx_frame_time_ms;
+			Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps | render: %.1f ms", curfps, g_gx_frame_time_ms );
+		}
+#endif
 		else Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps", curfps );
 		MakeRGBA( color, 255, 255, 255, 255 );
 	}

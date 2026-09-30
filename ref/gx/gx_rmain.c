@@ -20,6 +20,11 @@ GNU General Public License for more details.
 #include "beamdef.h"
 #include "entity_types.h"
 
+/* Contador de rendimiento para cl_showfps 3 */
+double g_gx_frame_time_ms = 0.0;
+double g_gx_cpu_time_ms = 0.0;
+
+
 #include <gccore.h>
 #include <ogc/gx.h>
 
@@ -792,6 +797,7 @@ static void R_DrawEntitiesOnList( void )
 
 void R_RenderScene( void )
 {
+	double __t_start = Platform_DoubleTime();
     if( !WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
         gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
@@ -821,6 +827,7 @@ void R_RenderScene( void )
     R_DrawEntitiesOnList();
     R_DrawWaterSurfaces();
 }
+	g_gx_frame_time_ms = (Platform_DoubleTime() - __t_start) * 1000.0;
 
 void R_GammaChanged( qboolean do_reset_gamma )
 {
