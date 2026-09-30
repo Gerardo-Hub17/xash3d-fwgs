@@ -21,8 +21,8 @@ GNU General Public License for more details.
 #include "entity_types.h"
 
 /* Contador de rendimiento para cl_showfps 3 */
-double g_gx_frame_time_ms = 0.0;
-double g_gx_cpu_time_ms = 0.0;
+extern double g_gx_frame_time_ms;
+extern double g_gx_cpu_time_ms;
 
 
 #include <gccore.h>
