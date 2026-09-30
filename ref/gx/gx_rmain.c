@@ -826,8 +826,8 @@ void R_RenderScene( void )
 
     R_DrawEntitiesOnList();
     R_DrawWaterSurfaces();
-}
 	g_gx_frame_time_ms = (Platform_DoubleTime() - __t_start) * 1000.0;
+}
 
 void R_GammaChanged( qboolean do_reset_gamma )
 {
