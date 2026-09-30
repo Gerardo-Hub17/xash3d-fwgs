@@ -222,6 +222,9 @@ void OGC_ButtonsFrame( void )
 	// scanning it again here would only race it.
 	WPAD_ScanPads();
 
+	// Leer el stick del Nunchuk directamente (SDL esta desactivado)
+	OGC_PollNunchuk();
+
 	if( wii_showinput.value )
 	{
 		// Print on change AND on a timer. Change-only was useless: if the
@@ -508,4 +511,67 @@ void OGC_PointerMove( float *pitch, float *yaw )
         if( isnan( *pitch ) || isinf( *pitch ) ) *pitch = 0.0f;
     }
 }
-#endif // XASH_OGC
+
+/*
+============
+OGC_PollNunchuk
+
+Lee el stick del Nunchuk directamente desde WPAD (sin pasar por SDL,
+que esta desactivado en Wii por el crash del Wiimote). Mapea el stick
+a JOY_AXIS_SIDE y JOY_AXIS_FWD para mover al jugador.
+============
+*/
+static void OGC_PollNunchuk( void )
+{
+WPADData *data;
+u32 type = WPAD_EXP_NONE;
+short nx, ny;
+static short last_x = 0, last_y = 0;
+
+if( !wii_buttons.value )
+;
+
+if( WPAD_Probe( WPAD_CHAN_0, &type ) != WPAD_ERR_NONE )
+;
+
+// Solo si hay Nunchuk conectado
+if( type != WPAD_EXP_NUNCHUK )
+;
+
+data = WPAD_Data( WPAD_CHAN_0 );
+if( !data )
+;
+
+// El stick del Nunchuk reporta pos.x / pos.y en rango ~ -128..127.
+// Escalar a -32767..32767 para que sea compatible con la API de joystick.
+nx = (short)( data->exp.nunchuk.js.pos.x * 256 );
+ny = (short)( data->exp.nunchuk.js.pos.y * 256 );
+
+// Deadzone de ~15% para evitar drift
+if( nx > -5000 && nx < 5000 ) nx = 0;
+if( ny > -5000 && ny < 5000 ) ny = 0;
+
+// Invertir Y (el Nunchuk reporta arriba como negativo)
+ny = (short)(-ny);
+
+// Solo enviar eventos cuando cambia
+if( nx != last_x )
+{
+_AxisMotionEvent( JOY_AXIS_SIDE, nx );
+= nx;
+}
+if( ny != last_y )
+{
+_AxisMotionEvent( JOY_AXIS_FWD, ny );
+ = ny;
+}
+
+// Debug (se activa con wii_showinput 1)
+if( wii_showinput.value )
+{
+int tick = 0;
+( tick % 30 ) == 0 )
+_Printf( "[NUNCHUK] pos.x=%d pos.y=%d -> nx=%d ny=%d\n",
+t)data->exp.nunchuk.js.pos.x, (int)data->exp.nunchuk.js.pos.y,
+t)nx, (int)ny );
+dif // XASH_OGC
