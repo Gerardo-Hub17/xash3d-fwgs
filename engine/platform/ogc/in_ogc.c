@@ -205,6 +205,7 @@ static void OGC_EmitButtons( const ogc_btn_t *map, int count, u32 held, u32 *pre
 			Key_Event( map[i].key, ( held & map[i].mask ) != 0 );
 	}
 }
+static void OGC_PollNunchuk( void );
 
 void OGC_ButtonsFrame( void )
 {
@@ -221,6 +222,7 @@ void OGC_ButtonsFrame( void )
 	// PAD is the other way round - SDL does call PAD_ScanPads every frame, so
 	// scanning it again here would only race it.
 	WPAD_ScanPads();
+OGC_PollNunchuk();
 
 	if( wii_showinput.value )
 	{
@@ -508,4 +510,57 @@ void OGC_PointerMove( float *pitch, float *yaw )
         if( isnan( *pitch ) || isinf( *pitch ) ) *pitch = 0.0f;
     }
 }
+
+static void OGC_PollNunchuk(void)
+{
+    WPADData *data;
+    u32 type;
+    s16 nx, ny;
+    static s16 last_x = 0, last_y = 0;
+
+    if (!wii_buttons.value)
+        return;
+
+    if (WPAD_Probe(WPAD_CHAN_0, &type) != WPAD_ERR_NONE)
+        return;
+
+    if (type != WPAD_EXP_NUNCHUK)
+        return;
+
+    data = WPAD_Data(WPAD_CHAN_0);
+    if (!data)
+        return;
+
+    nx = data->exp.nunchuk.js.pos.x;
+    ny = data->exp.nunchuk.js.pos.y;
+    nx = nx * 256;
+    ny = ny * 256;
+
+    if (nx > -5000 && nx < 5000) nx = 0;
+    if (ny > -5000 && ny < 5000) ny = 0;
+    ny = -ny;
+
+    if (nx != last_x)
+    {
+        Joy_AxisMotionEvent(JOY_AXIS_SIDE, nx);
+        last_x = nx;
+    }
+    if (ny != last_y)
+    {
+        Joy_AxisMotionEvent(JOY_AXIS_FWD, ny);
+        last_y = ny;
+    }
+
+    if (wii_showinput.value)
+    {
+        static int tick = 0;
+        if ((tick % 30) == 0)
+        {
+            Con_Printf("[NUNCHUK] nx=%d ny=%d",
+                (int)nx, (int)ny);
+        }
+        tick++;
+    }
+}
+
 #endif // XASH_OGC
