@@ -531,8 +531,8 @@ static void OGC_PollNunchuk(void)
     if (!data)
         return;
 
-    nx = (s16)((data->exp.nunchuk.js.pos.x - data->exp.nunchuk.js.centerx) * 128);
-    ny = (s16)((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.centery) * 128);
+    nx = (s16)((data->exp.nunchuk.js.pos.x - data->exp.nunchuk.js.center) * 128);
+    ny = (s16)((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.center) * 128);
 
     if (nx > -8000 && nx < 8000) nx = 0;
     if (ny > -8000 && ny < 8000) ny = 0;
