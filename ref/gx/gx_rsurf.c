@@ -962,29 +962,51 @@ static void EmitWaterLightPolys( msurface_t *warp, float soffset, float toffset,
 
 static void DrawGLPolyChain( glpoly2_t *p, float soffset, float toffset, msurface_t *surf )
 {
-	const qboolean dynamic = soffset != 0.0f || toffset != 0.0f;
+    const qboolean dynamic = soffset != 0.0f || toffset != 0.0f;
+    glpoly2_t *q;
+    int total_tris = 0;
 
-	if( FBitSet( surf->flags, SURF_DRAWTURB ))
-	{
-		EmitWaterLightPolys( surf, soffset, toffset, dynamic );
-		return;
-	}
+    if( FBitSet( surf->flags, SURF_DRAWTURB ))
+    {
+        EmitWaterLightPolys( surf, soffset, toffset, dynamic );
+        return;
+    }
 
-	GX_SetupVtxFormat();
+    // Contar triangulos de TODA la cadena
+    for( q = p; q != NULL; q = q->chain )
+        if( q->numverts >= 3 )
+            total_tris += q->numverts - 2;
 
-	for( ; p != NULL; p = p->chain )
-	{
-		GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
+    if( total_tris == 0 )
+        return;
 
-		float *v = p->verts[0];
-		for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
-		{
-			if( !dynamic ) GX_TexCoord2f32( v[5], v[6] );
-			else GX_TexCoord2f32( v[5] - soffset, v[6] - toffset );
-			GX_Position3f32( v[0], v[1], v[2] );
-		}
-		GX_End();
-	}
+    GX_SetupVtxFormat();
+    GX_Begin( GX_TRIANGLES, GX_VTXFMT0, total_tris * 3 );
+
+    for( q = p; q != NULL; q = q->chain )
+    {
+        float *base = q->verts[0];
+        for( int i = 1; i < q->numverts - 1; i++ )
+        {
+            float *v0 = base;
+            float *v1 = base + i * VERTEXSIZE;
+            float *v2 = base + (i + 1) * VERTEXSIZE;
+
+            if( !dynamic ) GX_TexCoord2f32( v0[5], v0[6] );
+            else GX_TexCoord2f32( v0[5] - soffset, v0[6] - toffset );
+            GX_Position3f32( v0[0], v0[1], v0[2] );
+
+            if( !dynamic ) GX_TexCoord2f32( v1[5], v1[6] );
+            else GX_TexCoord2f32( v1[5] - soffset, v1[6] - toffset );
+            GX_Position3f32( v1[0], v1[1], v1[2] );
+
+            if( !dynamic ) GX_TexCoord2f32( v2[5], v2[6] );
+            else GX_TexCoord2f32( v2[5] - soffset, v2[6] - toffset );
+            GX_Position3f32( v2[0], v2[1], v2[2] );
+        }
+    }
+
+    GX_End();
 }
 
 static qboolean R_HasLightmap( void )
@@ -1396,7 +1418,7 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 		EmitWaterPolys( fa, cull_type == CULL_BACKSIDE, R_UploadRipples( t ));
 
 		if( Mod_HaveLightmappedWater( ))
-			// R_RenderLightmapForSurface( fa );  // TEST: sin lightmaps
+			R_RenderLightmapForSurface( fa );
 
 		return;
 	}
@@ -1409,7 +1431,7 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 	R_RenderDetailsForSurface( fa, t );
 	// DrawGLPoly( fa->polys, 0.0f, 0.0f );  // BATCHED
 	R_RenderDecalsForSurface( fa, cull_type );
-	// R_RenderLightmapForSurface( fa );  // TEST: sin lightmaps
+	R_RenderLightmapForSurface( fa );
 }
 
 static void R_DrawTextureChains( void )
