@@ -303,8 +303,11 @@ void SDLash_HandleGameControllerEvent( SDL_Event *ev )
 		{
 			SDL_GameController *gc = SDL_GameControllerFromInstanceID( ev->caxis.which );
 			const char *gcname = gc ? SDL_GameControllerName( gc ) : NULL;
+			Con_Printf( "[GCAXIS] which=%d name=%s axis=%d value=%d\n",
+				(int)ev->caxis.which, gcname ? gcname : "(null)", (int)x, (int)ev->caxis.value );
 			if( gcname && strstr( gcname, "Nunchuk" ))
 			{
+				Con_Printf( "[GCAXIS] Es Nunchuk! Traduciendo...\n" );
 				if( x == SDL_CONTROLLER_AXIS_RIGHTX ) x = SDL_CONTROLLER_AXIS_LEFTX;
 				else if( x == SDL_CONTROLLER_AXIS_RIGHTY ) x = SDL_CONTROLLER_AXIS_LEFTY;
 			}
