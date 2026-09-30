@@ -66,8 +66,10 @@ static void GX_SetupVtxFormat( void )
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
+	GX_SetVtxDesc( GX_VA_TEX1, GX_DIRECT );
 	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ, GX_F32, 0 );
 	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
+	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX1, GX_TEX_ST, GX_F32, 0 );
 }
 
 static inline void R_AddToSeparatePass( separate_pass_t *sp, int num )
@@ -822,14 +824,17 @@ static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
 
             if( hasScale ) GX_TexCoord2f32(( v0[3] + sOffset ) * xScale, ( v0[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v0[3] + sOffset, v0[4] + tOffset );
+            GX_TexCoord2f32( v0[5], v0[6] );
             GX_Position3f32( v0[0], v0[1], v0[2] );
 
             if( hasScale ) GX_TexCoord2f32(( v1[3] + sOffset ) * xScale, ( v1[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v1[3] + sOffset, v1[4] + tOffset );
+            GX_TexCoord2f32( v1[5], v1[6] );
             GX_Position3f32( v1[0], v1[1], v1[2] );
 
             if( hasScale ) GX_TexCoord2f32(( v2[3] + sOffset ) * xScale, ( v2[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v2[3] + sOffset, v2[4] + tOffset );
+            GX_TexCoord2f32( v2[5], v2[6] );
             GX_Position3f32( v2[0], v2[1], v2[2] );
         }
     }
@@ -992,14 +997,19 @@ static void DrawGLPolyChain( glpoly2_t *p, float soffset, float toffset, msurfac
             float *v1 = base + i * VERTEXSIZE;
             float *v2 = base + (i + 1) * VERTEXSIZE;
 
+            /* TEXCOORD0 = UV difusa (v[3], v[4]) */
+            GX_TexCoord2f32( v0[3], v0[4] );
+            /* TEXCOORD1 = UV lightmap (v[5], v[6]) con offset dinamico */
             if( !dynamic ) GX_TexCoord2f32( v0[5], v0[6] );
             else GX_TexCoord2f32( v0[5] - soffset, v0[6] - toffset );
             GX_Position3f32( v0[0], v0[1], v0[2] );
 
+            GX_TexCoord2f32( v1[3], v1[4] );
             if( !dynamic ) GX_TexCoord2f32( v1[5], v1[6] );
             else GX_TexCoord2f32( v1[5] - soffset, v1[6] - toffset );
             GX_Position3f32( v1[0], v1[1], v1[2] );
 
+            GX_TexCoord2f32( v2[3], v2[4] );
             if( !dynamic ) GX_TexCoord2f32( v2[5], v2[6] );
             else GX_TexCoord2f32( v2[5] - soffset, v2[6] - toffset );
             GX_Position3f32( v2[0], v2[1], v2[2] );
@@ -1044,13 +1054,24 @@ static void R_BlendLightmaps( void )
 	GX_SetupFogColorForSurfacesEx( r_detailtextures.value ? 3 : 2, 1.0f, true );
 
 	GX_SetNumTevStages( 2 );
-	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
-	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
-	GX_SetTevOrder( GX_TEVSTAGE1, GX_TEXCOORD1, GX_TEXMAP1, GX_COLOR0A0 );
-	GX_SetTevOp( GX_TEVSTAGE1, GX_MODULATE );
+	GX_SetNumTexGens( 2 );
 
-	GX_SetBlendMode( GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_SRCCLR, GX_LO_CLEAR );
-	GX_SetZMode( GX_TRUE, GX_EQUAL, GX_FALSE );
+	/* Stage 0: TEXMAP0 (difusa) x COLOR0A0 -> intermedio */
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
+	GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO );
+	GX_SetTevColorOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+	GX_SetTevAlphaIn( GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO );
+	GX_SetTevAlphaOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+
+	/* Stage 1: TEXMAP1 (lightmap) x CPREV -> iluminacion final */
+	GX_SetTevOrder( GX_TEVSTAGE1, GX_TEXCOORD1, GX_TEXMAP1, GX_COLORNULL );
+	GX_SetTevColorIn( GX_TEVSTAGE1, GX_CC_ZERO, GX_CC_TEXC, GX_CC_CPREV, GX_CC_ZERO );
+	GX_SetTevColorOp( GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+	GX_SetTevAlphaIn( GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_APREV, GX_CA_TEXA, GX_CA_ZERO );
+	GX_SetTevAlphaOp( GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+
+	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
+	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 
 	if( gl_overbright.value )
 	{
@@ -1070,7 +1091,7 @@ static void R_BlendLightmaps( void )
 	{
 		if( gx_lms.lightmap_surfaces[i] )
 		{
-			GX_Bind( 0, tr.lightmapTextures[i] );
+			GX_Bind( 1, tr.lightmapTextures[i] );
 			for( msurface_t *surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
 			{
 				texture_t *tex = R_TextureAnimation( surf );
