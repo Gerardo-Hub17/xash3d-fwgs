@@ -200,11 +200,10 @@ void Platform_SetCursorType( VGUI_DefaultCursor type )
 		return;
 
 #if XASH_OGC
-	// With pointer aiming the shot goes where the remote points, not where
-	// the camera looks, so the player needs to see the pointer. SDL draws it
-	// at the IR position, which makes it the reticle - keep it on screen.
-	if( !visible && OGC_WantVisiblePointer( ))
-		return;
+	// Wii: forzar el estado del cursor segun OGC_WantVisiblePointer.
+	// Menu/consola -> cursor visible (controlable con IR).
+	// En partida -> cursor oculto (el crosshair del HUD lo reemplaza).
+	visible = OGC_WantVisiblePointer();
 #endif
 
 	host.mouse_visible = visible;
