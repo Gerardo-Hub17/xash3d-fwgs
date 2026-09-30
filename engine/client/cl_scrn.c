@@ -34,7 +34,7 @@ static CVAR_DEFINE_AUTO( net_speeds, "0", FCVAR_ARCHIVE, "show network packets" 
 double g_gx_frame_time_ms = 0.0;
 double g_gx_cpu_time_ms = 0.0;
 
-static CVAR_DEFINE_AUTO( cl_showfps, "1", FCVAR_ARCHIVE, "show client fps" );
+static CVAR_DEFINE_AUTO( cl_showfps, "3", FCVAR_ARCHIVE, "show client fps" );
 static CVAR_DEFINE_AUTO( cl_showpos, "0", FCVAR_ARCHIVE, "show local player position and velocity" );
 static CVAR_DEFINE_AUTO( cl_showents, "0", FCVAR_ARCHIVE | FCVAR_CHEAT, "show entities information (largely undone)" );
 static CVAR_DEFINE_AUTO( cl_showcmd, "0", 0, "visualize usercmd button presses" );
@@ -54,6 +54,10 @@ SCR_DrawFPS
 */
 void SCR_DrawFPS( int height )
 {
+	static int __dbg_cnt = 0;
+	if( ( __dbg_cnt % 180 ) == 0 )
+		Con_Printf( "[FPSDBG] state=%d showfps=%.0f bg=%d\n", (int)cls.state, cl_showfps.value, (int)cl.background );
+	__dbg_cnt++;
 	rgba_t		color;
 	static double	nexttime = 0, lasttime = 0;
 	static double	framerate = 0;
