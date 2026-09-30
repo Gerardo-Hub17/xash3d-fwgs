@@ -748,72 +748,97 @@ static void R_DrawTriangleOutlines( void )
 
 static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
 {
-	float sOffset, tOffset;
+    float sOffset, tOffset;
+    int total_tris;
+    glpoly2_t *q;
+    const qboolean hasScale = xScale != 0.0f && yScale != 0.0f;
 
-	if( !p )
-		return;
+    if( !p )
+        return;
 
-	if( FBitSet( p->flags, SURF_DRAWTILED ))
-		GX_ResetFogColor();
+    if( FBitSet( p->flags, SURF_DRAWTILED ))
+        GX_ResetFogColor();
 
-	if( FBitSet( p->flags, SURF_CONVEYOR ))
-	{
-		const cl_entity_t *e = RI.currententity;
-		float flConveyorSpeed;
-		float sy, cy;
+    if( FBitSet( p->flags, SURF_CONVEYOR ))
+    {
+        const cl_entity_t *e = RI.currententity;
+        float flConveyorSpeed;
+        float sy, cy;
 
-		if( e == CL_GetEntityByIndex( 0 ) && FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ))
-		{
-			flConveyorSpeed = -35.0f;
-		}
-		else
-		{
-			flConveyorSpeed = (e->curstate.rendercolor.g<<8|e->curstate.rendercolor.b) / 16.0f;
-			if( e->curstate.rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;
-		}
-		gl_texture_t *texture = R_GetTexture( glState.currentTexturesIndex[glState.activeTMU] );
+        if( e == CL_GetEntityByIndex( 0 ) && FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ))
+        {
+            flConveyorSpeed = -35.0f;
+        }
+        else
+        {
+            flConveyorSpeed = (e->curstate.rendercolor.g<<8|e->curstate.rendercolor.b) / 16.0f;
+            if( e->curstate.rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;
+        }
+        gl_texture_t *texture = R_GetTexture( glState.currentTexturesIndex[glState.activeTMU] );
 
-		float flRate = fabs( flConveyorSpeed ) / (float)texture->srcWidth;
-		float flAngle = ( flConveyorSpeed >= 0 ) ? 180 : 0;
+        float flRate = fabs( flConveyorSpeed ) / (float)texture->srcWidth;
+        float flAngle = ( flConveyorSpeed >= 0 ) ? 180 : 0;
 
-		SinCos( flAngle * ( M_PI_F / 180.0f ), &sy, &cy );
-		sOffset = gp_cl->time * cy * flRate;
-		tOffset = gp_cl->time * sy * flRate;
+        SinCos( flAngle * ( M_PI_F / 180.0f ), &sy, &cy );
+        sOffset = gp_cl->time * cy * flRate;
+        tOffset = gp_cl->time * sy * flRate;
 
-		if( sOffset < 0.0f ) sOffset += 1.0f + -(int)sOffset;
-		if( tOffset < 0.0f ) tOffset += 1.0f + -(int)tOffset;
+        if( sOffset < 0.0f ) sOffset += 1.0f + -(int)sOffset;
+        if( tOffset < 0.0f ) tOffset += 1.0f + -(int)tOffset;
 
-		sOffset = sOffset - (int)sOffset;
-		tOffset = tOffset - (int)tOffset;
-	}
-	else
-	{
-		sOffset = tOffset = 0.0f;
-	}
+        sOffset = sOffset - (int)sOffset;
+        tOffset = tOffset - (int)tOffset;
+    }
+    else
+    {
+        sOffset = tOffset = 0.0f;
+    }
 
-	const qboolean hasScale = xScale != 0.0f && yScale != 0.0f;
+    // Contar triangulos totales de la cadena
+    total_tris = 0;
+    for( q = p; q != NULL; q = q->chain )
+    {
+        if( q->numverts >= 3 )
+            total_tris += q->numverts - 2;
+    }
 
-	GX_SetupVtxFormat();
+    if( total_tris == 0 )
+        return;
 
-	GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, p->numverts );
+    GX_SetupVtxFormat();
 
-	float *v = p->verts[0];
-	for( int i = 0; i < p->numverts; i++, v += VERTEXSIZE )
-	{
-		if( hasScale )
-			GX_TexCoord2f32(( v[3] + sOffset ) * xScale, ( v[4] + tOffset ) * yScale );
-		else
-			GX_TexCoord2f32( v[3] + sOffset, v[4] + tOffset );
+    // Un solo Begin/End para TODA la cadena
+    GX_Begin( GX_TRIANGLES, GX_VTXFMT0, total_tris * 3 );
 
-		GX_Position3f32( v[0], v[1], v[2] );
-	}
+    for( q = p; q != NULL; q = q->chain )
+    {
+        float *base = q->verts[0];
+        float *v0 = base;
 
-	GX_End();
+        for( int i = 1; i < q->numverts - 1; i++ )
+        {
+            float *v1 = base + i * VERTEXSIZE;
+            float *v2 = base + (i + 1) * VERTEXSIZE;
 
-	if( FBitSet( p->flags, SURF_DRAWTILED ))
-		GX_SetupFogColorForSurfaces();
+            if( hasScale ) GX_TexCoord2f32(( v0[3] + sOffset ) * xScale, ( v0[4] + tOffset ) * yScale );
+            else GX_TexCoord2f32( v0[3] + sOffset, v0[4] + tOffset );
+            GX_Position3f32( v0[0], v0[1], v0[2] );
+
+            if( hasScale ) GX_TexCoord2f32(( v1[3] + sOffset ) * xScale, ( v1[4] + tOffset ) * yScale );
+            else GX_TexCoord2f32( v1[3] + sOffset, v1[4] + tOffset );
+            GX_Position3f32( v1[0], v1[1], v1[2] );
+
+            if( hasScale ) GX_TexCoord2f32(( v2[3] + sOffset ) * xScale, ( v2[4] + tOffset ) * yScale );
+            else GX_TexCoord2f32( v2[3] + sOffset, v2[4] + tOffset );
+            GX_Position3f32( v2[0], v2[1], v2[2] );
+        }
+    }
+
+    GX_End();
+
+    if( FBitSet( p->flags, SURF_DRAWTILED ))
+        GX_SetupFogColorForSurfaces();
 }
-
 static void EmitWaterPolys( msurface_t *warp, qboolean reverse, qboolean ripples )
 {
 	float	waveHeight;
