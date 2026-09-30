@@ -833,6 +833,20 @@ static void CL_DrawCrosshair( void )
 	x = clgame.viewport[0] + ( clgame.viewport[2] >> 1 );
 	y = clgame.viewport[1] + ( clgame.viewport[3] >> 1 );
 
+#if XASH_OGC
+	// Wii FPS: mover el crosshair segun la posicion del IR
+	{
+		float px = 0.0f, py = 0.0f;
+		OGC_GetPointer( &px, &py );
+		if( px < -1.0f ) px = -1.0f;
+		if( px >  1.0f ) px =  1.0f;
+		if( py < -1.0f ) py = -1.0f;
+		if( py >  1.0f ) py =  1.0f;
+		x += (int)( px * ( clgame.viewport[2] * 0.5f ));
+		y += (int)( py * ( clgame.viewport[3] * 0.5f ));
+	}
+#endif
+
 	// g-cont - cl.crosshairangle is the autoaim angle.
 	// if we're not using autoaim, just draw in the middle of the screen
 	if( !VectorIsNull( cl.crosshairangle ))
