@@ -296,6 +296,20 @@ void SDLash_HandleGameControllerEvent( SDL_Event *ev )
 	case SDL_CONTROLLERAXISMOTION:
 		SDLash_SetActiveGameController( ev->caxis.which );
 		x = ev->caxis.axis;
+#if XASH_OGC
+		// Wii: si el mando es Wiimote+Nunchuk, el stick llega en RIGHTX/RIGHTY.
+		// Lo traducimos a LEFTX/LEFTY para que el mapping estandar lo mande
+		// a JOY_AXIS_SIDE y JOY_AXIS_FWD (mover al jugador).
+		{
+			SDL_GameController *gc = SDL_GameControllerFromInstanceID( ev->caxis.which );
+			const char *gcname = gc ? SDL_GameControllerName( gc ) : NULL;
+			if( gcname && strstr( gcname, "Nunchuk" ))
+			{
+				if( x == SDL_CONTROLLER_AXIS_RIGHTX ) x = SDL_CONTROLLER_AXIS_LEFTX;
+				else if( x == SDL_CONTROLLER_AXIS_RIGHTY ) x = SDL_CONTROLLER_AXIS_LEFTY;
+			}
+		}
+#endif
 		if( x >= 0 && x < ARRAYSIZE( g_axis_mapping ))
 			Joy_AxisMotionEvent( g_axis_mapping[x], ev->caxis.value );
 		break;
