@@ -1396,7 +1396,7 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 		EmitWaterPolys( fa, cull_type == CULL_BACKSIDE, R_UploadRipples( t ));
 
 		if( Mod_HaveLightmappedWater( ))
-			R_RenderLightmapForSurface( fa );
+			// R_RenderLightmapForSurface( fa );  // TEST: sin lightmaps
 
 		return;
 	}
@@ -1409,7 +1409,7 @@ static void R_RenderBrushPoly( msurface_t *fa, int cull_type )
 	R_RenderDetailsForSurface( fa, t );
 	// DrawGLPoly( fa->polys, 0.0f, 0.0f );  // BATCHED
 	R_RenderDecalsForSurface( fa, cull_type );
-	R_RenderLightmapForSurface( fa );
+	// R_RenderLightmapForSurface( fa );  // TEST: sin lightmaps
 }
 
 static void R_DrawTextureChains( void )
