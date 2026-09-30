@@ -205,7 +205,7 @@ static void OGC_EmitButtons( const ogc_btn_t *map, int count, u32 held, u32 *pre
 			Key_Event( map[i].key, ( held & map[i].mask ) != 0 );
 	}
 }
-static void OGC_PollNunchuk( void );
+static void OGC_PollNunchuk(void);
 
 void OGC_ButtonsFrame( void )
 {
@@ -531,14 +531,12 @@ static void OGC_PollNunchuk(void)
     if (!data)
         return;
 
-    nx = data->exp.nunchuk.js.pos.x;
-    ny = data->exp.nunchuk.js.pos.y;
-    nx = nx * 256;
-    ny = ny * 256;
+    nx = (s16)((data->exp.nunchuk.js.pos.x - data->exp.nunchuk.js.centerx) * 128);
+    ny = (s16)((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.centery) * 128);
 
-    if (nx > -5000 && nx < 5000) nx = 0;
-    if (ny > -5000 && ny < 5000) ny = 0;
-    ny = -ny;
+    if (nx > -8000 && nx < 8000) nx = 0;
+    if (ny > -8000 && ny < 8000) ny = 0;
+    ny = -ny; // push up = forward
 
     if (nx != last_x)
     {
