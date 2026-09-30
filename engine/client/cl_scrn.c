@@ -105,7 +105,7 @@ void SCR_DrawFPS( int height )
 	}
 
 	Con_DrawStringLen( fpsstring, &offset, NULL );
-	Con_DrawString( refState.width - offset - 4, height, fpsstring, color );
+	Con_DrawString( refState.width - offset - 20, height + 20, fpsstring, color );
 }
 
 /*

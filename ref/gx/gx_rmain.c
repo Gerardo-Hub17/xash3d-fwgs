@@ -879,7 +879,7 @@ void R_BeginFrame( qboolean clearScene )
         clearScene && ENGINE_GET_PARM( PARM_CONNSTATE ) != ca_cinematic )
 #endif
     {
-        GX_InvalidateTexAll();
+        // GX_InvalidateTexAll(); // REMOVIDO: causaba re-subida de texturas cada frame
     }
 
     R_CheckCvars();
