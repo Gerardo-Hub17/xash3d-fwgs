@@ -30,7 +30,7 @@ CVAR_DEFINE_AUTO( cl_levelshot_name, "*black", 0, "contains path to current leve
 static CVAR_DEFINE_AUTO( cl_envshot_size, "256", FCVAR_ARCHIVE, "envshot size of cube side" );
 CVAR_DEFINE_AUTO( v_dark, "0", 0, "starts level from dark screen" );
 static CVAR_DEFINE_AUTO( net_speeds, "0", FCVAR_ARCHIVE, "show network packets" );
-static CVAR_DEFINE_AUTO( cl_showfps, "0", FCVAR_ARCHIVE, "show client fps" );
+static CVAR_DEFINE_AUTO( cl_showfps, "1", FCVAR_ARCHIVE, "show client fps" );
 static CVAR_DEFINE_AUTO( cl_showpos, "0", FCVAR_ARCHIVE, "show local player position and velocity" );
 static CVAR_DEFINE_AUTO( cl_showents, "0", FCVAR_ARCHIVE | FCVAR_CHEAT, "show entities information (largely undone)" );
 static CVAR_DEFINE_AUTO( cl_showcmd, "0", 0, "visualize usercmd button presses" );
