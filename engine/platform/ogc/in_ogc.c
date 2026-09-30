@@ -401,7 +401,7 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 
     // Aplica el offset angular al arma
     view->angles[YAW]   += dyaw;
-    view->angles[PITCH] += dpitch;
+    view->angles[PITCH] -= dpitch;
 
     // Clamp duro para Wii
     if( view->angles[PITCH] > 89.0f ) view->angles[PITCH] = 89.0f;
