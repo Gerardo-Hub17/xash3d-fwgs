@@ -41,6 +41,7 @@ static CVAR_DEFINE_AUTO( wii_ir_yawspeed, "220", FCVAR_ARCHIVE, "degrees per sec
 static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per second of pitch at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon leans towards the pointer" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
+static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
 static CVAR_DEFINE_AUTO( wii_buttons, "1", FCVAR_ARCHIVE, "read the remote and nunchuk buttons straight from WPAD" );
 #ifdef XASH_OGC_INPUTTEST
 #define WII_SHOWINPUT_DEFAULT "1"	// input test build: on with nothing to configure
@@ -151,6 +152,7 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_ir_pitchspeed );
 	Cvar_RegisterVariable( &wii_ir_gunsway );
 	Cvar_RegisterVariable( &wii_ir_cursor );
+Cvar_RegisterVariable( &wii_nunchuk_sens );
 	Cvar_RegisterVariable( &wii_buttons );
 	Cvar_RegisterVariable( &wii_showinput );
 
@@ -294,7 +296,8 @@ leaves from the centre of the screen.
 */
 qboolean OGC_WantVisiblePointer( void )
 {
-	return wii_ir.value && wii_ir_cursor.value;
+    if( cls.key_dest == key_menu || cls.key_dest == key_console ) return true;
+    return false;
 }
 
 /*
@@ -531,8 +534,8 @@ static void OGC_PollNunchuk(void)
     if (!data)
         return;
 
-    nx = (s16)((data->exp.nunchuk.js.pos.x - data->exp.nunchuk.js.center.x) * 128);
-    ny = (s16)((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.center.y) * 128);
+    nx = (s16)((data->exp.nunchuk.js.pos.x - data->exp.nunchuk.js.center.x) * (int)wii_nunchuk_sens.value);
+    ny = (s16)((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.center.y) * (int)wii_nunchuk_sens.value);
 
     if (nx > -8000 && nx < 8000) nx = 0;
     if (ny > -8000 && ny < 8000) ny = 0;
