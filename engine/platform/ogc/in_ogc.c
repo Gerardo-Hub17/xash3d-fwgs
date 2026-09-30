@@ -541,7 +541,7 @@ static void OGC_PollNunchuk(void)
         if (tmp < -32768) tmp = -32768;
         nx = (s16)tmp;
 
-        tmp = (data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.center.y) * (int)wii_nunchuk_sens.value;
+        tmp = -((data->exp.nunchuk.js.pos.y - data->exp.nunchuk.js.center.y) * (int)wii_nunchuk_sens.value);
         if (tmp >  32767) tmp =  32767;
         if (tmp < -32768) tmp = -32768;
         ny = (s16)tmp;
@@ -549,7 +549,7 @@ static void OGC_PollNunchuk(void)
 
     if (nx > -8000 && nx < 8000) nx = 0;
     if (ny > -8000 && ny < 8000) ny = 0;
-    ny = -ny; // push up = forward
+    // ny = -ny; (movido arriba para evitar overflow s16)
 
     if (nx != last_x)
     {
