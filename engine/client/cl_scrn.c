@@ -67,7 +67,7 @@ void SCR_DrawFPS( int height )
 	char		fpsstring[64];
 	int		offset;
 
-	if( cls.state != ca_active || !cl_showfps.value || cl.background )
+	if( cls.state != ca_active || cl.background )  /* TEST: sin check de cvar */
 		return;
 
 	switch( cls.scrshot_action )
