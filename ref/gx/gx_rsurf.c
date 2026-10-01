@@ -1206,6 +1206,102 @@ static void R_BlendLightmaps( void )
 	GX_ResetFogColor();
 }
 
+/* Batching de fullbrights: 1 Begin/End por textura completa */
+static void DrawGLPolyBatchLuma( mextrasurf_t *head )
+{
+	int total_tris = 0;
+	mextrasurf_t *es;
+	glpoly2_t *p;
+
+	if( !head ) return;
+
+	for( es = head; es != NULL; es = es->lumachain )
+		for( p = es->surf->polys; p != NULL; p = p->chain )
+			if( p->numverts >= 3 )
+				total_tris += p->numverts - 2;
+
+	if( total_tris == 0 ) return;
+
+	GX_SetupVtxFormat();
+	GX_Begin( GX_TRIANGLES, GX_VTXFMT0, total_tris * 3 );
+
+	for( es = head; es != NULL; es = es->lumachain )
+	{
+		for( p = es->surf->polys; p != NULL; p = p->chain )
+		{
+			float *base = p->verts[0];
+			for( int i = 1; i < p->numverts - 1; i++ )
+			{
+				float *v0 = base;
+				float *v1 = base + i * VERTEXSIZE;
+				float *v2 = base + (i + 1) * VERTEXSIZE;
+
+				GX_TexCoord2f32( v0[3], v0[4] );
+				GX_TexCoord2f32( v0[5], v0[6] );
+				GX_Position3f32( v0[0], v0[1], v0[2] );
+
+				GX_TexCoord2f32( v1[3], v1[4] );
+				GX_TexCoord2f32( v1[5], v1[6] );
+				GX_Position3f32( v1[0], v1[1], v1[2] );
+
+				GX_TexCoord2f32( v2[3], v2[4] );
+				GX_TexCoord2f32( v2[5], v2[6] );
+				GX_Position3f32( v2[0], v2[1], v2[2] );
+			}
+		}
+	}
+
+	GX_End();
+}
+
+/* Batching de details: 1 Begin/End por textura de detalle completa */
+static void DrawGLPolyBatchDetail( mextrasurf_t *head, float xscale, float yscale )
+{
+	int total_tris = 0;
+	mextrasurf_t *es;
+	glpoly2_t *p;
+
+	if( !head ) return;
+
+	for( es = head; es != NULL; es = es->detailchain )
+		for( p = es->surf->polys; p != NULL; p = p->chain )
+			if( p->numverts >= 3 )
+				total_tris += p->numverts - 2;
+
+	if( total_tris == 0 ) return;
+
+	GX_SetupVtxFormat();
+	GX_Begin( GX_TRIANGLES, GX_VTXFMT0, total_tris * 3 );
+
+	for( es = head; es != NULL; es = es->detailchain )
+	{
+		for( p = es->surf->polys; p != NULL; p = p->chain )
+		{
+			float *base = p->verts[0];
+			for( int i = 1; i < p->numverts - 1; i++ )
+			{
+				float *v0 = base;
+				float *v1 = base + i * VERTEXSIZE;
+				float *v2 = base + (i + 1) * VERTEXSIZE;
+
+				GX_TexCoord2f32( v0[3] * xscale, v0[4] * yscale );
+				GX_TexCoord2f32( v0[5], v0[6] );
+				GX_Position3f32( v0[0], v0[1], v0[2] );
+
+				GX_TexCoord2f32( v1[3] * xscale, v1[4] * yscale );
+				GX_TexCoord2f32( v1[5], v1[6] );
+				GX_Position3f32( v1[0], v1[1], v1[2] );
+
+				GX_TexCoord2f32( v2[3] * xscale, v2[4] * yscale );
+				GX_TexCoord2f32( v2[5], v2[6] );
+				GX_Position3f32( v2[0], v2[1], v2[2] );
+			}
+		}
+	}
+
+	GX_End();
+}
+
 static void R_RenderFullbrights( qboolean allow_vbo )
 {
 	if( !R_SeparatePassActive( &draw_fullbrights ))
@@ -1228,8 +1324,7 @@ static void R_RenderFullbrights( qboolean allow_vbo )
 
 		GX_Bind( XASH_TEXTURE0, i );
 
-		for( mextrasurf_t *p = es; p; p = p->lumachain )
-			DrawGLPoly( p->surf->polys, 0.0f, 0.0f );
+		DrawGLPolyBatchLuma( es );
 
 		fullbright_surfaces[i] = NULL;
 		es->lumachain = NULL;
@@ -1270,11 +1365,9 @@ static void R_RenderDetails( int passes )
 
 		GX_Bind( XASH_TEXTURE0, i );
 
-		for( mextrasurf_t *p = es; p; p = p->detailchain )
 		{
-			msurface_t *fa = p->surf;
-			gl_texture_t *glt = R_GetTexture( fa->texinfo->texture->gl_texturenum );
-			DrawGLPoly( fa->polys, glt->xscale, glt->yscale );
+			gl_texture_t *glt = R_GetTexture( es->surf->texinfo->texture->gl_texturenum );
+			DrawGLPolyBatchDetail( es, glt->xscale, glt->yscale );
 		}
 
 		detail_surfaces[i] = NULL;
