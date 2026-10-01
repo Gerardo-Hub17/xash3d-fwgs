@@ -111,8 +111,8 @@ void SCR_DrawFPS( int height )
 #if XASH_OGC
 		else if( 1 )  /* TEST: forzar siempre */
 		{
-			extern double g_gx_frame_time_ms;
-			Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps | render: %.1f ms", curfps, g_gx_frame_time_ms );
+			float frame_ms = 1000.0f / ( calc + 0.001f );
+			Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps | frame: %.1f ms", curfps, frame_ms );
 		}
 #endif
 		else Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps", curfps );
