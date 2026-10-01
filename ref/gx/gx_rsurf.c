@@ -1091,14 +1091,36 @@ static void R_BlendLightmaps( void )
 	{
 		if( gx_lms.lightmap_surfaces[i] )
 		{
+			msurface_t *batch_head = NULL;
+			int batch_texnum = -1;
+			msurface_t *surf;
+
 			GX_Bind( 1, tr.lightmapTextures[i] );
-			for( msurface_t *surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
+
+			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
 			{
 				texture_t *tex = R_TextureAnimation( surf );
-				if( tex && tex->gl_texturenum )
-					GX_Bind( 0, tex->gl_texturenum );
-				DrawGLPolyChain( surf->polys, 0.0f, 0.0f, surf );
+				int texnum = ( tex && tex->gl_texturenum ) ? tex->gl_texturenum : 0;
+
+				if( texnum != batch_texnum )
+				{
+					if( batch_head )
+						DrawGLPolyBatchChain( batch_head );
+
+					if( texnum != 0 )
+						GX_Bind( 0, texnum );
+
+					batch_texnum = texnum;
+					batch_head = surf;
+				}
+				surf->texturechain = surf->info->lightmapchain;
 			}
+
+			if( batch_head )
+				DrawGLPolyBatchChain( batch_head );
+
+			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
+				surf->texturechain = NULL;
 		}
 	}
 
@@ -1410,13 +1432,18 @@ static void DrawGLPolyBatchChain( msurface_t *head )
                 float *v1 = base + i * VERTEXSIZE;
                 float *v2 = base + (i + 1) * VERTEXSIZE;
 
+                /* TEXCOORD0 = difusa */
                 GX_TexCoord2f32( v0[3], v0[4] );
+                /* TEXCOORD1 = lightmap */
+                GX_TexCoord2f32( v0[5], v0[6] );
                 GX_Position3f32( v0[0], v0[1], v0[2] );
 
                 GX_TexCoord2f32( v1[3], v1[4] );
+                GX_TexCoord2f32( v1[5], v1[6] );
                 GX_Position3f32( v1[0], v1[1], v1[2] );
 
                 GX_TexCoord2f32( v2[3], v2[4] );
+                GX_TexCoord2f32( v2[5], v2[6] );
                 GX_Position3f32( v2[0], v2[1], v2[2] );
             }
         }
