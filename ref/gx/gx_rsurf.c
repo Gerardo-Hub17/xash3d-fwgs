@@ -1043,6 +1043,7 @@ static qboolean R_HasLightmap( void )
 
 	return true;
 }
+static void DrawGLPolyBatchChain( msurface_t *head );
 
 static void R_BlendLightmaps( void )
 {
