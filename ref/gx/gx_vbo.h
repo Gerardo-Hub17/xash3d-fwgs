@@ -1,7 +1,7 @@
 #ifndef GX_VBO_H
 #define GX_VBO_H
 
-#define GX_VBO_MAX_VERTS 262144
+#define GX_VBO_MAX_VERTS 32768
 #define GX_VBO_MAX_IDX (GX_VBO_MAX_VERTS * 3)
 #define GX_VBO_VERT_SIZE 28
 
@@ -18,12 +18,17 @@ static gx_vbo_t g_vbo = { NULL, NULL, 0, 0, 0, 0 };
 
 static void GX_VBO_Alloc(void)
 {
+gEngfuncs.Con_Printf("[VBO] Alloc inicio\n");
 if (g_vbo.initialized)
+{
+gEngfuncs.Con_Printf("[VBO] Ya inicializado\n");
 return;
+}
 g_vbo.vertex_data = (u8 *)memalign(32,
 GX_VBO_MAX_VERTS * GX_VBO_VERT_SIZE);
 g_vbo.index_data = (u16 *)memalign(32,
 GX_VBO_MAX_IDX * sizeof(u16));
+gEngfuncs.Con_Printf("[VBO] memalign OK: v=%p i=%p\n", g_vbo.vertex_data, g_vbo.index_data);
 if (!g_vbo.vertex_data || !g_vbo.index_data)
 gEngfuncs.Host_Error("VBO alloc failed\n");
 g_vbo.num_verts_used = 0;
