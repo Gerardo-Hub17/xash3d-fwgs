@@ -31,8 +31,8 @@ the Free Software Foundation, either version 3 of the License, or
 
 #define FIFO_SIZE   (256 * 1024)
 #define SW_BPP      16
-#define FB_WIDTH    640
-#define FB_HEIGHT   480
+#define FB_WIDTH    320
+#define FB_HEIGHT   240
 
 static void *gp_fifo = NULL;
 static void *sw_framebuffer = NULL;
