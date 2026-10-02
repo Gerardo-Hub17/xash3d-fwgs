@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "mod_local.h"
 #include "atlas.h"
+#include "gx_vbo.h"
 
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
@@ -1106,7 +1107,7 @@ static void R_BlendLightmaps( void )
 				if( texnum != batch_texnum )
 				{
 					if( batch_head )
-						DrawGLPolyBatchChain( batch_head );
+						DrawGLPolyBatchChain_VBO( batch_head );
 
 					if( texnum != 0 )
 						GX_Bind( 0, texnum );
@@ -1118,7 +1119,7 @@ static void R_BlendLightmaps( void )
 			}
 
 			if( batch_head )
-				DrawGLPolyBatchChain( batch_head );
+				DrawGLPolyBatchChain_VBO( batch_head );
 
 			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
 				surf->texturechain = NULL;
@@ -1625,7 +1626,7 @@ static void R_DrawTextureChains( void )
 					R_RenderBrushPoly( s, CULL_VISIBLE );
 
 				GX_Bind( XASH_TEXTURE0, t->gl_texturenum );
-				DrawGLPolyBatchChain( batch_head );
+				DrawGLPolyBatchChain_VBO( batch_head );
 			}
 		t->texturechain = NULL;
 	}
