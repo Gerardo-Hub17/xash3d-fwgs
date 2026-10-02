@@ -103,6 +103,7 @@ message(STATUS "Renderer: ${XASH_REF_LIB}")
 # GX renderer (for Wii)
 # ------------------------------------------------------------------------------
 file(GLOB REF_GX_SOURCES
+    ref/common/*
     ref/gx/*
 )
 add_library(ref_gx SHARED ${REF_GX_SOURCES})
@@ -125,6 +126,7 @@ target_compile_definitions(ref_gx PRIVATE
     -DXASH_STATIC_LIBS=1
     -DREF_DLL=1
     -DXASH_GL_STATIC=1
+    -DXASH_OGC=1
 )
 
 # Renombrar las funciones Tri* del renderer para que no choquen con las
@@ -265,6 +267,7 @@ target_compile_definitions(xash PUBLIC
     -DBIGENDIAN=1
     -DDEFAULT_FPS_MAX="60"
     ${XASH_OGC_DEFAULT_MODE}
+    -DXASH_OGC=1
     -DXASH_OGC_GECKO=1
     -DDEBUG_LOOKUPS_COUNT=1
     -D_EXI_DEBUG=1

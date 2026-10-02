@@ -18,8 +18,13 @@ GNU General Public License for more details.
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
 
+#if XASH_OGC
+ref_api_t      gEngfuncs_gx;
+ref_globals_t *gpGlobals_gx;
+#else
 ref_api_t      gEngfuncs;
 ref_globals_t *gpGlobals;
+#endif
 ref_client_t  *gp_cl;
 ref_host_t    *gp_host;
 struct movevars_s *gp_movevars;
