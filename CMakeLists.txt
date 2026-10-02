@@ -238,12 +238,8 @@ engine/platform/posix/sys_posix.c
 engine/common/http/net_http_xash.c
 )
 
-# Default resolution per renderer
-if(XASH_RENDERER STREQUAL "gl")
-    set(XASH_OGC_DEFAULT_MODE -DDEFAULT_MODE_WIDTH=640 -DDEFAULT_MODE_HEIGHT=480)
-else()
-    set(XASH_OGC_DEFAULT_MODE -DDEFAULT_MODE_WIDTH=320 -DDEFAULT_MODE_HEIGHT=240)
-endif()
+# Default resolution for Wii/OGC (320x240 is much cheaper; raise later when path is optimized)
+set(XASH_OGC_DEFAULT_MODE -DDEFAULT_MODE_WIDTH=320 -DDEFAULT_MODE_HEIGHT=240)
 
 target_compile_definitions(xash PUBLIC
     -DXASH_GAMEDIR="valve"
