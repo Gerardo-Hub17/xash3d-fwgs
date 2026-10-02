@@ -2448,4 +2448,5 @@ void GX_BuildLightmaps( void )
 	{
 		gEngfuncs.drawFuncs->GL_BuildLightmaps( );
 	}
+	GX_VBO_BuildWorld();
 }
