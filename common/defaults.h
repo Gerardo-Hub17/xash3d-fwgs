@@ -30,7 +30,7 @@ SETUP BACKENDS DEFINITIONS
 // when compiling client, we need to pick video, audio and input implementations
 //
 #if !XASH_DEDICATED // when compiling client, we need to pick video, audio and input implementations
-	#if XASH_SDL // we are building with SDL
+	#if XASH_SDL && !XASH_OGC // we are building with SDL (unless OGC overrides)
 		#define XASH_VIDEO     VIDEO_SDL
 		#define XASH_INPUT     INPUT_SDL
 		#define XASH_SOUND     SOUND_SDL

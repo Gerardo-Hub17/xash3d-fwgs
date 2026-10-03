@@ -230,6 +230,8 @@ list(REMOVE_ITEM ENGINE_SOURCES
 "${CMAKE_CURRENT_SOURCE_DIR}/engine/client/soundlib/snd_ogg_vorbis.c"
 "${CMAKE_CURRENT_SOURCE_DIR}/engine/client/soundlib/snd_ogg_opus.c"
 "${CMAKE_CURRENT_SOURCE_DIR}/engine/client/soundlib/ogg_filestream.c"
+# Wii uses vid_ogc.c, not SDL2 video. vid_sdl2.c has no #if guard, so exclude it.
+"${CMAKE_CURRENT_SOURCE_DIR}/engine/platform/sdl2/vid_sdl2.c"
 )
 
 add_executable(xash ${ENGINE_SOURCES}
