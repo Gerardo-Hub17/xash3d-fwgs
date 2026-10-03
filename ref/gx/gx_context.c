@@ -173,7 +173,7 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		loaded = true;
 		break;
 	case mod_alias:
-		Mod_LoadAliasModel( mod, buf, &loaded );
+		R_Mod_LoadAliasModel( mod, buf, &loaded );
 		break;
 	default:
 		gEngfuncs.Host_Error( "%s: unsupported type %d\n", __func__, mod->type );

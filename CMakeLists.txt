@@ -110,7 +110,7 @@ file(GLOB REF_GX_SOURCES
     ref/common/*
     ref/gx/*
 )
-add_library(ref_gx SHARED ${REF_GX_SOURCES})
+add_library(ref_gx SHARED ${REF_GX_SOURCES} ref/gx/gx_missing.c)
 
 target_include_directories(ref_gx PUBLIC
     3rdparty/library_suffix/include

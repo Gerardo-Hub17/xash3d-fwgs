@@ -41,7 +41,7 @@ static gl_texture_t *GL_AllocTexture( const char *name, texFlags_t flags );
 static void        GL_DeleteTexture( gl_texture_t *tex );
 static void        GX_UpdateTextureParams( int iTexture );
 static void        GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt );
-static byte       *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal );
+byte       *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal );
 static qboolean    GX_CheckTexName( const char *name );
 
 gl_texture_t *R_GetTexture( unsigned int texnum )

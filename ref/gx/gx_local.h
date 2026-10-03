@@ -403,7 +403,7 @@ void R_StudioSetDrawInterface( struct r_studio_interface_s *pDraw );
 void Mod_StudioLoadTextures( model_t *mod, void *data );
 void Mod_StudioUnloadTextures( void *data );
 
-void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded );
+void R_Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded );
 void R_DrawAliasModel( cl_entity_t *e );
 void R_AliasInit( void );
 

@@ -15,7 +15,6 @@ typedef struct {
 } table_t;
 
 // 1. gl_state: array de bytes genérico
-unsigned char gl_state[4096];
 
 // 2. gRefFuncs: puntero a funciones del renderizador (vacío)
 void *gRefFuncs = NULL;
