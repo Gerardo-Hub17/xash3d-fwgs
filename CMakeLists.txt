@@ -115,7 +115,6 @@ add_library(ref_gx SHARED ${REF_GX_SOURCES})
 target_include_directories(ref_gx PUBLIC
     3rdparty/library_suffix/include
     ref/common
-    ref/gx
     common
     engine
     engine/common
@@ -278,7 +277,6 @@ target_compile_definitions(xash PUBLIC
 pkg_check_modules(DEPS REQUIRED sdl2 zlib)
 
 target_include_directories(xash PUBLIC
-    ref/gx
     ${DEPS_INCLUDE_DIRS}
     common
     engine/server

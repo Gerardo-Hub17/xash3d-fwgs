@@ -27,7 +27,6 @@ the Free Software Foundation, either version 3 of the License, or
 #include <string.h>
 #include <stdint.h>
 
-#include "gx_local.h"
 
 #define FIFO_SIZE   (256 * 1024)
 #define SW_BPP      16
