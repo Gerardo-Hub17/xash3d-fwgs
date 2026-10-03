@@ -338,6 +338,9 @@ void GX_OnContextCreated( void )
 	gx_video_initialized = true;
 
 	GX_InitExtensions();
+	GX_SetDefaultState();
+	GX_SetDefaults();
+	gEngfuncs.Con_Printf( "[GX] defaults OK\n" );
 }
 
 /* Neutralizado: duplicado con gx_rmain.c */
