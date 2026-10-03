@@ -18,8 +18,6 @@ pkg_check_modules(OPENGL IMPORTED_TARGET opengl)
 
 add_definitions(
     -DXASH_OGC=1
-    -DXASH_SDL=0
-    -DXASH_VIDEO=VIDEO_OGC
     -DXASH_INPUT=INPUT_SDL
     -DXASH_SOUND=SOUND_SDL
 
