@@ -94,7 +94,7 @@ include(makelibrary.txt)
 set(XASH_RENDERER "gl" CACHE STRING "renderer to link: gl (GX) or soft (software)")
 set_property(CACHE XASH_RENDERER PROPERTY STRINGS gl soft)
 
-if(XASH_RENDERER STREQUAL "gl")
+if(XASH_RENDERER STREQUAL "gl" OR XASH_RENDERER STREQUAL "ref_gx" OR XASH_RENDERER STREQUAL "gx")
     set(XASH_REF_LIB ref_gx)
     set(XASH_REF_DEFINE XASH_REF_GX_ENABLED=1)
 else()
