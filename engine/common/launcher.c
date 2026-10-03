@@ -35,6 +35,7 @@ GNU General Public License for more details.
 /* Flash de color en pantalla antes de tener devoptabs. */
 static void OGC_ColorFlash( u32 color, int vsync_count )
 {
+    VIDEO_Init();
     GXRModeObj *rmode = VIDEO_GetPreferredMode( NULL );
     if( !rmode ) return;
 

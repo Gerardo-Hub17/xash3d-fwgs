@@ -504,7 +504,9 @@ qboolean GX_R_Init( void )
 		Mem_FreePool( &r_temppool );
 		return false;
 	}
-	Con_Printf( "[GX] video OK, early return\n" );
+	GX_SetupAttributes( 0 );
+	GX_OnContextCreated();
+	Con_Printf( "[GX] GX_Init OK, early return\n" );
 	return true;
 
 	// Fill render globals (same as GL/soft do)
