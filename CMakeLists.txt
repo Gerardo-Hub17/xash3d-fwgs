@@ -278,6 +278,7 @@ target_compile_definitions(xash PUBLIC
 pkg_check_modules(DEPS REQUIRED sdl2 zlib)
 
 target_include_directories(xash PUBLIC
+    ref/gx
     ${DEPS_INCLUDE_DIRS}
     common
     engine/server
