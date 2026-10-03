@@ -55,7 +55,7 @@ static GXTexObj texObj;
 static Mtx44 ortho;
 static Mtx modelview;
 
-static void MakeTexture565( const uint16_t *src, void *dst, int width, int height )
+static void OGC_MakeTexture565( const uint16_t *src, void *dst, int width, int height )
 {
 	uint16_t *out = (uint16_t *)dst;
 	int x, y, ix, iy;
@@ -235,7 +235,7 @@ void VID_SwapBuffers( void )
 	if( !sw_initialized || !sw_framebuffer || !tex_framebuffer )
 		return;
 
-	MakeTexture565( (const uint16_t *)sw_framebuffer, tex_framebuffer, sw_width, sw_height );
+	OGC_MakeTexture565( (const uint16_t *)sw_framebuffer, tex_framebuffer, sw_width, sw_height );
 	DCFlushRange( tex_framebuffer, tex_size );
 	GX_InvalidateTexAll();
 
