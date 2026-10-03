@@ -416,7 +416,7 @@ void R_ResetRipples( void );
 void R_AnimateRipples( void );
 qboolean R_UploadRipples( texture_t *image );
 
-qboolean R_Init( void );
+qboolean GX_R_Init( void );   // renamed to avoid collision with libref_soft.a
 void R_Shutdown( void );
 void GX_SetupAttributes( int safegl );
 void GX_OnContextCreated( void );

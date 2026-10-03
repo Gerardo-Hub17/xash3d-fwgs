@@ -140,7 +140,11 @@ void SDLash_InitCursors( void )
 		SDLash_FreeCursors();
 
 	// load up all default cursors
-	cursors.cursors[dc_none] = NULL;
+        // load up all default cursors
+        cursors.cursors[dc_none] = NULL;
+        #if !XASH_OGC
+        // SDL Wii no soporta CreateSystemCursor (no hay ventana).
+        // El puntero lo maneja WPAD via in_ogc.c.
 	cursors.cursors[dc_arrow] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
 	cursors.cursors[dc_ibeam] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
 	cursors.cursors[dc_hourglass] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT);
@@ -153,6 +157,7 @@ void SDLash_InitCursors( void )
 	cursors.cursors[dc_sizeall] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEALL);
 	cursors.cursors[dc_no] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NO);
 	cursors.cursors[dc_hand] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+#endif
 	cursors.initialized = true;
 }
 

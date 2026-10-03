@@ -479,9 +479,54 @@ static void R_FillTriAPI( triangleapi_t *api )
 	api->FogParams     = TriFogParams;
 }
 
+/*
+===============
+GX_R_Init
+
+GX-specific initialisation. Named GX_R_Init (not R_Init) to avoid
+colliding with libref_soft.a's R_Init, which the linker was pulling
+in because libref_gx.a did not define its own R_Init. That made
+gReffuncs.R_Init resolve to the software renderer's setup, which
+immediately failed (no software framebuffer) and killed the process.
+===============
+*/
+qboolean GX_R_Init( void )
+{
+	GL_InitRandomTable();
+
+	r_temppool = Mem_AllocPool( "Render Zone" );
+
+	// Bring up the video backend through the engine
+	if( !gEngfuncs.R_Init_Video( REF_GL ))
+	{
+		gEngfuncs.R_Free_Video();
+		Mem_FreePool( &r_temppool );
+		return false;
+	}
+
+	// Fill render globals (same as GL/soft do)
+	tr.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
+	tr.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );
+	tr.viewent = (cl_entity_t *)ENGINE_GET_PARM( PARM_GET_VIEWENT_PTR );
+	tr.texgammatable = (byte *)ENGINE_GET_PARM( PARM_GET_TEXGAMMATABLE_PTR );
+	tr.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
+	tr.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
+	tr.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
+	tr.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
+
+	// Init GX subsystems
+	R_InitImages();
+	R_StudioInit();
+	R_AliasInit();
+	R_ClearDecals();
+	R_ClearScene();
+
+	return true;
+}
+
 const ref_interface_t gReffuncs =
 {
-	R_Init,
+	GX_R_Init,
 	R_Shutdown,
 	R_GetConfigName,
 	R_SetDisplayTransform,
