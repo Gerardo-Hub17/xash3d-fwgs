@@ -271,6 +271,7 @@ void GX_SetupAttributes( int safegl )
 	if( gx_video_initialized )
 		return;
 
+	GX_InitCommands();
 	VIDEO_Init();
 
 	gxvid.rmode = VIDEO_GetPreferredMode( NULL );

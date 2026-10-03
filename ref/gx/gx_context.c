@@ -506,9 +506,6 @@ qboolean GX_R_Init( void )
 	}
 	GX_SetupAttributes( 0 );
 	GX_OnContextCreated();
-	Con_Printf( "[GX] GX_Init OK, early return\n" );
-	return true;
-
 	// Fill render globals (same as GL/soft do)
 	tr.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
 	tr.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );

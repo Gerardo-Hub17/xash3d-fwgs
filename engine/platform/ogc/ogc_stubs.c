@@ -22,9 +22,11 @@ void GL_UpdateSwapInterval( void )
     /* GX está bloqueado a la tasa de refresco del VI, no hay nada que hacer. */
 }
 
+extern void GX_Present( void );
+
 void GL_SwapBuffers( void )
 {
-    /* VID_SwapBuffers() en vid_ogc.c maneja el present. */
+    GX_Present();
 }
 
 int GL_GetAttribute( int attr, int *val )
