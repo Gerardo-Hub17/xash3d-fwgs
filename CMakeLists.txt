@@ -176,7 +176,7 @@ if(XASH_RENDERER STREQUAL "soft")
     )
     add_library(ref_soft STATIC ${REF_SOFT_SOURCES})
 
-endif()
+
 
 
 target_include_directories(ref_soft PUBLIC
@@ -203,6 +203,7 @@ target_compile_options(ref_soft PRIVATE
     -fno-exceptions
     -fno-strict-aliasing
 )
+endif()
 
 # ------------------------------------------------------------------------------
 # Engine main executable
