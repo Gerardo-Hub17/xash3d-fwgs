@@ -49,13 +49,13 @@ byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, 
 
 #define BLOCK_SIZE		tr.block_size
 #define BLOCK_SIZE_DEFAULT	64
-#define BLOCK_SIZE_MAX 256
+#define BLOCK_SIZE_MAX	1024
 
-#define MAX_TEXTURES 512
+#define MAX_TEXTURES            8192
 #define MAX_DETAIL_TEXTURES	256
-#define MAX_LIGHTMAPS 8
+#define MAX_LIGHTMAPS	32
 #define SUBDIVIDE_SIZE	64
-#define MAX_DECAL_SURFS 512
+#define MAX_DECAL_SURFS	4096
 #define MAX_DRAW_STACK	2
 
 #define SHADEDOT_QUANT 	16
@@ -403,7 +403,7 @@ void R_StudioSetDrawInterface( struct r_studio_interface_s *pDraw );
 void Mod_StudioLoadTextures( model_t *mod, void *data );
 void Mod_StudioUnloadTextures( void *data );
 
-void R_Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded );
+void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded );
 void R_DrawAliasModel( cl_entity_t *e );
 void R_AliasInit( void );
 
@@ -416,7 +416,7 @@ void R_ResetRipples( void );
 void R_AnimateRipples( void );
 qboolean R_UploadRipples( texture_t *image );
 
-qboolean GX_R_Init( void );
+qboolean R_Init( void );
 void R_Shutdown( void );
 void GX_SetupAttributes( int safegl );
 void GX_OnContextCreated( void );

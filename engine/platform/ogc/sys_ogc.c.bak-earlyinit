@@ -86,49 +86,38 @@ to the USB Gecko in EXI slot B, which both real hardware and Dolphin expose.
 */
 void OGC_EarlyInit( void )
 {
-    /* Log a SD ANTES de tocar hardware: si crashea después, ya tenemos algo */
-    OGC_DebugInit();
-    OGC_DebugPrint("[boot] OGC_EarlyInit entered\n");
-
 #if XASH_OGC_GECKO
-    CON_EnableGecko( XASH_OGC_GECKO_CHANNEL, false );
+	// brings the gecko up: without this usb_isgeckoalive() stays false
+	CON_EnableGecko( XASH_OGC_GECKO_CHANNEL, false );
 
 #if XASH_OGC_GECKO_WAIT
-    {
-        int tries;
-        for( tries = 0; tries < XASH_OGC_GECKO_WAIT * 100; tries++ )
-        {
-            if( usb_isgeckoalive( XASH_OGC_GECKO_CHANNEL ))
-                break;
-            usleep( 10000 );
-        }
-    }
+	// Under Dolphin the capture tool races the emulated boot, and anything
+	// printed before it attaches is gone for good. Give it a bounded window
+	// to show up. Never enable this for a hardware build: with no gecko
+	// plugged in it just burns the whole timeout on every launch.
+	{
+		int tries;
+
+		for( tries = 0; tries < XASH_OGC_GECKO_WAIT * 100; tries++ )
+		{
+			if( usb_isgeckoalive( XASH_OGC_GECKO_CHANNEL ))
+				break;
+			usleep( 10000 );
+		}
+	}
 #endif
 
-    ogc_gecko_present = usb_isgeckoalive( XASH_OGC_GECKO_CHANNEL );
-    OGC_DebugPrint("[boot] gecko present=%d\n", (int)ogc_gecko_present);
+	// libogc 3.1 no longer points stdout at the gecko console, so hook
+	// newlib's device table ourselves. Everything the engine prints
+	// (Con_Printf, Sys_Error, plain printf) goes out the wire from here on.
+	ogc_gecko_present = usb_isgeckoalive( XASH_OGC_GECKO_CHANNEL );
 
-    if( ogc_gecko_present )
-    {
-        devoptab_list[STD_OUT] = &ogc_gecko_out;
-        devoptab_list[STD_ERR] = &ogc_gecko_out;
-    }
-    else
-    {
-        /* sin Gecko: TODO va a la SD */
-        devoptab_list[STD_OUT] = &ogc_sd_out;
-        devoptab_list[STD_ERR] = &ogc_sd_out;
-    }
-#else
-    devoptab_list[STD_OUT] = &ogc_sd_out;
-    devoptab_list[STD_ERR] = &ogc_sd_out;
+	devoptab_list[STD_OUT] = &ogc_gecko_out;
+	devoptab_list[STD_ERR] = &ogc_gecko_out;
+	setvbuf( stdout, NULL, _IONBF, 0 );
+	setvbuf( stderr, NULL, _IONBF, 0 );
 #endif
-
-    setvbuf( stdout, NULL, _IONBF, 0 );
-    setvbuf( stderr, NULL, _IONBF, 0 );
-    OGC_DebugPrint("[boot] OGC_EarlyInit done\n");
 }
-
 
 volatile int g_ogc_mark = 0;
 

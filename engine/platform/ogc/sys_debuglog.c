@@ -1,17 +1,20 @@
-/* sys_debuglog.c - Debug log a SD para diagnosticar crashes tempranos.
- *
- * El log se abre de forma perezosa (lazy) en el primer OGC_DebugPrint,
- * porque en Wii la SD no está montada cuando se ejecutan los constructores. */
+/* sys_debuglog.c - Debug log a SD para diagnosticar crashes tempranos. */
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <fat.h>
+#include <sys/iosupport.h>
 
 static FILE *g_log_fp = NULL;
 
 static void OGC_DebugOpen(void)
 {
     if (g_log_fp) return;
+
+    /* la SD no está montada cuando corren los constructores: montarla ahora */
+    fatInitDefault();
 
     g_log_fp = fopen("sd:/xash_debug.log", "w");
     if (!g_log_fp) g_log_fp = fopen("usb:/xash_debug.log", "w");
@@ -36,3 +39,20 @@ void OGC_DebugPrint(const char *fmt, ...)
     fflush(g_log_fp);
     fsync(fileno(g_log_fp));
 }
+
+/* devoptab: redirige stdout/stderr a la SD */
+static ssize_t OGC_SDWrite(struct _reent *r, void *fd, const char *ptr, size_t len)
+{
+    if (!g_log_fp) OGC_DebugOpen();
+    if (!g_log_fp) return len;
+
+    fwrite(ptr, 1, len, g_log_fp);
+    fflush(g_log_fp);
+    fsync(fileno(g_log_fp));
+    return len;
+}
+
+const devoptab_t ogc_sd_out = {
+    .name = "sdcard_log",
+    .write_r = OGC_SDWrite,
+};

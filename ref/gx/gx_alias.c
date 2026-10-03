@@ -45,12 +45,12 @@ static qboolean	m_fDoRemap;
 static aliashdr_t	*m_pAliasHeader;
 static dtriangle_t	g_triangles[MAXALIASTRIS];
 static stvert_t	g_stverts[MAXALIASVERTS];
-static int	g_used[8192];
+static int	g_used[1024];
 
-static int	g_commands[8192];
+static int	g_commands[1024];
 static int	g_numcommands;
 
-static int	g_vertexorder[8192];
+static int	g_vertexorder[1024];
 static int	g_numorder;
 
 static int	g_stripverts[128];

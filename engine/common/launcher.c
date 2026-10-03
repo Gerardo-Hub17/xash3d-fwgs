@@ -14,6 +14,11 @@ GNU General Public License for more details.
 */
 
 #if XASH_ENABLE_MAIN
+#if XASH_OGC
+#include <gccore.h>
+#include <ogc/system.h>
+#include <ogc/video.h>
+#endif
 #include "build.h"
 #include "common.h"
 #include "platform/platform.h"
@@ -24,6 +29,29 @@ GNU General Public License for more details.
 
 #ifndef XASH_GAMEDIR
 #define XASH_GAMEDIR "valve" // !!! Replace with your default (base) game directory !!!
+#endif
+
+#if XASH_OGC
+/* Flash de color en pantalla antes de tener devoptabs. */
+static void OGC_ColorFlash( u32 color, int vsync_count )
+{
+    GXRModeObj *rmode = VIDEO_GetPreferredMode( NULL );
+    if( !rmode ) return;
+
+    VIDEO_Configure( rmode );
+    void *xfb = MEM_K0_TO_K1( SYS_AllocateFramebuffer( rmode ));
+    if( !xfb ) return;
+
+    VIDEO_ClearFrameBuffer( rmode, xfb, color );
+    VIDEO_SetNextFramebuffer( xfb );
+    VIDEO_SetBlack( FALSE );
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    VIDEO_WaitVSync();
+
+    for( int i = 0; i < vsync_count; i++ )
+        VIDEO_WaitVSync();
+}
 #endif
 
 static int  szArgc;
@@ -37,20 +65,31 @@ static void Sys_ChangeGame( const char *progname )
 int main( int argc, char **argv )
 {
 #if XASH_OGC
-	// bring up the debug console before anything can crash
-	OGC_EarlyInit();
+    /* ============================================================
+     * DIAGNÓSTICO: flashes de color para ubicar el crash.
+     *   ROJO  -> main() arrancó
+     *   VERDE -> llegamos justo antes de OGC_EarlyInit()
+     *   NEGRO persistente después de un color -> crashea tras ese punto
+     *   NEGRO desde el principio -> crashea ANTES de main()
+     * ============================================================ */
+    OGC_ColorFlash( COLOR_RED, 60 );
+
+    // bring up the debug console before anything can crash
+    OGC_ColorFlash( COLOR_GREEN, 60 );
+    OGC_EarlyInit();
 #endif
 
 #if XASH_PSVITA
-	// inject -dev -console into args if required
-	szArgc = PSVita_GetArgv( argc, argv, &szArgv );
+    // inject -dev -console into args if required
+    szArgc = PSVita_GetArgv( argc, argv, &szArgv );
 #elif XASH_IOS
-	IOS_LaunchDialog();
-	szArgc = IOS_GetArgs( &szArgv );
+    IOS_LaunchDialog();
+    szArgc = IOS_GetArgs( &szArgv );
 #else
-	szArgc = argc;
-	szArgv = argv;
+    szArgc = argc;
+    szArgv = argv;
 #endif // XASH_PSVITA
-	return Host_Main( szArgc, szArgv, XASH_GAMEDIR, 0, Sys_ChangeGame );
+    return Host_Main( szArgc, szArgv, XASH_GAMEDIR, 0, Sys_ChangeGame );
 }
+
 #endif // XASH_ENABLE_MAIN
