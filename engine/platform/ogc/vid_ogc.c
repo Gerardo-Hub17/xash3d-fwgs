@@ -280,6 +280,13 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 		return false;
 	}
 
+#if defined(XASH_REF_GX_ENABLED) || XASH_OGC
+	// Forzar path nativo GX: si el engine nos pasa REF_SOFTWARE
+	// (porque no reconoce el nombre 'ref_gx'), lo promovemos a REF_GL
+	// para evitar el blit software->textura->GX.
+	type = REF_GL;
+#endif
+
 	gx_hw_renderer = ( type == REF_GL );
 
 	refState.desktopBitsPixel = gx_hw_renderer ? 24 : 16;

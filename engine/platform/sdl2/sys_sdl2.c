@@ -127,7 +127,13 @@ void SDLash_Init( void )
 		SDL_setenv( "SDL_GAMECONTROLLER_IGNORE_DEVICES", "0x28DE/0x11FF", 1 );
 	}
 
+#if XASH_OGC
+	// OGC usa vid_ogc.c; no inicializar video SDL o tirará
+	// 'Invalid window' sin parar (no hay ventana SDL creada).
+	if( SDL_Init( SDL_INIT_TIMER | SDL_INIT_EVENTS ) )
+#else
 	if( SDL_Init( SDL_INIT_TIMER | SDL_INIT_VIDEO | SDL_INIT_EVENTS ) )
+#endif
 	{
 		Sys_Warn( "SDL_Init failed: %s", SDL_GetError() );
 		host.type = HOST_DEDICATED;
