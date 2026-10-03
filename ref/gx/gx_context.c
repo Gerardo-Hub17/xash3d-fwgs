@@ -492,7 +492,7 @@ immediately failed (no software framebuffer) and killed the process.
 */
 qboolean GX_R_Init( void )
 {
-	Con_Reportf( "[GX] GX_R_Init entered\n" );
+	Con_Printf( "[GX] GX_R_Init entered\n" );
 	GL_InitRandomTable();
 
 	r_temppool = Mem_AllocPool( "Render Zone" );
@@ -504,7 +504,7 @@ qboolean GX_R_Init( void )
 		Mem_FreePool( &r_temppool );
 		return false;
 	}
-	Con_Reportf( "[GX] video OK, early return\n" );
+	Con_Printf( "[GX] video OK, early return\n" );
 	return true;
 
 	// Fill render globals (same as GL/soft do)

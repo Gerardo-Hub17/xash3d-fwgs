@@ -167,13 +167,17 @@ endif()
 target_link_libraries(ref_gx PUBLIC ogc)
 
 # ------------------------------------------------------------------------------
-# Software renderer (CPU rasteriser)
+# Software renderer (CPU rasteriser) — only built when XASH_RENDERER=soft
 # ------------------------------------------------------------------------------
-file(GLOB REF_SOFT_SOURCES
-    ref/common/*
-    ref/soft/*
-)
-add_library(ref_soft STATIC ${REF_SOFT_SOURCES})
+if(XASH_RENDERER STREQUAL "soft")
+    file(GLOB REF_SOFT_SOURCES
+        ref/common/*
+        ref/soft/*
+    )
+    add_library(ref_soft STATIC ${REF_SOFT_SOURCES})
+
+endif()
+
 
 target_include_directories(ref_soft PUBLIC
     3rdparty/library_suffix/include
