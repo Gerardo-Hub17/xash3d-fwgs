@@ -28,6 +28,8 @@ extern double g_gx_cpu_time_ms;
 #include <gccore.h>
 #include <ogc/gx.h>
 
+#define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
+
 #define IsLiquidContents( cnt ) ( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
 
 float           gldepthmin, gldepthmax;
@@ -875,7 +877,6 @@ static void R_CheckCvars( void )
         R_GammaChanged( false );
 }
 
-#define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
 
 void R_BeginFrame( qboolean clearScene )
 {
