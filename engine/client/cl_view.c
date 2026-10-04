@@ -534,12 +534,16 @@ V_PostRender
 
 ==================
 */
+#define VPR( s ) do { static int _n; if( _n++ < 1 ) Con_Printf( "[VPR] " s "\n" ); } while( 0 )
+
 void V_PostRender( void )
 {
 	qboolean		draw_2d = false;
 
 	ref.dllFuncs.R_AllowFog( false );
+	VPR( "fog ok" );
 	ref.dllFuncs.R_Set2DMode( true );
+	VPR( "2d ok" );
 
 	if( cls.state == ca_active && cls.signon == SIGNONS && cls.scrshot_action != scrshot_mapshot )
 	{
@@ -573,8 +577,11 @@ void V_PostRender( void )
 		ref.dllFuncs.R_ShowTextures();
 		R_ShowTree();
 		Con_DrawConsole();
+		VPR( "console drawn" );
 		UI_UpdateMenu( host.realtime );
+		VPR( "menu drawn" );
 		Con_DrawVersion();
+		VPR( "version drawn" );
 		Con_DrawDebug(); // must be last
 		Touch_Draw();
 		OSK_Draw();

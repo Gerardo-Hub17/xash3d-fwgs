@@ -793,6 +793,7 @@ static void R_DrawEntitiesOnList( void )
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         R_DrawViewModel();
     gEngfuncs.CL_ExtraUpdate();
+    GXT( "extraupdate ok" );
 }
 
 void R_RenderScene( void )
@@ -874,6 +875,8 @@ static void R_CheckCvars( void )
         R_GammaChanged( false );
 }
 
+#define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
+
 void R_BeginFrame( qboolean clearScene )
 {
 	static int bf;
@@ -894,7 +897,9 @@ void R_BeginFrame( qboolean clearScene )
     }
 
     R_CheckCvars();
+    GXT( "cvars ok" );
     R_Set2DMode( true );
+    GXT( "2d on" );
 
     if( FBitSet( gl_texture_nearest.flags | gl_lightmap_nearest.flags |
                  gl_texture_anisotropy.flags | gl_texture_lodbias.flags, FCVAR_CHANGED ))
