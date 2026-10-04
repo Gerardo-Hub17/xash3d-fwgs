@@ -291,13 +291,11 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 
 	refState.desktopBitsPixel = gx_hw_renderer ? 24 : 16;
 
-	// GX_Init(video_initialized, gp_fifo, GX FIFO) vive en VID_InitGX.
-	// Es idempotente (return true si video_initialized), asi que hay que
-	// llamarla SIEMPRE, no solo en el path software. Sin esto, gx_hw_renderer
-	// queda en true pero el FIFO de GX nunca se inicializa -> el primer
-	// GX_Begin() en R_DrawStretchPic cuelga la CPU.
-	if( !VID_InitGX() )
-		return false;
+	if( !gx_hw_renderer )
+	{
+		if( !VID_InitGX() )
+			return false;
+	}
 
 	if( !VID_SetMode() )
 		return false;
