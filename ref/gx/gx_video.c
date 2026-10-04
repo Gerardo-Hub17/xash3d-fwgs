@@ -79,10 +79,14 @@ static qboolean gx_video_initialized = false;
 
 void GX_Present( void )
 {
+	static int n;
+
 	if( !gx_video_initialized || !gxvid.xfb[0] )
 		return;
 
+	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: DrawDone\n", n );
 	GX_DrawDone();
+	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: CopyDisp\n", n );
 	GX_CopyDisp( gxvid.xfb[gxvid.fb], GX_TRUE );
 
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
@@ -90,8 +94,10 @@ void GX_Present( void )
 	VIDEO_WaitVSync();
 	if( gxvid.rmode && FBitSet( gxvid.rmode->viTVMode, VI_NON_INTERLACE ))
 		VIDEO_WaitVSync();
+	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: vsync ok\n", n );
 
 	gxvid.fb ^= 1;
+	n++;
 }
 
 static void GX_SetDefaultTexState( void )

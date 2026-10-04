@@ -876,6 +876,10 @@ static void R_CheckCvars( void )
 
 void R_BeginFrame( qboolean clearScene )
 {
+	static int bf;
+	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
+	bf++;
+
     glConfig.softwareGammaUpdate = false;
 
 #if XASH_OGC
@@ -939,8 +943,12 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 
 void R_EndFrame( void )
 {
-    R_Set2DMode( false );
-    gEngfuncs.GL_SwapBuffers();
+	static int ef;
+	if( ef < 5 ) gEngfuncs.Con_Printf( "[GX] EndFrame %d\n", ef );
+	R_Set2DMode( false );
+	gEngfuncs.GL_SwapBuffers();
+	if( ef < 5 ) gEngfuncs.Con_Printf( "[GX] EndFrame %d done\n", ef );
+	ef++;
 }
 
 void R_DrawCubemapView( const vec3_t origin, const vec3_t angles, int size )

@@ -326,6 +326,14 @@ V_PreRender
 */
 qboolean V_PreRender( void )
 {
+	static int n;
+	if( n < 5 )
+	{
+		Con_Printf( "[V] PreRender %d: ref.init=%d status=%d disable_screen=%.1f state=%d\n",
+			n, (int)ref.initialized, (int)host.status, (double)cls.disable_screen, (int)cls.state );
+		n++;
+	}
+
 	// too early
 	if( !ref.initialized )
 		return false;
