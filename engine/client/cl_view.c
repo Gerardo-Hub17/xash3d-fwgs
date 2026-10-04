@@ -572,10 +572,14 @@ void V_PostRender( void )
 		Joy_DrawDebug();
 		IN_GyroDrawDebug();
 		SV_DrawOrthoTriangles();
+		VPR( "debug draws ok" );
 		CL_DrawDemoRecording();
 		CL_DrawHUD( CL_CHANGELEVEL );
+		VPR( "hud ok" );
 		ref.dllFuncs.R_ShowTextures();
+		VPR( "showtextures ok" );
 		R_ShowTree();
+		VPR( "pre-console" );
 		Con_DrawConsole();
 		VPR( "console drawn" );
 		UI_UpdateMenu( host.realtime );

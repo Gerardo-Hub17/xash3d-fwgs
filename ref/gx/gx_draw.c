@@ -31,7 +31,13 @@ void R_GetTextureParms( int *w, int *h, int texnum )
 
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum )
 {
+	static int dsp;
+	int dbg = ( dsp < 3 );
+
+	if( dbg ) gEngfuncs.Con_Printf( "[GX] DSP %d tex=%d %.0f,%.0f %.0fx%.0f\n", dsp, texnum, x, y, w, h );
+
 	GX_Bind( XASH_TEXTURE0, texnum );
+	if( dbg ) gEngfuncs.Con_Printf( "[GX] DSP %d bound\n", dsp );
 
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
@@ -55,6 +61,13 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 		GX_TexCoord2f32( s1, t2 );
 
 	GX_End();
+
+	if( dbg )
+	{
+		GX_DrawDone();
+		gEngfuncs.Con_Printf( "[GX] DSP %d drawn\n", dsp );
+	}
+	dsp++;
 }
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
