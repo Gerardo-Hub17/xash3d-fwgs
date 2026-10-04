@@ -18,6 +18,7 @@ GNU General Public License for more details.
 #include <malloc.h>
 #include <gccore.h>
 #include <ogc/gx.h>
+#include <unistd.h>
 
 extern float gldepthmin, gldepthmax;
 
@@ -29,45 +30,72 @@ void R_GetTextureParms( int *w, int *h, int texnum )
 	if( h ) *h = glt->srcHeight;
 }
 
+void GX_DbgWait( const char *tag )
+{
+static int calls;
+static u16 token = 0x100;
+int i;
+
+if( calls++ >= 8 )
+;
+
+token++;
+GX_SetDrawSync( token );
+GX_Flush();
+
+for( i = 0; i < 200; i++ )
+{
+GX_GetDrawSync() == token )
+gfuncs.Con_Printf( "[GX] %s: GPU OK (%d ms)\n", tag, i * 10 );
+;
+10000 );
+}
+
+gEngfuncs.Con_Printf( "[GX] %s: GPU STALLED (want %04x, read %04x)\n", tag, token, GX_GetDrawSync() );
+}
+
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum )
 {
-	static int dsp;
-	int dbg = ( dsp < 3 );
+static int dsp;
+int dbg = ( dsp < 2 );
 
-	if( dbg ) gEngfuncs.Con_Printf( "[GX] DSP %d tex=%d %.0f,%.0f %.0fx%.0f\n", dsp, texnum, x, y, w, h );
+if( dbg ) GX_DbgWait( "dsp pre-bind" );
 
-	GX_Bind( XASH_TEXTURE0, texnum );
-	if( dbg ) gEngfuncs.Con_Printf( "[GX] DSP %d bound\n", dsp );
+GX_Bind( XASH_TEXTURE0, texnum );
 
-	GX_ClearVtxDesc();
-	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
-	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
+if( dbg ) GX_DbgWait( "dsp post-bind" );
 
-	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XY, GX_F32, 0 );
-	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
+GX_ClearVtxDesc();
+GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
+GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
 
-	GX_Begin( GX_QUADS, GX_VTXFMT0, 4 );
+GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XY, GX_F32, 0 );
+GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
 
-		GX_Position2f32( x, y );
-		GX_TexCoord2f32( s1, t1 );
+GX_Begin( GX_QUADS, GX_VTXFMT0, 4 );
 
-		GX_Position2f32( x + w, y );
-		GX_TexCoord2f32( s2, t1 );
+2f32( x, y );
+s1, t1 );
 
-		GX_Position2f32( x + w, y + h );
-		GX_TexCoord2f32( s2, t2 );
+2f32( x + w, y );
+s2, t1 );
 
-		GX_Position2f32( x, y + h );
-		GX_TexCoord2f32( s1, t2 );
+2f32( x + w, y + h );
+s2, t2 );
 
-	GX_End();
+2f32( x, y + h );
+s1, t2 );
 
-	if( dbg )
-	{
-		GX_DrawDone();
-		gEngfuncs.Con_Printf( "[GX] DSP %d drawn\n", dsp );
-	}
-	dsp++;
+GX_End();
+
+if( dbg )
+{
+"dsp post-draw" );
+gfuncs.Con_Printf( "[GX] DSP %d: calling GX_DrawDone\n", dsp );
+e();
+gfuncs.Con_Printf( "[GX] DSP %d: DrawDone returned\n", dsp );
+}
+dsp++;
 }
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )

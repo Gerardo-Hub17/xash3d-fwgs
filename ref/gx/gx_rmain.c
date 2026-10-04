@@ -28,6 +28,8 @@ extern double g_gx_cpu_time_ms;
 #include <gccore.h>
 #include <ogc/gx.h>
 
+extern void GX_DbgWait( const char *tag );
+
 #define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
 
 #define IsLiquidContents( cnt ) ( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
@@ -883,6 +885,7 @@ void R_BeginFrame( qboolean clearScene )
 	static int bf;
 	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
 	bf++;
+	GX_DbgWait( "beginframe start" );
 
     glConfig.softwareGammaUpdate = false;
 
@@ -901,6 +904,7 @@ void R_BeginFrame( qboolean clearScene )
     GXT( "cvars ok" );
     R_Set2DMode( true );
     GXT( "2d on" );
+    GX_DbgWait( "after 2d on" );
 
     if( FBitSet( gl_texture_nearest.flags | gl_lightmap_nearest.flags |
                  gl_texture_anisotropy.flags | gl_texture_lodbias.flags, FCVAR_CHANGED ))
