@@ -98,6 +98,7 @@ gfuncs.Con_Printf( "[GX] DSP %d: DrawDone returned\n", dsp );
 dsp++;
 }
 
+
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
 	int bpp, rOff, gOff, bOff, aOff;
