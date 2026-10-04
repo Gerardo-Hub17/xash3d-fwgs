@@ -18,190 +18,213 @@ GNU General Public License for more details.
 #include <malloc.h>
 #include <gccore.h>
 #include <ogc/gx.h>
-#include <unistd.h>
 
 extern float gldepthmin, gldepthmax;
 
 void R_GetTextureParms( int *w, int *h, int texnum )
 {
-gl_texture_t *glt = R_GetTexture( texnum );
+	gl_texture_t *glt = R_GetTexture( texnum );
 
-if( w ) *w = glt->srcWidth;
-if( h ) *h = glt->srcHeight;
+	if( w ) *w = glt->srcWidth;
+	if( h ) *h = glt->srcHeight;
 }
 
 void GX_DbgWait( const char *tag )
 {
-static int calls;
-static u16 token = 0x100;
-int i;
+	static int calls;
+	static u16 token = 0x100;
+	int i;
 
-if( calls++ >= 8 )
-;
+	if( calls++ >= 8 )
+		return;
 
-token++;
-GX_SetDrawSync( token );
-GX_Flush();
+	token++;
+	GX_SetDrawSync( token );
+	GX_Flush();
 
-for( i = 0; i < 200; i++ )
-{
-GX_GetDrawSync() == token )
-gfuncs.Con_Printf( "[GX] %s: GPU OK (%d ms)\n", tag, i * 10 );
-;
-10000 );
-}
+	for( i = 0; i < 200; i++ )
+	{
+		if( GX_GetDrawSync() == token )
+		{
+			gEngfuncs.Con_Printf( "[GX] %s: GPU OK (%d ms)\n", tag, i * 10 );
+			return;
+		}
+		usleep( 10000 );
+	}
 
-gEngfuncs.Con_Printf( "[GX] %s: GPU STALLED (want %04x, read %04x)\n", tag, token, GX_GetDrawSync() );
+	gEngfuncs.Con_Printf( "[GX] %s: GPU STALLED (want %04x, read %04x)\n", tag, token, GX_GetDrawSync() );
 }
 
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum )
 {
-static int dsp;
-int dbg = ( dsp < 2 );
+	static int dsp;
+	int dbg = ( dsp < 2 );
 
-if( dbg ) GX_DbgWait( "dsp pre-bind" );
+	if( dbg ) GX_DbgWait( "dsp pre-bind" );
 
-GX_Bind( XASH_TEXTURE0, texnum );
+	GX_Bind( XASH_TEXTURE0, texnum );
 
-if( dbg ) GX_DbgWait( "dsp post-bind" );
+	if( dbg ) GX_DbgWait( "dsp post-bind" );
 
-GX_ClearVtxDesc();
-GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
-GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
+	GX_ClearVtxDesc();
+	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
+	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
 
-GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XY, GX_F32, 0 );
-GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
+	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XY, GX_F32, 0 );
+	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
 
-GX_Begin( GX_QUADS, GX_VTXFMT0, 4 );
+	GX_Begin( GX_QUADS, GX_VTXFMT0, 4 );
 
-2f32( x, y );
-s1, t1 );
+		GX_Position2f32( x, y );
+		GX_TexCoord2f32( s1, t1 );
 
-2f32( x + w, y );
-s2, t1 );
+		GX_Position2f32( x + w, y );
+		GX_TexCoord2f32( s2, t1 );
 
-2f32( x + w, y + h );
-s2, t2 );
+		GX_Position2f32( x + w, y + h );
+		GX_TexCoord2f32( s2, t2 );
 
-2f32( x, y + h );
-s1, t2 );
+		GX_Position2f32( x, y + h );
+		GX_TexCoord2f32( s1, t2 );
 
-GX_End();
+	GX_End();
 
-if( dbg )
-{
-"dsp post-draw" );
-gfuncs.Con_Printf( "[GX] DSP %d: calling GX_DrawDone\n", dsp );
-e();
-gfuncs.Con_Printf( "[GX] DSP %d: DrawDone returned\n", dsp );
+	if( dbg )
+	{
+		GX_DbgWait( "dsp post-draw" );
+		gEngfuncs.Con_Printf( "[GX] DSP %d: calling GX_DrawDone\n", dsp );
+		GX_DrawDone();
+		gEngfuncs.Con_Printf( "[GX] DSP %d: DrawDone returned\n", dsp );
+	}
+	dsp++;
 }
-dsp++;
-}
+
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
-int bpp, rOff, gOff, bOff, aOff;
-qboolean hasAlpha = true;
+	int bpp, rOff, gOff, bOff, aOff;
+	qboolean hasAlpha = true;
 
-switch( fmt )
-{
-case PF_RGBA_32:
-= 4; rOff = 0; gOff = 1; bOff = 2; aOff = 3;
-PF_BGRA_32:
-= 4; rOff = 2; gOff = 1; bOff = 0; aOff = 3;
-PF_RGB_24:
-= 3; rOff = 0; gOff = 1; bOff = 2; aOff = -1; hasAlpha = false;
-PF_BGR_24:
-= 3; rOff = 2; gOff = 1; bOff = 0; aOff = -1; hasAlpha = false;
-PF_LUMINANCE:
-= 1; rOff = gOff = bOff = 0; aOff = -1; hasAlpha = false;
-gfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
-;
+	switch( fmt )
+	{
+	case PF_RGBA_32:
+		bpp = 4; rOff = 0; gOff = 1; bOff = 2; aOff = 3;
+		break;
+	case PF_BGRA_32:
+		bpp = 4; rOff = 2; gOff = 1; bOff = 0; aOff = 3;
+		break;
+	case PF_RGB_24:
+		bpp = 3; rOff = 0; gOff = 1; bOff = 2; aOff = -1; hasAlpha = false;
+		break;
+	case PF_BGR_24:
+		bpp = 3; rOff = 2; gOff = 1; bOff = 0; aOff = -1; hasAlpha = false;
+		break;
+	case PF_LUMINANCE:
+		bpp = 1; rOff = gOff = bOff = 0; aOff = -1; hasAlpha = false;
+		break;
+	default:
+		gEngfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
+		return;
+	}
+
+	for( int ty = 0; ty < height; ty += 4 )
+	{
+		for( int tx = 0; tx < width; tx += 4 )
+		{
+			byte *arBlock = dst;
+			byte *gbBlock = dst + 32;
+
+			for( int y = 0; y < 4; y++ )
+			{
+				int sy = ty + y;
+				if( sy >= height ) sy = height - 1;
+
+				for( int x = 0; x < 4; x++ )
+				{
+					int sx = tx + x;
+					if( sx >= width ) sx = width - 1;
+
+					const byte *texel = src + ( sy * width + sx ) * bpp;
+					byte r = texel[rOff];
+					byte g = texel[gOff];
+					byte b = texel[bOff];
+					byte a = hasAlpha ? texel[aOff] : 255;
+
+					*arBlock++ = a;
+					*arBlock++ = r;
+					*gbBlock++ = g;
+					*gbBlock++ = b;
+				}
+			}
+
+			dst += 64;
+		}
+	}
 }
 
-for( int ty = 0; ty < height; ty += 4 )
+void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
-int tx = 0; tx < width; tx += 4 )
-te *arBlock = dst;
-te *gbBlock = dst + 32;
+	switch( fmt )
+	{
+	case PF_RGBA_32:
+	case PF_BGRA_32:
+	case PF_RGB_24:
+	case PF_BGR_24:
+	case PF_LUMINANCE:
+		break;
+	default:
+		gEngfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
+		return;
+	}
 
-int y = 0; y < 4; y++ )
-t sy = ty + y;
-sy >= height ) sy = height - 1;
+	width  = ( width  + 3 ) & ~3;
+	height = ( height + 3 ) & ~3;
 
-int x = 0; x < 4; x++ )
-t sx = tx + x;
-sx >= width ) sx = width - 1;
+	byte *raw;
+	if( cols != width || rows != height )
+	{
+		raw = GX_ResampleTexture( buffer, cols, rows, width, height, false );
+		cols = width;
+		rows = height;
+	}
+	else
+		raw = (byte *)buffer;
 
-st byte *texel = src + ( sy * width + sx ) * bpp;
-te r = texel[rOff];
-te g = texel[gOff];
-te b = texel[bOff];
-te a = hasAlpha ? texel[aOff] : 255;
+	if( cols > glConfig.max_2d_texture_size )
+		gEngfuncs.Host_Error( "%s: size %i exceeds hardware limits\n", __func__, cols );
+	if( rows > glConfig.max_2d_texture_size )
+		gEngfuncs.Host_Error( "%s: size %i exceeds hardware limits\n", __func__, rows );
 
-= a;
-= r;
-= g;
-= b;
-+= 64;
-GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
-{
-switch( fmt )
-{
-case PF_RGBA_32:
-case PF_BGRA_32:
-case PF_RGB_24:
-case PF_BGR_24:
-case PF_LUMINANCE:
-gfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
-;
-}
+	gl_texture_t *tex = R_GetTexture( texnum );
 
-width  = ( width  + 3 ) & ~3;
-height = ( height + 3 ) & ~3;
+	size_t nativeSize = (size_t)( cols * rows ) * 4;
 
-byte *raw;
-if( cols != width || rows != height )
-{
-= GX_ResampleTexture( buffer, cols, rows, width, height, false );
-= width;
-= height;
-}
-else
-= (byte *)buffer;
+	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL )
+	{
+		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		DCFlushRange( tex->nativeData, nativeSize );
+		GX_InvalidateTexAll();
+	}
+	else
+	{
+		if( tex->nativeData != NULL )
+		{
+			free( tex->nativeData );
+			tex->nativeData = NULL;
+		}
 
-if( cols > glConfig.max_2d_texture_size )
-gfuncs.Host_Error( "%s: size %i exceeds hardware limits\n", __func__, cols );
-if( rows > glConfig.max_2d_texture_size )
-gfuncs.Host_Error( "%s: size %i exceeds hardware limits\n", __func__, rows );
+		tex->nativeData = memalign( 32, nativeSize );
+		tex->width  = cols;
+		tex->height = rows;
 
-gl_texture_t *tex = R_GetTexture( texnum );
+		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		DCFlushRange( tex->nativeData, nativeSize );
 
-size_t nativeSize = (size_t)( cols * rows ) * 4;
+		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
+			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );
+	}
 
-if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL )
-{
-vertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
-ge( tex->nativeData, nativeSize );
-validateTexAll();
-}
-else
-{
-tex->nativeData != NULL )
-tex->nativeData );
-ativeData = NULL;
-ativeData = memalign( 32, nativeSize );
- = cols;
-= rows;
-
-vertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
-ge( tex->nativeData, nativeSize );
-
-itTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
-GX_CLAMP, GX_CLAMP, GX_FALSE );
-}
-
-GX_ApplyTextureParams( tex );
+	GX_ApplyTextureParams( tex );
 }
 
 void GX_ReadPixelsRGBA( int x, int y, int w, int h, byte *out )
@@ -269,67 +292,74 @@ void GX_ReadPixelsRGBA( int x, int y, int w, int h, byte *out )
 
 void R_Set2DMode( qboolean enable )
 {
-static u8 savedProjType = GX_PERSPECTIVE;
+	static u8 savedProjType = GX_PERSPECTIVE;
 
-if( enable )
-{
-glState.in2DMode )
-;
+	if( enable )
+	{
+		if( glState.in2DMode )
+			return;
 
-pe = FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ) ? GX_ORTHOGRAPHIC : GX_PERSPECTIVE;
+		savedProjType = FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ) ? GX_ORTHOGRAPHIC : GX_PERSPECTIVE;
 
-projection_matrix;
+		matrix4x4 projection_matrix;
 
-tr.rotation )
-REF_ROTATE_CW:
-0, 0, gpGlobals->height, gpGlobals->width, 0.0f, 1.0f );
-projection_matrix, 0, gpGlobals->height, gpGlobals->width, 0, -99999, 99999 );
-catRotate( projection_matrix, 90, 0, 0, 1 );
-catTranslate( projection_matrix, 0, -gpGlobals->height, 0 );
-REF_ROTATE_CCW:
-0, 0, gpGlobals->height, gpGlobals->width, 0.0f, 1.0f );
-projection_matrix, 0, gpGlobals->height, gpGlobals->width, 0, -99999, 99999 );
-catRotate( projection_matrix, -90, 0, 0, 1 );
-catTranslate( projection_matrix, -gpGlobals->width, 0, 0 );
-0, 0, gpGlobals->width, gpGlobals->height, 0.0f, 1.0f );
-projection_matrix, 0, gpGlobals->width, gpGlobals->height, 0, -99999, 99999 );
-gxProj;
-gxProj, projection_matrix );
-Mtx( gxProj, GX_ORTHOGRAPHIC );
-Mtx( gxProj, GX_ORTHOGRAPHIC );
+		switch( tr.rotation )
+		{
+		case REF_ROTATE_CW:
+			GX_SetViewport( 0, 0, gpGlobals->height, gpGlobals->width, 0.0f, 1.0f );
+			Matrix4x4_CreateOrtho( projection_matrix, 0, gpGlobals->height, gpGlobals->width, 0, -99999, 99999 );
+			Matrix4x4_ConcatRotate( projection_matrix, 90, 0, 0, 1 );
+			Matrix4x4_ConcatTranslate( projection_matrix, 0, -gpGlobals->height, 0 );
+			break;
+		case REF_ROTATE_CCW:
+			GX_SetViewport( 0, 0, gpGlobals->height, gpGlobals->width, 0.0f, 1.0f );
+			Matrix4x4_CreateOrtho( projection_matrix, 0, gpGlobals->height, gpGlobals->width, 0, -99999, 99999 );
+			Matrix4x4_ConcatRotate( projection_matrix, -90, 0, 0, 1 );
+			Matrix4x4_ConcatTranslate( projection_matrix, -gpGlobals->width, 0, 0 );
+			break;
+		default:
+			GX_SetViewport( 0, 0, gpGlobals->width, gpGlobals->height, 0.0f, 1.0f );
+			Matrix4x4_CreateOrtho( projection_matrix, 0, gpGlobals->width, gpGlobals->height, 0, -99999, 99999 );
+			break;
+		}
 
-worldview_matrix;
-tity( worldview_matrix );
+		Mtx44 gxProj;
+		Matrix4x4_ToMtx44( gxProj, projection_matrix );
+		GX_LoadProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
+		GX_SaveProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
 
-gxMv;
-gxMv, worldview_matrix );
-gxMv, GX_PNMTX0 );
+		matrix4x4 worldview_matrix;
+		Matrix4x4_LoadIdentity( worldview_matrix );
 
-GX_CULL_NONE );
-GX_FALSE, GX_ALWAYS, GX_FALSE );
-GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0 );
+		Mtx gxMv;
+		Matrix4x4_ToMtx( gxMv, worldview_matrix );
+		GX_LoadPosMtxImm( gxMv, GX_PNMTX0 );
 
-white = { 255, 255, 255, 255 };
-MatColor( GX_COLOR0A0, white );
+		GX_SetCullMode( GX_CULL_NONE );
+		GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
+		GX_SetAlphaCompare( GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0 );
 
-2DMode = true;
-tentity = NULL;
-tmodel = NULL;
-}
-else
-{
-GX_TRUE, GX_LEQUAL, GX_TRUE );
-2DMode = false;
+		GXColor white = { 255, 255, 255, 255 };
+		GX_SetChanMatColor( GX_COLOR0A0, white );
 
-gxProj;
-gxProj, RI.projectionMatrix );
-Mtx( gxProj, savedProjType );
-Mtx( gxProj, savedProjType );
+		glState.in2DMode = true;
+		RI.currententity = NULL;
+		RI.currentmodel = NULL;
+	}
+	else
+	{
+		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+		glState.in2DMode = false;
 
-gxMv;
-gxMv, RI.worldviewMatrix );
-gxMv, GX_PNMTX0 );
+		Mtx44 gxProj;
+		Matrix4x4_ToMtx44( gxProj, RI.projectionMatrix );
+		GX_LoadProjectionMtx( gxProj, savedProjType );
+		GX_SaveProjectionMtx( gxProj, savedProjType );
 
-GX_CULL_FRONT );
-}
+		Mtx gxMv;
+		Matrix4x4_ToMtx( gxMv, RI.worldviewMatrix );
+		GX_LoadPosMtxImm( gxMv, GX_PNMTX0 );
+
+		GX_SetCullMode( GX_CULL_FRONT );
+	}
 }
