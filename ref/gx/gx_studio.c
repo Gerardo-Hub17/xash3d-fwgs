@@ -23,7 +23,6 @@ static void R_StudioSetCullState( int cull );
 static void R_StudioRenderShadow( int isprite, float *p1, float *p2, float *p3, float *p4 );
 
 
-extern convar_t *host_allow_materials;
 #include "xash3d_mathlib.h"
 #include "const.h"
 #include "r_studioint.h"

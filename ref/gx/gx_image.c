@@ -20,8 +20,6 @@ GNU General Public License for more details.
 
 #include "crclib.h"
 
-extern convar_t *host_allow_materials;
-extern convar_t *r_showtextures;
 
 
 #define TEXTURES_HASH_SIZE  (MAX_TEXTURES >> 2)
@@ -1061,7 +1059,7 @@ void R_ShutdownImages( void )
 
 void R_TextureReplacementReport( const char *modelname, int gl_texturenum, const char *foundpath )
 {
-	if( host_allow_materials->value != 2.0f ) return;
+	if( ref_host_allow_materials->value != 2.0f ) return;
 	if( gl_texturenum > 0 )
 		gEngfuncs.Con_Printf( "Looking for %s tex replacement..." S_GREEN "OK (%s)\n", modelname, foundpath );
 	else if( gl_texturenum < 0 )
@@ -1092,7 +1090,7 @@ void R_ShowTextures( void )
 {
 	static qboolean showHelp = true;
 
-	if( !r_showtextures->value )
+	if( !ref_r_showtextures->value )
 		return;
 
 	if( showHelp )
@@ -1113,7 +1111,7 @@ void R_ShowTextures( void )
 	int base_w   = (int)( gpGlobals->width  / w );
 	int base_h   = (int)( gpGlobals->height / ( h + charHeight * 2 ));
 	int per_page = base_w * base_h;
-	int start    = per_page * ( (int)r_showtextures->value - 1 ) + 1;
+	int start    = per_page * ( (int)ref_r_showtextures->value - 1 ) + 1;
 
 	qboolean empty_page = true;
 	int skipped_empty_pages = 0;
