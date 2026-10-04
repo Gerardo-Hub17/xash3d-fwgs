@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include <ogc/video.h>
 #include <ogc/system.h>
 #include <ogc/consol.h>
+#include <sys/iosupport.h>
 #include <malloc.h>
 
 CVAR_DEFINE( gl_extensions, "gl_allow_extensions", "1", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "allow gl_extensions" );
@@ -295,7 +296,21 @@ void GX_OnContextCreated( void )
 	gxvid.xfb[1] = MEM_K0_TO_K1( SYS_AllocateFramebuffer( rmode ));
 	gxvid.fb = 0;
 
+	// console_init() replaces devoptab stdout/stderr with libogc's on-screen
+	// console, which draws text with the CPU straight into xfb[0]. GX_Present
+	// flips between xfb[0] and xfb[1], so every printf would paint over the
+	// rendered frame. Keep the console initialised (it is harmless) but give
+	// stdout/stderr back to the SD log.
+	const devoptab_t *old_out = devoptab_list[STD_OUT];
+	const devoptab_t *old_err = devoptab_list[STD_ERR];
+
 	console_init( gxvid.xfb[0], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ );
+	devoptab_list[STD_OUT] = old_out;
+	devoptab_list[STD_ERR] = old_err;
+
+	// An all-zero XFB is green in YCbCr; start the second buffer black.
+	VIDEO_ClearFrameBuffer( rmode, gxvid.xfb[1], COLOR_BLACK );
+
 
 	VIDEO_Configure( rmode );
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
