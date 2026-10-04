@@ -18,7 +18,7 @@ GNU General Public License for more details.
 #include "gx_local.h"
 #include "gx_export.h"
 
-static void R_ClearScreen( void )
+void R_ClearScreen( void )
 {
 	R_Set2DMode( true );
 

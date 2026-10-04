@@ -348,6 +348,7 @@ qboolean R_SearchForTextureReplacement( char *out, size_t size, const char *mode
 void R_TextureReplacementReport( const char *modelname, int gl_texturenum, const char *foundpath );
 void R_ShowTextures( void );
 
+void R_ClearScreen( void );
 void R_ClearScene( void );
 void R_LoadIdentity( void );
 void R_RenderScene( void );

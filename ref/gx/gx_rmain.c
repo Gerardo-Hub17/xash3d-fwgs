@@ -897,7 +897,10 @@ void R_BeginFrame( qboolean clearScene )
         clearScene && ENGINE_GET_PARM( PARM_CONNSTATE ) != ca_cinematic )
 #endif
     {
-        // GX_InvalidateTexAll(); // REMOVIDO: causaba re-subida de texturas cada frame
+        // Limpiar el EFB con un quad negro de pantalla completa.
+        // Sin esto el EFB conserva lo que dibujó el frame anterior
+        // (o basura de la inicialización) y la pantalla muestra rayas.
+        R_ClearScreen();
     }
 
     R_CheckCvars();

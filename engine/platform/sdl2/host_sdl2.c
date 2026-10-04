@@ -423,30 +423,28 @@ SDLash_RunEvents
 */
 void Platform_RunEvents( void )
 {
-SDL_Event event;
+	SDL_Event event;
 
 #if XASH_OGC
-/*
- * Wii: SDL_PumpEvents() calls OGC_PumpKeyboardEvents() which can
- * conflict with WPAD polling in in_ogc.c.
- *
- * Wii controller input (Wiimote/Classic/Nunchuk) is handled
- * separately by OGC_ButtonsFrame() in in_ogc.c. Consume only
- * events already present in SDL's queue (keyboard USB disabled).
- */
-
-while( host.status != HOST_CRASHED && !host.shutdown_issued &&
-       SDL_PeepEvents( &event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT ) == 1 )
-{
-SDLash_EventHandler( &event );
-}
+	/*
+	 * Wii: SDL_PumpEvents() / SDL_PeepEvents() touch the video
+	 * subsystem internally, and SDL_INIT_VIDEO is deliberately not
+	 * enabled under XASH_OGC (vid_ogc.c owns the display). Every
+	 * PeepEvents call therefore logs 'Video subsystem has not been
+	 * initialized', flooding the SD log.
+	 *
+	 * Wii controller input (Wiimote/Classic/Nunchuk) is handled
+	 * separately by OGC_ButtonsFrame() in in_ogc.c, so we can skip
+	 * SDL event processing entirely on this platform.
+	 */
+	(void)event;
 #else
-while( host.status != HOST_CRASHED && !host.shutdown_issued && SDL_PollEvent( &event ) )
-SDLash_EventHandler( &event );
+	while( host.status != HOST_CRASHED && !host.shutdown_issued && SDL_PollEvent( &event ) )
+		SDLash_EventHandler( &event );
 #endif
 
 #if XASH_PSVITA
-PSVita_InputUpdate();
+	PSVita_InputUpdate();
 #endif
 }
 
