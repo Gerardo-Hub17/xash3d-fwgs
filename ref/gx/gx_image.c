@@ -397,7 +397,10 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 	case PF_BGR_24:   bpp = 3; rOff=2; gOff=1; bOff=0; aOff=-1; hasAlpha=false; break;
 	case PF_LUMINANCE:bpp = 1; rOff=gOff=bOff=0; aOff=-1; hasAlpha=false; break;
 	default:
-		gEngfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
+		// Never leave the buffer uninitialised: it is memalign()ed and would
+		// show up as random coloured noise on screen.
+		gEngfuncs.Con_Printf( S_ERROR "%s: unsupported pixel format %i (%dx%d)\n", __func__, fmt, width, height );
+		memset( dst, 0, (size_t)(( width + 3 ) & ~3 ) * (( height + 3 ) & ~3 ) * 4 );
 		return;
 	}
 

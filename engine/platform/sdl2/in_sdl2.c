@@ -43,6 +43,14 @@ Platform_GetMousePos
 */
 void GAME_EXPORT Platform_GetMousePos( int *x, int *y )
 {
+#if XASH_OGC
+	// Wii: no SDL video/mouse. Use the IR pointer (-1..1 from centre).
+	float px = 0.0f, py = 0.0f;
+	OGC_GetPointer( &px, &py );
+	if( x ) *x = (int)(( px * 0.5f + 0.5f ) * refState.width );
+	if( y ) *y = (int)(( py * 0.5f + 0.5f ) * refState.height );
+	return;
+#endif
 	SDL_GetMouseState( x, y );
 
 	if( x )
@@ -60,6 +68,10 @@ Platform_SetMousePos
 */
 void GAME_EXPORT Platform_SetMousePos( int x, int y )
 {
+#if XASH_OGC
+	(void)x; (void)y;
+	return;
+#endif
 	SDL_WarpMouseInWindow( host.hWnd, x, y );
 }
 
@@ -72,6 +84,10 @@ Platform_MouseMove
 void Platform_MouseMove( float *x, float *y )
 {
 	int m_x, m_y;
+#if XASH_OGC
+	*x = *y = 0.0f;
+	return;
+#endif
 	SDL_GetRelativeMouseState( &m_x, &m_y );
 	*x = (float)m_x;
 	*y = (float)m_y;
@@ -214,6 +230,11 @@ void Platform_SetCursorType( VGUI_DefaultCursor type )
 	host.mouse_visible = visible;
 	VGui_UpdateInternalCursorState( type );
 
+#if XASH_OGC
+	// Wii: no SDL cursor to manage, state already stored above.
+	return;
+#endif
+
 	if( host.mouse_visible )
 	{
 		if( cursors.initialized )
@@ -249,6 +270,9 @@ Platform_GetMouseGrab
 */
 qboolean Platform_GetMouseGrab( void )
 {
+#if XASH_OGC
+	return false;
+#endif
 	return SDL_GetWindowGrab( host.hWnd );
 }
 
@@ -259,6 +283,10 @@ Platform_SetMouseGrab
 */
 void Platform_SetMouseGrab( qboolean enable )
 {
+#if XASH_OGC
+	(void)enable;
+	return;
+#endif
 	SDL_SetWindowGrab( host.hWnd, enable );
 }
 

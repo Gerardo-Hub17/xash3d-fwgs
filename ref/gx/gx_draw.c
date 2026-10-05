@@ -55,8 +55,11 @@ void GX_DbgWait( const char *tag )
 	gEngfuncs.Con_Printf( "[GX] %s: GPU STALLED (want %04x, read %04x)\n", tag, token, GX_GetDrawSync() );
 }
 
+extern int gx_testmode;
+
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum )
 {
+	if( gx_testmode == 3 ) return; // diagnostic: no textured quads at all
 	static int dsp;
 	int dbg = ( dsp < 2 );
 

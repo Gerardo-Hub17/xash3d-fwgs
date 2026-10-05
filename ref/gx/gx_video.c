@@ -78,12 +78,72 @@ static qboolean gx_video_initialized = false;
 
 #define GX_FIFO_SIZE ( 256 * 1024 )
 
+// Diagnostic modes, read once from sd:/xash3d/gxtest.txt (one digit):
+//  1 = solid blue frame (tests EFB->XFB->TV path only)
+//  2 = 3 flat colour bars, no textures (tests GX raster path)
+//  3 = engine runs normally but R_DrawStretchPic draws nothing (blames textures)
+int gx_testmode;
+
+static void GX_TestBars( void )
+{
+	static const GXColor col[3] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 } };
+	float w = (float)gpGlobals->width, h = (float)gpGlobals->height;
+
+	R_Set2DMode( true );
+	GX_SetTevOp( GX_TEVSTAGE0, GX_PASSCLR );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0 );
+	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
+	GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
+	GX_SetNumChans( 1 );
+	GX_SetChanCtrl( GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_REG, GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE );
+	GX_ClearVtxDesc();
+	GX_SetVtxDesc( GX_VA_POS, GX_DIRECT );
+	GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS, GX_POS_XY, GX_F32, 0 );
+
+	for( int i = 0; i < 3; i++ )
+	{
+		float x0 = w * i / 3.0f, x1 = w * ( i + 1 ) / 3.0f;
+		GX_SetChanMatColor( GX_COLOR0A0, col[i] );
+		GX_Begin( GX_QUADS, GX_VTXFMT0, 4 );
+			GX_Position2f32( x0, 0.0f );
+			GX_Position2f32( x1, 0.0f );
+			GX_Position2f32( x1, h );
+			GX_Position2f32( x0, h );
+		GX_End();
+	}
+
+	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
+	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+}
+
 void GX_Present( void )
 {
 	static int n;
 
 	if( !gx_video_initialized || !gxvid.xfb[0] )
 		return;
+
+	if( gx_testmode == 1 )
+	{
+		GXColor blue = { 0, 0, 255, 255 };
+		GXColor black = { 0, 0, 0, 255 };
+		GX_DrawDone();
+		GX_SetCopyClear( blue, GX_MAX_Z24 );
+		GX_CopyDisp( gxvid.xfb[gxvid.fb], GX_TRUE ); // flush engine frame, clears EFB to blue
+		GX_DrawDone();
+		GX_CopyDisp( gxvid.xfb[gxvid.fb], GX_TRUE ); // copies the blue EFB
+		GX_DrawDone();
+		GX_SetCopyClear( black, GX_MAX_Z24 );
+		VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
+		VIDEO_Flush();
+		VIDEO_WaitVSync();
+		gxvid.fb ^= 1;
+		return;
+	}
+
+	if( gx_testmode == 2 )
+		GX_TestBars();
 
 	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: DrawDone\n", n );
 	GX_DrawDone();
