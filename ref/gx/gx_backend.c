@@ -107,7 +107,7 @@ void GX_LoadMatrix( const matrix4x4 source )
 	Mtx gxmtx;
 	for( int r = 0; r < 3; r++ )
 		for( int c = 0; c < 4; c++ )
-			gxmtx[c][r] = source[r][c];   // misma transpuesta que en LoadTexMatrix
+			gxmtx[r][c] = source[r][c];   // same row-major layout, translation in column 3
 
 	GX_LoadPosMtxImm( gxmtx, GX_PNMTX0 );
 }

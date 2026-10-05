@@ -52,22 +52,32 @@ void GX_ReloadProjectionMtx( float zbias )
 {
     Mtx44 biased;
     memcpy( biased, gx_projection_mtx, sizeof( Mtx44 ));
-    biased[3][2] -= zbias;
+    biased[2][3] -= zbias;
     GX_LoadProjectionMtx( biased, gx_projection_type );
 }
 
+/*
+ * The engine's matrix4x4 is row-major with the translation in column 3
+ * (m[0][3], m[1][3], m[2][3]) and a GL-style clip space (z in [-1, 1]).
+ * GX's Mtx/Mtx44 use the very same row-major layout, so the matrix must be
+ * copied as is, NOT transposed. The only difference is the depth range: GX
+ * clips z to [-w, 0], so remap z_gx = ( z_gl - w ) / 2.
+ */
 void Matrix4x4_ToMtx44( Mtx44 dst, const matrix4x4 src )
 {
     for( int r = 0; r < 4; r++ )
         for( int c = 0; c < 4; c++ )
-            dst[c][r] = src[r][c];
+            dst[r][c] = src[r][c];
+
+    for( int c = 0; c < 4; c++ )
+        dst[2][c] = ( src[2][c] - src[3][c] ) * 0.5f;
 }
 
 void Matrix4x4_ToMtx( Mtx dst, const matrix4x4 src )
 {
     for( int r = 0; r < 3; r++ )
         for( int c = 0; c < 4; c++ )
-            dst[c][r] = src[r][c];
+            dst[r][c] = src[r][c];
 }
 
 static void GX_EnableFog( qboolean enable,
