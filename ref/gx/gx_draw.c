@@ -69,6 +69,20 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 
 	if( dbg ) GX_DbgWait( "dsp post-bind" );
 
+
+ // Make the whole 2D textured-quad pipeline explicit. Nothing else in the
+ // renderer calls GX_SetNumTexGens, and the colour channel defaults are not
+ // guaranteed: without a texgen the TEV samples with undefined coordinates
+ // (flat colours / vertical streaks), and a channel sourcing vertex colour
+ // with no colour in the vertex stream gives random colours.
+ GX_SetNumChans( 1 );
+ GX_SetNumTexGens( 1 );
+ GX_SetNumTevStages( 1 );
+ GX_SetChanCtrl( GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_REG,
+ 	GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE );
+ GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
+ GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
+ GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
