@@ -199,7 +199,7 @@ GXColor color =
 te)( r * 255.0f ),
 te)( g * 255.0f ),
 te)( b * 255.0f ),
-te)( a * 255.0f )
+te)( a * 255.0f ),
 };
 
 GX_SetChanMatColor( GX_COLOR0A0, color );
