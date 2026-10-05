@@ -189,18 +189,31 @@ void TriEnd( void )
 
 void _TriColor4f( float r, float g, float b, float a )
 {
-	ds.currentColor[0] = r;
-	ds.currentColor[1] = g;
-	ds.currentColor[2] = b;
-	ds.currentColor[3] = a;
+ds.currentColor[0] = r;
+ds.currentColor[1] = g;
+ds.currentColor[2] = b;
+ds.currentColor[3] = a;
+
+GXColor color =
+{
+te)( r * 255.0f ),
+te)( g * 255.0f ),
+te)( b * 255.0f ),
+te)( a * 255.0f )
+};
+
+GX_SetChanMatColor( GX_COLOR0A0, color );
 }
 
 void _TriColor4ub( byte r, byte g, byte b, byte a )
 {
-	ds.currentColor[0] = r * (1.0f / 255.0f);
-	ds.currentColor[1] = g * (1.0f / 255.0f);
-	ds.currentColor[2] = b * (1.0f / 255.0f);
-	ds.currentColor[3] = a * (1.0f / 255.0f);
+ds.currentColor[0] = r * (1.0f / 255.0f);
+ds.currentColor[1] = g * (1.0f / 255.0f);
+ds.currentColor[2] = b * (1.0f / 255.0f);
+ds.currentColor[3] = a * (1.0f / 255.0f);
+
+GXColor color = { r, g, b, a };
+GX_SetChanMatColor( GX_COLOR0A0, color );
 }
 
 void TriColor4ub( byte r, byte g, byte b, byte a )
