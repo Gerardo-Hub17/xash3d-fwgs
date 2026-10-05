@@ -214,6 +214,11 @@ void IN_SetRelativeMouseMode( qboolean set )
 	static qboolean s_bRawInput;
 	qboolean verbose = m_grab_debug.value ? true : false;
 
+#if XASH_OGC
+	(void)set; (void)verbose;
+	return; // no SDL mouse on Wii
+#endif
+
 	if( set && !s_bRawInput )
 	{
 #if XASH_SDL >= 2

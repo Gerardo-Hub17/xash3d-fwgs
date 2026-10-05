@@ -139,6 +139,10 @@ SDLash_EnableTextInput
 */
 void Platform_EnableTextInput( qboolean enable )
 {
+#if XASH_OGC
+	(void)enable;
+	return; // no SDL video on Wii
+#endif
 	enable ? SDL_StartTextInput() : SDL_StopTextInput();
 }
 
@@ -299,6 +303,9 @@ Platform_GetKeyModifiers
 key_modifier_t Platform_GetKeyModifiers( void )
 {
 	key_modifier_t resultFlags = KeyModifier_None;
+#if XASH_OGC
+	return resultFlags; // no SDL keyboard on Wii
+#endif
 	SDL_Keymod modFlags = SDL_GetModState();
 	if( FBitSet( modFlags, KMOD_LCTRL ))
 		SetBits( resultFlags, KeyModifier_LeftCtrl );

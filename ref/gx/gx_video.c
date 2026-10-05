@@ -356,6 +356,17 @@ void GX_OnContextCreated( void )
 	gxvid.xfb[1] = MEM_K0_TO_K1( SYS_AllocateFramebuffer( rmode ));
 	gxvid.fb = 0;
 
+	{
+		FILE *tf = fopen( "sd:/xash3d/gxtest.txt", "r" );
+		if( tf )
+		{
+			int c = fgetc( tf );
+			if( c >= '0' && c <= '9' ) gx_testmode = c - '0';
+			fclose( tf );
+		}
+		gEngfuncs.Con_Printf( "[GX] testmode = %d\n", gx_testmode );
+	}
+
 	// console_init() replaces devoptab stdout/stderr with libogc's on-screen
 	// console, which draws text with the CPU straight into xfb[0]. GX_Present
 	// flips between xfb[0] and xfb[1], so every printf would paint over the
