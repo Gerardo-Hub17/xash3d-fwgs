@@ -24,6 +24,29 @@ GNU General Public License for more details.
 
 #define MEM_SMALL_MAX UINT8_MAX
 
+#if XASH_OGC
+#include <malloc.h>
+#include <ogc/system.h>
+// Called right before an out-of-memory Sys_Error so the log shows where the
+// memory went: newlib heap totals, what is left of each arena and the
+// engine's own per-pool statistics.
+static void Mem_ReportOOM( size_t size )
+{
+struct mallinfo mi = mallinfo();
+
+printf( "[OOM] request %u B | heap: sbrk'd %u KB, in use %u KB, free inside heap %u KB | "
+a1 left %u KB, arena2 left %u KB\n",
+signed)size, (unsigned)mi.arena / 1024, (unsigned)mi.uordblks / 1024, (unsigned)mi.fordblks / 1024,
+signed)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024,
+signed)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
+Mem_PrintStats();
+}
+#define MEM_REPORT_OOM( size ) Mem_ReportOOM( size )
+#else
+#define MEM_REPORT_OOM( size ) ((void)0)
+#endif
+
+
 #ifdef XASH_CUSTOM_SWAP
 #include "platform/swap/swap.h"
 #define Q_malloc SWAP_Malloc
@@ -258,6 +281,7 @@ void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char 
 
 		if( mem == NULL )
 		{
+			MEM_REPORT_OOM( size );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -278,6 +302,7 @@ void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char 
 
 		if( mem == NULL )
 		{
+			MEM_REPORT_OOM( size );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -424,6 +449,7 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *data, size_t size, qboolean clea
 
 		if( mem == NULL )
 		{
+			MEM_REPORT_OOM( size );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -467,6 +493,7 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *data, size_t size, qboolean clea
 
 		if( mem == NULL )
 		{
+			MEM_REPORT_OOM( size );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}

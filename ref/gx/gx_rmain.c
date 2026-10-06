@@ -29,6 +29,7 @@ extern double g_gx_cpu_time_ms;
 #include <ogc/gx.h>
 
 extern void GX_DbgWait( const char *tag );
+extern void GX_MemReport( const char *tag );
 
 #define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
 
@@ -894,6 +895,7 @@ void R_BeginFrame( qboolean clearScene )
 {
 	static int bf;
 	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
+	if( bf == 0 || ( bf % 300 ) == 0 ) GX_MemReport( "frame" );
 	bf++;
 	GX_DbgWait( "beginframe start" );
 

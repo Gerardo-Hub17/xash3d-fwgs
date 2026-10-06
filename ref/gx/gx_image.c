@@ -17,6 +17,41 @@ GNU General Public License for more details.
 #include <stdarg.h>
 #include <malloc.h>
 #include "gx_local.h"
+#include <ogc/system.h>
+
+// ---- memory accounting (diagnostic) ----
+static size_t gx_tex_bytes;
+static int    gx_tex_count;
+static size_t gx_tex_next_report = 2 * 1024 * 1024;
+
+static void GX_TexAccount( const gl_texture_t *tex, size_t bytes, int sign )
+{
+if( sign > 0 )
+{
+tes += bytes;
+t++;
+bytes >= 256 * 1024 || gx_tex_bytes >= gx_tex_next_report )
+gfuncs.Con_Printf( "[GXMEM] +%s %ux%u %u KB | textures total %u KB in %d\n",
+ame, (unsigned)tex->width, (unsigned)tex->height,
+signed)( bytes / 1024 ), (unsigned)( gx_tex_bytes / 1024 ), gx_tex_count );
+gx_tex_bytes >= gx_tex_next_report )
+ext_report += 2 * 1024 * 1024;
+tes = ( gx_tex_bytes > bytes ) ? gx_tex_bytes - bytes : 0;
+gx_tex_count > 0 ) gx_tex_count--;
+}
+}
+
+void GX_MemReport( const char *tag )
+{
+struct mallinfo mi = mallinfo();
+
+gEngfuncs.Con_Printf( "[GXMEM] %s: heap in use %u KB, free inside heap %u KB, sbrk'd %u KB | "
+a2 left %u KB | textures %u KB in %d\n", tag,
+signed)mi.uordblks / 1024, (unsigned)mi.fordblks / 1024, (unsigned)mi.arena / 1024,
+signed)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024,
+signed)( gx_tex_bytes / 1024 ), gx_tex_count );
+}
+
 
 #include "crclib.h"
 
@@ -492,6 +527,7 @@ static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int heig
 		}
 		tex->width  = (word)width;
 		tex->height = (word)height;
+		GX_TexAccount( tex, nativeSize, +1 );
 
 		GX_ConvertToRGBA8( (byte *)tex->nativeData, data, width, height, srcFmt );
 		DCFlushRange( tex->nativeData, nativeSize );
@@ -751,6 +787,7 @@ static void GL_DeleteTexture( gl_texture_t *tex )
 
 	if( tex->nativeData )
 	{
+		GX_TexAccount( tex, GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ), -1 );
 		free( tex->nativeData );
 		tex->nativeData = NULL;
 	}
