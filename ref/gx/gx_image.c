@@ -26,32 +26,36 @@ static size_t gx_tex_next_report = 2 * 1024 * 1024;
 
 static void GX_TexAccount( const gl_texture_t *tex, size_t bytes, int sign )
 {
-if( sign > 0 )
-{
-tes += bytes;
-t++;
-bytes >= 256 * 1024 || gx_tex_bytes >= gx_tex_next_report )
-gfuncs.Con_Printf( "[GXMEM] +%s %ux%u %u KB | textures total %u KB in %d\n",
-ame, (unsigned)tex->width, (unsigned)tex->height,
-signed)( bytes / 1024 ), (unsigned)( gx_tex_bytes / 1024 ), gx_tex_count );
-gx_tex_bytes >= gx_tex_next_report )
-ext_report += 2 * 1024 * 1024;
-tes = ( gx_tex_bytes > bytes ) ? gx_tex_bytes - bytes : 0;
-gx_tex_count > 0 ) gx_tex_count--;
-}
+    if( sign > 0 )
+    {
+        gx_tex_bytes += bytes;
+        gx_tex_count++;
+        if( bytes >= 256 * 1024 || gx_tex_bytes >= gx_tex_next_report )
+        {
+            gEngfuncs.Con_Printf( "[GXMEM] +%s %ux%u %u KB | textures total %u KB in %d\n",
+                tex->name, (unsigned)tex->width, (unsigned)tex->height,
+                (unsigned)( bytes / 1024 ), (unsigned)( gx_tex_bytes / 1024 ), gx_tex_count );
+            while( gx_tex_bytes >= gx_tex_next_report )
+                gx_tex_next_report += 2 * 1024 * 1024;
+        }
+    }
+    else
+    {
+        gx_tex_bytes = ( gx_tex_bytes > bytes ) ? gx_tex_bytes - bytes : 0;
+        if( gx_tex_count > 0 ) gx_tex_count--;
+    }
 }
 
 void GX_MemReport( const char *tag )
 {
-struct mallinfo mi = mallinfo();
+    struct mallinfo mi = mallinfo();
 
-gEngfuncs.Con_Printf( "[GXMEM] %s: heap in use %u KB, free inside heap %u KB, sbrk'd %u KB | "
-a2 left %u KB | textures %u KB in %d\n", tag,
-signed)mi.uordblks / 1024, (unsigned)mi.fordblks / 1024, (unsigned)mi.arena / 1024,
-signed)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024,
-signed)( gx_tex_bytes / 1024 ), gx_tex_count );
+    gEngfuncs.Con_Printf( "[GXMEM] %s: heap in use %u KB, free inside heap %u KB, sbrk'd %u KB | "
+        "arena2 left %u KB | textures %u KB in %d\n", tag,
+        (unsigned)mi.uordblks / 1024, (unsigned)mi.fordblks / 1024, (unsigned)mi.arena / 1024,
+        (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024,
+        (unsigned)( gx_tex_bytes / 1024 ), gx_tex_count );
 }
-
 
 #include "crclib.h"
 

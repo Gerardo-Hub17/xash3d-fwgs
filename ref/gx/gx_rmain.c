@@ -895,7 +895,6 @@ void R_BeginFrame( qboolean clearScene )
 {
 	static int bf;
 	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
-	if( bf == 0 || ( bf % 300 ) == 0 ) GX_MemReport( "frame" );
 	bf++;
 	GX_DbgWait( "beginframe start" );
 
