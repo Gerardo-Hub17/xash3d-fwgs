@@ -37,9 +37,9 @@ static void Mem_ReportOOM( size_t size )
         (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
     Mem_PrintStats();
 }
-#define MEM_REPORT_OOM( size ) Mem_ReportOOM( size )
+#define MEM_REPORT_OOM( 0 ) Mem_ReportOOM( size )
 #else
-#define MEM_REPORT_OOM( size ) ((void)0)
+#define MEM_REPORT_OOM( 0 ) ((void)0)
 #endif
 
 #ifdef XASH_CUSTOM_SWAP
@@ -276,7 +276,7 @@ void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char 
 
 		if( mem == NULL )
 		{
-			MEM_REPORT_OOM( size );
+			MEM_REPORT_OOM( 0 );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -297,7 +297,7 @@ void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char 
 
 		if( mem == NULL )
 		{
-			MEM_REPORT_OOM( size );
+			MEM_REPORT_OOM( 0 );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -444,7 +444,7 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *data, size_t size, qboolean clea
 
 		if( mem == NULL )
 		{
-			MEM_REPORT_OOM( size );
+			MEM_REPORT_OOM( 0 );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -488,7 +488,7 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *data, size_t size, qboolean clea
 
 		if( mem == NULL )
 		{
-			MEM_REPORT_OOM( size );
+			MEM_REPORT_OOM( 0 );
 			Sys_Error( "%s: out of memory (alloc size %s at %s:%i)\n", __func__, Q_memprint( size ), filename, fileline );
 			return NULL;
 		}
@@ -539,7 +539,7 @@ poolhandle_t _Mem_AllocPool( const char *name, unsigned int flags, const char *f
 	mempool_t *pool = (mempool_t *)Q_realloc( poolchain, sizeof( *poolchain ) * ( poolcount + 1 ));
 	if( pool == NULL )
 	{
-		MEM_REPORT_OOM( size );
+		MEM_REPORT_OOM( 0 );
 			Sys_Error( "%s: out of memory (allocpool at %s:%i)\n", __func__, filename, fileline );
 		return 0;
 	}
