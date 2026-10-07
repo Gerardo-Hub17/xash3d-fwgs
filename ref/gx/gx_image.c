@@ -568,7 +568,12 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 							v = (( a >> 5 ) << 12 ) | (( r >> 4 ) << 8 ) | (( g >> 4 ) << 4 ) | ( b >> 4 );
 						dst[0] = v >> 8; dst[1] = v & 0xFF; dst += 2;
 					}
-					else
+					else if( gxFmt == GX_TF_I8 ) // 8-bit luma (grayscale)
+					{
+							byte y = (byte)(( r * 77 + g * 150 + b * 29 ) >> 8 );
+							*dst++ = y;
+					}
+					else // GX_TF_IA4: white intensity, 4 bit alpha
 					{
 						*dst++ = (byte)((( a * 15 + 127 ) / 255 ) << 4 ) | 0x0F;
 					}
@@ -686,7 +691,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 			free( tex->nativeData );
 			tex->nativeData = NULL;
 		}
-		tex->format = GX_TF_RGBA8;
+		tex->format = GX_TF_I8; // lightmaps a 1 byte/pixel (grayscale)
 		size_t size = GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 );
 		tex->nativeData = memalign( 32, size );
 		if( !tex->nativeData )
