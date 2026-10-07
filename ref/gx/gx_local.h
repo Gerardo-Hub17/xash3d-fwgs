@@ -48,12 +48,12 @@ byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, 
 #define LM_SAMPLE_SIZE             16
 
 #define BLOCK_SIZE		tr.block_size
-#define BLOCK_SIZE_DEFAULT	64
+#define BLOCK_SIZE_DEFAULT	128
 #define BLOCK_SIZE_MAX 256
 
-#define MAX_TEXTURES 512
+#define MAX_TEXTURES 2048
 #define MAX_DETAIL_TEXTURES	256
-#define MAX_LIGHTMAPS 8
+#define MAX_LIGHTMAPS 32
 #define SUBDIVIDE_SIZE	64
 #define MAX_DECAL_SURFS 512
 #define MAX_DRAW_STACK	2

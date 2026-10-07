@@ -65,7 +65,9 @@ static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth 
 
 #define TEXTURES_HASH_SIZE  (MAX_TEXTURES >> 2)
 
-static gl_texture_t     gl_textures[MAX_TEXTURES];
+// Allocated on the heap (MEM2): MAX_TEXTURES entries would add ~1 MB of .bss,
+// and MEM1 is where the executable lives and it is nearly full.
+static gl_texture_t    *gl_textures;
 static gl_texture_t    *gl_texturesHashTable[TEXTURES_HASH_SIZE];
 static uint             gl_numTextures;
 
@@ -83,8 +85,19 @@ static void        GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int
 byte       *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal );
 static qboolean    GX_CheckTexName( const char *name );
 
+static void GX_EnsureTextureTable( void )
+{
+	if( !gl_textures )
+	{
+		gl_textures = calloc( MAX_TEXTURES, sizeof( *gl_textures ));
+		if( !gl_textures )
+			gEngfuncs.Host_Error( "GX: out of memory for the texture table\n" );
+	}
+}
+
 gl_texture_t *R_GetTexture( unsigned int texnum )
 {
+	GX_EnsureTextureTable();
 	if( texnum >= MAX_TEXTURES )
 	{
 		gEngfuncs.Host_Error( "%s: texnum (%d) >= MAX_TEXTURES (%d)", __func__, texnum, MAX_TEXTURES );
@@ -691,7 +704,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 			free( tex->nativeData );
 			tex->nativeData = NULL;
 		}
-		tex->format = GX_TF_I8; // lightmaps a 1 byte/pixel (grayscale)
+		tex->format = GX_TF_RGBA8; // dynamic/raw textures: gx_draw.c writes RGBA8 into them
 		size_t size = GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 );
 		tex->nativeData = memalign( 32, size );
 		if( !tex->nativeData )
@@ -1180,7 +1193,8 @@ void R_TextureList_f( void )
 
 void R_InitImages( void )
 {
-	memset( gl_textures,          0, sizeof( gl_textures ));
+	GX_EnsureTextureTable();
+	memset( gl_textures,          0, MAX_TEXTURES * sizeof( *gl_textures ));
 	memset( gl_texturesHashTable, 0, sizeof( gl_texturesHashTable ));
 	gl_numTextures = 0;
 
@@ -1205,7 +1219,8 @@ void R_ShutdownImages( void )
 
 	memset( tr.lightmapTextures,  0, sizeof( tr.lightmapTextures ));
 	memset( gl_texturesHashTable, 0, sizeof( gl_texturesHashTable ));
-	memset( gl_textures,          0, sizeof( gl_textures ));
+	GX_EnsureTextureTable();
+	memset( gl_textures,          0, MAX_TEXTURES * sizeof( *gl_textures ));
 	gl_numTextures = 0;
 }
 
