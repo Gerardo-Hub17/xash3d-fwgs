@@ -163,7 +163,7 @@ void GX_ApplyTextureParams( gl_texture_t *tex )
 			GX_FALSE, GX_FALSE, GX_ANISO_1 );
 
 		DCFlushRange( tex->nativeData,
-			(u32)tex->width * (u32)tex->height * 4 );
+			GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ));
 		GX_InvalidateTexAll();
 	}
 }
@@ -202,6 +202,7 @@ void R_SetTextureParameters( void )
 		GX_UpdateTextureParams( i );
 }
 
+static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth );
 static int GX_CalcTextureSamples( int flags )
 {
 	if( FBitSet( flags, IMAGE_HAS_COLOR ))
@@ -212,22 +213,22 @@ static int GX_CalcTextureSamples( int flags )
 static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth )
 {
 	depth = Q_max( 1, depth );
-	int tw = ( width  + 3 ) & ~3;
-	int th = ( height + 3 ) & ~3;
-	size_t texelsPerSlice = (size_t)tw * th;
+	int w4 = ( width  + 3 ) & ~3;
+	int h4 = ( height + 3 ) & ~3;
+	int w8 = ( width  + 7 ) & ~7;
+	int h8 = ( height + 7 ) & ~7;
 
-	size_t bytesPerTexel;
-	switch( (int)(gxFormat) )
+	switch( (int)gxFormat )
 	{
-	case GX_TF_RGBA8:   bytesPerTexel = 4; break;
-	case GX_TF_RGB565:  bytesPerTexel = 2; break;
-	case GX_TF_RGB5A3:  bytesPerTexel = 2; break;
-	case GX_TF_IA8:     bytesPerTexel = 2; break;
-	case GX_TF_I8:      bytesPerTexel = 1; break;
-	case GX_TF_I4:      return ( texelsPerSlice / 2 ) * depth;
-	default:            bytesPerTexel = 4; break;
+	case GX_TF_RGB565:
+	case GX_TF_RGB5A3:
+	case GX_TF_IA8:     return (size_t)w4 * h4 * 2 * depth;
+	case GX_TF_I8:
+	case GX_TF_IA4:     return (size_t)w8 * h4 * depth;
+	case GX_TF_I4:      return (size_t)w8 * h8 / 2 * depth;
+	case GX_TF_RGBA8:
+	default:            return (size_t)w4 * h4 * 4 * depth;
 	}
-	return texelsPerSlice * bytesPerTexel * depth;
 }
 
 static int GX_CalcMipmapCount( gl_texture_t *tex, qboolean haveBuffer )
@@ -295,13 +296,6 @@ static void GX_SetTextureTarget( gl_texture_t *tex, rgbdata_t *pic )
 	if( pic->depth > 1 )                           { tex->format = GX_TARGET_NONE; return; }
 	if( FBitSet( tex->flags, TF_MULTISAMPLE ))     { tex->format = GX_TARGET_NONE; return; }
 	if( FBitSet( tex->flags, TF_DEPTHMAP ))        { tex->format = GX_TARGET_NONE; return; }
-}
-
-static void GX_SetTextureFormat( gl_texture_t *tex, pixformat_t format, int channelMask )
-{
-	Assert( tex != NULL );
-
-	tex->format = GX_TF_RGBA8;
 }
 
 static void GX_BoxFilter3x3( byte *out, const byte *in, int w, int h, int x, int y )
@@ -473,6 +467,116 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 	}
 }
 
+typedef struct { int bpp, r, g, b, a; } gx_srcfmt_t;
+
+static qboolean GX_GetSrcFmt( pixformat_t fmt, gx_srcfmt_t *s )
+{
+	switch( fmt )
+	{
+	case PF_RGBA_32:   s->bpp = 4; s->r = 0; s->g = 1; s->b = 2; s->a = 3;  return true;
+	case PF_BGRA_32:   s->bpp = 4; s->r = 2; s->g = 1; s->b = 0; s->a = 3;  return true;
+	case PF_RGB_24:    s->bpp = 3; s->r = 0; s->g = 1; s->b = 2; s->a = -1; return true;
+	case PF_BGR_24:    s->bpp = 3; s->r = 2; s->g = 1; s->b = 0; s->a = -1; return true;
+	case PF_LUMINANCE: s->bpp = 1; s->r = s->g = s->b = 0; s->a = -1;       return true;
+	default: return false;
+	}
+}
+
+static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt )
+{
+	gx_srcfmt_t s;
+	qboolean hasAlpha = false, constRGB = true, haveRef = false;
+	byte rr = 0, rg = 0, rb = 0;
+
+	if( !src || !GX_GetSrcFmt( fmt, &s ) )
+		return GX_TF_RGBA8;
+
+	if( s.a < 0 )
+		return GX_TF_RGB565;
+
+	for( int i = 0, n = width * height; i < n; i++, src += s.bpp )
+	{
+		byte a = src[s.a];
+
+		if( a == 255 ) { if( !constRGB && hasAlpha ) break; }
+		else hasAlpha = true;
+
+		if( a == 0 ) continue;
+
+		if( !haveRef )
+		{
+			rr = src[s.r]; rg = src[s.g]; rb = src[s.b];
+			haveRef = true;
+		}
+		else if( src[s.r] != rr || src[s.g] != rg || src[s.b] != rb )
+		{
+			constRGB = false;
+		}
+	}
+
+	if( !hasAlpha )
+		return GX_TF_RGB565;
+	if( constRGB && haveRef && rr >= 240 && rg >= 240 && rb >= 240 )
+		return GX_TF_IA4;
+	return GX_TF_RGB5A3;
+}
+
+static void GX_ConvertToNative( byte *dst, const byte *src, int width, int height, pixformat_t fmt, u8 gxFmt )
+{
+	gx_srcfmt_t s;
+	int tileW, tileH;
+
+	if( gxFmt == GX_TF_RGBA8 || !GX_GetSrcFmt( fmt, &s ) )
+	{
+		GX_ConvertToRGBA8( dst, src, width, height, fmt );
+		return;
+	}
+
+	tileW = ( gxFmt == GX_TF_IA4 ) ? 8 : 4;
+	tileH = 4;
+
+	for( int ty = 0; ty < height; ty += tileH )
+	{
+		for( int tx = 0; tx < width; tx += tileW )
+		{
+			for( int y = 0; y < tileH; y++ )
+			{
+				int sy = ty + y;
+				if( sy >= height ) sy = height - 1;
+
+				for( int x = 0; x < tileW; x++ )
+				{
+					int sx = tx + x;
+					if( sx >= width ) sx = width - 1;
+
+					const byte *t = src + ( sy * width + sx ) * s.bpp;
+					byte r = t[s.r], g = t[s.g], b = t[s.b];
+					byte a = ( s.a >= 0 ) ? t[s.a] : 255;
+
+					if( gxFmt == GX_TF_RGB565 )
+					{
+						u16 v = (( r >> 3 ) << 11 ) | (( g >> 2 ) << 5 ) | ( b >> 3 );
+						dst[0] = v >> 8; dst[1] = v & 0xFF; dst += 2;
+					}
+					else if( gxFmt == GX_TF_RGB5A3 )
+					{
+						u16 v;
+						if( a >= 0xE0 )
+							v = 0x8000 | (( r >> 3 ) << 10 ) | (( g >> 3 ) << 5 ) | ( b >> 3 );
+						else
+							v = (( a >> 5 ) << 12 ) | (( r >> 4 ) << 8 ) | (( g >> 4 ) << 4 ) | ( b >> 4 );
+						dst[0] = v >> 8; dst[1] = v & 0xFF; dst += 2;
+					}
+					else
+					{
+						*dst++ = (byte)((( a * 15 + 127 ) / 255 ) << 4 ) | 0x0F;
+					}
+				}
+			}
+		}
+	}
+}
+
 byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal )
 {
 if( !in ) return NULL;
@@ -500,18 +604,16 @@ return out;
 }
 
 static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int height,
-	pixformat_t srcFmt, const byte *data )
+	pixformat_t srcFmt, const byte *data, u8 newFmt )
 {
 	if( level != 0 )
-	{
 		return;
-	}
 
-	size_t nativeSize = GX_CalcTextureSize( tex->format, width, height, 1 );
+	size_t nativeSize = GX_CalcTextureSize( newFmt, width, height, 1 );
 
-	if( (int)tex->width == width && (int)tex->height == height && tex->nativeData != NULL )
+	if( tex->nativeData && tex->format == newFmt && (int)tex->width == width && (int)tex->height == height )
 	{
-		GX_ConvertToRGBA8( (byte *)tex->nativeData, data, width, height, srcFmt );
+		GX_ConvertToNative( (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 		GX_InvalidateTexAll();
 	}
@@ -519,6 +621,7 @@ static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int heig
 	{
 		if( tex->nativeData )
 		{
+			GX_TexAccount( tex, GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ), -1 );
 			free( tex->nativeData );
 			tex->nativeData = NULL;
 		}
@@ -529,17 +632,18 @@ static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int heig
 				__func__, nativeSize, tex->name );
 			return;
 		}
+		tex->format = newFmt;
 		tex->width  = (word)width;
 		tex->height = (word)height;
 		GX_TexAccount( tex, nativeSize, +1 );
 
-		GX_ConvertToRGBA8( (byte *)tex->nativeData, data, width, height, srcFmt );
+		GX_ConvertToNative( (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)width, (u16)height,
 			tex->format, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
-	tex->size += nativeSize;
+	tex->size = nativeSize;
 }
 
 static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
@@ -567,9 +671,6 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	}
 
 	GX_SetTextureDimensions( tex, pic->width, pic->height, pic->depth );
-	GX_SetTextureFormat( tex, pic->type, pic->flags );
-
-	tex->format = GX_TF_RGBA8;
 
 	tex->fogParams[0] = pic->fogParams[0];
 	tex->fogParams[1] = pic->fogParams[1];
@@ -578,10 +679,18 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 
 	if( !pic->buffer )
 	{
+		if( tex->nativeData )
+		{
+			GX_TexAccount( tex, GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ), -1 );
+			free( tex->nativeData );
+			tex->nativeData = NULL;
+		}
+		tex->format = GX_TF_RGBA8;
 		size_t size = GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 );
 		tex->nativeData = memalign( 32, size );
 		if( !tex->nativeData )
 			return false;
+		GX_TexAccount( tex, size, +1 );
 		memset( tex->nativeData, 0, size );
 		GX_InitTexObj( &tex->texObj, tex->nativeData, tex->width, tex->height,
 			tex->format, GX_CLAMP, GX_CLAMP, GX_FALSE );
@@ -591,8 +700,10 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	}
 
 	byte *data;
+	pixformat_t dataFmt = pic->type;
 	if(( pic->width != tex->width ) || ( pic->height != tex->height ))
 	{
+		dataFmt = PF_RGBA_32;
 		data = GX_ResampleTexture( pic->buffer, pic->width, pic->height,
 			tex->width, tex->height,
 			FBitSet( tex->flags, 0 ) ? true : false );
@@ -603,20 +714,11 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	if( !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( pic->flags, IMAGE_ONEBIT_ALPHA ))
 		data = GX_ApplyFilter( data, tex->width, tex->height );
 
-	GX_UploadMipLevel( tex, 0, tex->width, tex->height, pic->type, data );
+	GX_UploadMipLevel( tex, 0, tex->width, tex->height, dataFmt, data,
+		GX_PickFormat( data, tex->width, tex->height, dataFmt ));
 
-	int mipCount = GX_CalcMipmapCount( tex, ( data != NULL ));
-	if( mipCount > 1 && !FBitSet( tex->flags, TF_NOMIPMAP ))
-	{
-		byte *mipData = data;
-		for( int j = 1; j < mipCount; j++ )
-		{
-			uint w = Q_max( 1, ( tex->width  >> j ));
-			uint h = Q_max( 1, ( tex->height >> j ));
-			GX_BuildMipMap( mipData, tex->width >> (j-1), tex->height >> (j-1), 1, tex->flags );
-			GX_UploadMipLevel( tex, j, w, h, pic->type, mipData );
-		}
-	}
+	if( data != pic->buffer )
+		Mem_Free( data );
 
 	SetBits( tex->flags, TF_IMG_UPLOADED );
 
