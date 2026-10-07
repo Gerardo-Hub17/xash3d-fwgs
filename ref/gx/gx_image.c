@@ -59,6 +59,8 @@ void GX_MemReport( const char *tag )
 
 #include "crclib.h"
 
+static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth );
+
 
 
 #define TEXTURES_HASH_SIZE  (MAX_TEXTURES >> 2)
@@ -202,7 +204,6 @@ void R_SetTextureParameters( void )
 		GX_UpdateTextureParams( i );
 }
 
-static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth );
 static int GX_CalcTextureSamples( int flags )
 {
 	if( FBitSet( flags, IMAGE_HAS_COLOR ))
