@@ -2062,7 +2062,7 @@ static int GAME_EXPORT pfnGetWindowCenterX( void )
 	}
 #endif
 
-#if XASH_SDL >= 2
+#if XASH_SDL >= 2 && !XASH_OGC // no SDL window on Wii: every call logs "Video subsystem has not been initialized"
 	SDL_GetWindowPosition( host.hWnd, &x, NULL );
 #endif
 
@@ -2088,7 +2088,7 @@ static int GAME_EXPORT pfnGetWindowCenterY( void )
 	}
 #endif
 
-#if XASH_SDL >= 2
+#if XASH_SDL >= 2 && !XASH_OGC // no SDL window on Wii: every call logs "Video subsystem has not been initialized"
 	SDL_GetWindowPosition( host.hWnd, NULL, &y );
 #endif
 

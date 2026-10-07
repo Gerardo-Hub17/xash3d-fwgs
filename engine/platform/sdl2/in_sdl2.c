@@ -101,6 +101,10 @@ Platform_GetClipobardText
 */
 int Platform_GetClipboardText( char *buffer, size_t size )
 {
+#if XASH_OGC
+	(void)buffer; (void)size;
+	return 0;
+#endif
 	char *sdlbuffer = SDL_GetClipboardText();
 
 	if( !sdlbuffer )
@@ -126,6 +130,10 @@ Platform_SetClipobardText
 */
 void Platform_SetClipboardText( const char *buffer )
 {
+#if XASH_OGC
+	(void)buffer;
+	return;
+#endif
 	SDL_SetClipboardText( buffer );
 }
 

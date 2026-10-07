@@ -157,7 +157,9 @@ void SDLash_Init( void )
 
 	// SDL_SetHint( SDL_HINT_VIDEO_WAYLAND_EMULATE_MOUSE_WARP, "1" );
 
+#if !XASH_OGC
 	SDL_StopTextInput();
+#endif
 
 	SDLash_InitCursors();
 	SDLash_InitSensors();
