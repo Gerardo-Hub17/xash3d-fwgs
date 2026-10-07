@@ -533,7 +533,7 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 		return;
 	}
 
-	tileW = ( gxFmt == GX_TF_IA4 ) ? 8 : 4;
+	tileW = ( gxFmt == GX_TF_IA4 || gxFmt == GX_TF_I8 ) ? 8 : 4;
 	tileH = 4;
 
 	for( int ty = 0; ty < height; ty += tileH )
