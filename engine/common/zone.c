@@ -37,9 +37,9 @@ static void Mem_ReportOOM( size_t size )
         (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
     Mem_PrintStats();
 }
-#define MEM_REPORT_OOM( 0 ) Mem_ReportOOM( size )
+#define MEM_REPORT_OOM( x ) Mem_ReportOOM( x )
 #else
-#define MEM_REPORT_OOM( 0 ) ((void)0)
+#define MEM_REPORT_OOM( x ) ((void)0)
 #endif
 
 #ifdef XASH_CUSTOM_SWAP
