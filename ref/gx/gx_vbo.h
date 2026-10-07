@@ -18,17 +18,14 @@ static gx_vbo_t g_vbo = { NULL, NULL, 0, 0, 0, 0 };
 
 static void GX_VBO_Alloc(void)
 {
-gEngfuncs.Con_Printf("[VBO] Alloc inicio\n");
 if (g_vbo.initialized)
 {
-gEngfuncs.Con_Printf("[VBO] Ya inicializado\n");
 return;
 }
 g_vbo.vertex_data = (u8 *)memalign(32,
 GX_VBO_MAX_VERTS * GX_VBO_VERT_SIZE);
 g_vbo.index_data = (u16 *)memalign(32,
 GX_VBO_MAX_IDX * sizeof(u16));
-gEngfuncs.Con_Printf("[VBO] memalign OK: v=%p i=%p\n", g_vbo.vertex_data, g_vbo.index_data);
 if (!g_vbo.vertex_data || !g_vbo.index_data)
 gEngfuncs.Host_Error("VBO alloc failed\n");
 g_vbo.num_verts_used = 0;
@@ -106,7 +103,10 @@ for (i = 0; i < gp_cl->nummodels; i++)
 model_t *m = CL_ModelHandle(i + 1);
 if (m == NULL)
 continue;
-if (m->name[0] != '*' && m->type != mod_brush)
+// same rule as the lightmap/polygon builders: submodels ("*N") share the
+// world's surface array, so visiting them would rebuild every surface
+// once per submodel and overflow the buffer
+if (m->name[0] == '*' || m->type != mod_brush)
 continue;
 for (j = 0; j < m->numsurfaces; j++)
 GX_VBO_BuildSurface(m->surfaces + j);
