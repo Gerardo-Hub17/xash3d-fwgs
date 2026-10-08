@@ -824,20 +824,20 @@ static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
             float *v1 = base + i * VERTEXSIZE;
             float *v2 = base + (i + 1) * VERTEXSIZE;
 
+            GX_Position3f32( v0[0], v0[1], v0[2] );
             if( hasScale ) GX_TexCoord2f32(( v0[3] + sOffset ) * xScale, ( v0[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v0[3] + sOffset, v0[4] + tOffset );
             GX_TexCoord2f32( v0[5], v0[6] );
-            GX_Position3f32( v0[0], v0[1], v0[2] );
 
+            GX_Position3f32( v1[0], v1[1], v1[2] );
             if( hasScale ) GX_TexCoord2f32(( v1[3] + sOffset ) * xScale, ( v1[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v1[3] + sOffset, v1[4] + tOffset );
             GX_TexCoord2f32( v1[5], v1[6] );
-            GX_Position3f32( v1[0], v1[1], v1[2] );
 
+            GX_Position3f32( v2[0], v2[1], v2[2] );
             if( hasScale ) GX_TexCoord2f32(( v2[3] + sOffset ) * xScale, ( v2[4] + tOffset ) * yScale );
             else GX_TexCoord2f32( v2[3] + sOffset, v2[4] + tOffset );
             GX_TexCoord2f32( v2[5], v2[6] );
-            GX_Position3f32( v2[0], v2[1], v2[2] );
         }
     }
 
@@ -999,22 +999,20 @@ static void DrawGLPolyChain( glpoly2_t *p, float soffset, float toffset, msurfac
             float *v1 = base + i * VERTEXSIZE;
             float *v2 = base + (i + 1) * VERTEXSIZE;
 
-            /* TEXCOORD0 = UV difusa (v[3], v[4]) */
+            GX_Position3f32( v0[0], v0[1], v0[2] );
             GX_TexCoord2f32( v0[3], v0[4] );
-            /* TEXCOORD1 = UV lightmap (v[5], v[6]) con offset dinamico */
             if( !dynamic ) GX_TexCoord2f32( v0[5], v0[6] );
             else GX_TexCoord2f32( v0[5] - soffset, v0[6] - toffset );
-            GX_Position3f32( v0[0], v0[1], v0[2] );
 
+            GX_Position3f32( v1[0], v1[1], v1[2] );
             GX_TexCoord2f32( v1[3], v1[4] );
             if( !dynamic ) GX_TexCoord2f32( v1[5], v1[6] );
             else GX_TexCoord2f32( v1[5] - soffset, v1[6] - toffset );
-            GX_Position3f32( v1[0], v1[1], v1[2] );
 
+            GX_Position3f32( v2[0], v2[1], v2[2] );
             GX_TexCoord2f32( v2[3], v2[4] );
             if( !dynamic ) GX_TexCoord2f32( v2[5], v2[6] );
             else GX_TexCoord2f32( v2[5] - soffset, v2[6] - toffset );
-            GX_Position3f32( v2[0], v2[1], v2[2] );
         }
     }
 
@@ -1095,6 +1093,7 @@ static void R_BlendLightmaps( void )
 		if( gx_lms.lightmap_surfaces[i] )
 		{
 			msurface_t *batch_head = NULL;
+			msurface_t *prev = NULL;
 			int batch_texnum = -1;
 			msurface_t *surf;
 
@@ -1108,7 +1107,11 @@ static void R_BlendLightmaps( void )
 				if( texnum != batch_texnum )
 				{
 					if( batch_head )
+					{
+						/* cortar la cadena: si no, cada lote dibuja TODO el resto de la pagina */
+						prev->texturechain = NULL;
 						DrawGLPolyBatchChain_VBO( batch_head );
+					}
 
 					if( texnum != 0 )
 						GX_Bind( 0, texnum );
@@ -1117,6 +1120,7 @@ static void R_BlendLightmaps( void )
 					batch_head = surf;
 				}
 				surf->texturechain = surf->info->lightmapchain;
+				prev = surf;
 			}
 
 			if( batch_head )
@@ -1238,17 +1242,17 @@ static void DrawGLPolyBatchLuma( mextrasurf_t *head )
 				float *v1 = base + i * VERTEXSIZE;
 				float *v2 = base + (i + 1) * VERTEXSIZE;
 
+				GX_Position3f32( v0[0], v0[1], v0[2] );
 				GX_TexCoord2f32( v0[3], v0[4] );
 				GX_TexCoord2f32( v0[5], v0[6] );
-				GX_Position3f32( v0[0], v0[1], v0[2] );
 
+				GX_Position3f32( v1[0], v1[1], v1[2] );
 				GX_TexCoord2f32( v1[3], v1[4] );
 				GX_TexCoord2f32( v1[5], v1[6] );
-				GX_Position3f32( v1[0], v1[1], v1[2] );
 
+				GX_Position3f32( v2[0], v2[1], v2[2] );
 				GX_TexCoord2f32( v2[3], v2[4] );
 				GX_TexCoord2f32( v2[5], v2[6] );
-				GX_Position3f32( v2[0], v2[1], v2[2] );
 			}
 		}
 	}
@@ -1286,17 +1290,17 @@ static void DrawGLPolyBatchDetail( mextrasurf_t *head, float xscale, float yscal
 				float *v1 = base + i * VERTEXSIZE;
 				float *v2 = base + (i + 1) * VERTEXSIZE;
 
+				GX_Position3f32( v0[0], v0[1], v0[2] );
 				GX_TexCoord2f32( v0[3] * xscale, v0[4] * yscale );
 				GX_TexCoord2f32( v0[5], v0[6] );
-				GX_Position3f32( v0[0], v0[1], v0[2] );
 
+				GX_Position3f32( v1[0], v1[1], v1[2] );
 				GX_TexCoord2f32( v1[3] * xscale, v1[4] * yscale );
 				GX_TexCoord2f32( v1[5], v1[6] );
-				GX_Position3f32( v1[0], v1[1], v1[2] );
 
+				GX_Position3f32( v2[0], v2[1], v2[2] );
 				GX_TexCoord2f32( v2[3] * xscale, v2[4] * yscale );
 				GX_TexCoord2f32( v2[5], v2[6] );
-				GX_Position3f32( v2[0], v2[1], v2[2] );
 			}
 		}
 	}
@@ -1528,19 +1532,19 @@ static void DrawGLPolyBatchChain( msurface_t *head )
                 float *v1 = base + i * VERTEXSIZE;
                 float *v2 = base + (i + 1) * VERTEXSIZE;
 
+                GX_Position3f32( v0[0], v0[1], v0[2] );
                 /* TEXCOORD0 = difusa */
                 GX_TexCoord2f32( v0[3], v0[4] );
                 /* TEXCOORD1 = lightmap */
                 GX_TexCoord2f32( v0[5], v0[6] );
-                GX_Position3f32( v0[0], v0[1], v0[2] );
 
+                GX_Position3f32( v1[0], v1[1], v1[2] );
                 GX_TexCoord2f32( v1[3], v1[4] );
                 GX_TexCoord2f32( v1[5], v1[6] );
-                GX_Position3f32( v1[0], v1[1], v1[2] );
 
+                GX_Position3f32( v2[0], v2[1], v2[2] );
                 GX_TexCoord2f32( v2[3], v2[4] );
                 GX_TexCoord2f32( v2[5], v2[6] );
-                GX_Position3f32( v2[0], v2[1], v2[2] );
             }
         }
     }
