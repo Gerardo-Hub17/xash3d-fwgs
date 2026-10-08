@@ -397,8 +397,15 @@ static void UI_ConvertGameInfo( gameinfo2_t *out, const gameinfo_t *in )
 		SetBits( out->flags, GFL_NOMODELS );
 	if( in->noskills )
 		SetBits( out->flags, GFL_NOSKILLS );
+#if XASH_OGC
+	// Wii: draw the menu buttons with the font renderer instead of the WON
+	// button bitmaps. The bitmaps do not show up with the GX renderer, the
+	// fonts do, and it saves the 2 MB button atlas.
+	SetBits( out->flags, GFL_RENDER_PICBUTTON_TEXT );
+#else
 	if( in->render_picbutton_text )
 		SetBits( out->flags, GFL_RENDER_PICBUTTON_TEXT );
+#endif
 	if( in->hd_background )
 		SetBits( out->flags, GFL_HD_BACKGROUND );
 	if( in->animated_title )
