@@ -1056,6 +1056,9 @@ static void R_BlendLightmaps( void )
 
 	GX_SetNumTevStages( 2 );
 	GX_SetNumTexGens( 2 );
+	/* texgen explicito: TEXCOORD1 debe leer el 2do juego de UVs (lightmap), no el 1ro */
+	GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
+	GX_SetTexCoordGen( GX_TEXCOORD1, GX_TG_MTX2x4, GX_TG_TEX1, GX_IDENTITY );
 
 	/* Stage 0: TEXMAP0 (difusa) x COLOR0A0 -> intermedio */
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
@@ -1206,6 +1209,7 @@ static void R_BlendLightmaps( void )
 	GX_EnableTextureUnit( 0, true );
 	GX_EnableTextureUnit( 1, false );
 	GX_SetNumTevStages( 1 );
+	GX_SetNumTexGens( 1 );
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 
@@ -1630,6 +1634,24 @@ static void R_DrawTextureChains( void )
 				for( ; s != NULL; s = s->texturechain )
 					R_RenderBrushPoly( s, CULL_VISIBLE );
 
+				/* el pase de lightmaps ya dibuja textura x lightmap: no dibujar dos veces
+				   las superficies con lightmap (solo las que no pasan por ese pase) */
+				if( gx_testmode != 5 && R_HasLightmap( ))
+				{
+					msurface_t *nh = NULL, *nt = NULL, *q, *nx;
+					for( q = batch_head; q != NULL; q = nx )
+					{
+						nx = q->texturechain;
+						if( !q->polys || FBitSet( q->flags, SURF_DRAWTILED | SURF_DRAWTURB ))
+						{
+							q->texturechain = NULL;
+							if( nt ) nt->texturechain = q; else nh = q;
+							nt = q;
+						}
+					}
+					batch_head = nh;
+				}
+
 				GX_Bind( XASH_TEXTURE0, ( gx_testmode == 6 ) ? tr.whiteTexture : t->gl_texturenum );
 				if( gx_world_dbg > 0 )
 				{
@@ -1639,7 +1661,8 @@ static void R_DrawTextureChains( void )
 					gEngfuncs.Con_Printf( "[WCHAIN] #%d %s tex=%d %dx%d fmt=%d mips=%d surfs=%d ...\n", i, t->name, t->gl_texturenum,
 						gt ? gt->width : 0, gt ? gt->height : 0, gt ? (int)gt->format : -1, gt ? (int)gt->numMips : -1, nf );
 				}
-				DrawGLPolyBatchChain_VBO( batch_head );
+				if( batch_head )
+					DrawGLPolyBatchChain_VBO( batch_head );
 				if( gx_world_dbg > 0 )
 				{
 					GX_DrawDone();
