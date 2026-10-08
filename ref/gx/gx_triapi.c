@@ -165,6 +165,8 @@ void TriEnd( void )
 		return;
 	}
 
+	GX_SetChanVtxColor( true );
+	GX_SetNumTevStages( 1 );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_CLR0, GX_DIRECT );

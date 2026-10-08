@@ -64,6 +64,7 @@ static void R_DrawVBO( qboolean drawlightmaps, qboolean drawtextures );
 
 static void GX_SetupVtxFormat( void )
 {
+	GX_SetChanVtxColor( false );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
@@ -2212,6 +2213,8 @@ void R_DrawWorld( void )
 	GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
 	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 	tr.blend = 1.0f;
+	GX_SetupTexturedPipeline();
+	{ GXColor w = { 255, 255, 255, 255 }; GX_SetChanMatColor( GX_COLOR0A0, w ); }
 
 	R_ClearSkyBox();
 

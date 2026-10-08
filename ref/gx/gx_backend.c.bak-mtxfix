@@ -107,7 +107,7 @@ void GX_LoadMatrix( const matrix4x4 source )
 	Mtx gxmtx;
 	for( int r = 0; r < 3; r++ )
 		for( int c = 0; c < 4; c++ )
-			gxmtx[r][c] = source[r][c];   // same row-major layout, translation in column 3
+			gxmtx[c][r] = source[r][c];   // misma transpuesta que en LoadTexMatrix
 
 	GX_LoadPosMtxImm( gxmtx, GX_PNMTX0 );
 }
@@ -221,26 +221,6 @@ void GX_MultiTexCoord2f( int tmu, float s, float t )
 
 	gx_pending_texcoord[tmu][0] = s;
 	gx_pending_texcoord[tmu][1] = t;
-}
-
-void GX_SetChanVtxColor( qboolean vtx )
-{
-u8 src = vtx ? GX_SRC_VTX : GX_SRC_REG;
-
-GX_SetNumChans( 1 );
-GX_SetChanCtrl( GX_COLOR0A0, GX_DISABLE, src, src, GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE );
-}
-
-void GX_SetupTexturedPipeline( void )
-{
-GX_SetChanVtxColor( false );
-GX_SetNumTexGens( 1 );
-GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
-GX_SetNumTevStages( 1 );
-GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
-GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
-GX_SetCullMode( GX_CULL_NONE );
-GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 }
 
 void GX_DisableAllTexGens( void )

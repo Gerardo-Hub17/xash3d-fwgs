@@ -46,6 +46,7 @@ g_vbo.initialized = 1;
 
 static void GX_SetupVtxFormat_VBO(void)
 {
+GX_SetChanVtxColor(false);
 GX_ClearVtxDesc();
 GX_SetVtxDesc(GX_VA_POS, GX_INDEX16);
 GX_SetVtxDesc(GX_VA_TEX0, GX_INDEX16);
@@ -157,6 +158,7 @@ g_vbo.overflow);
 
 static void GX_SetupVtxFormat_Direct(void)
 {
+GX_SetChanVtxColor(false);
 GX_ClearVtxDesc();
 GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
 GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
@@ -260,6 +262,7 @@ int i;
 DCFlushRange(g_vbo.index_data, g_vbo.num_indices * sizeof(u16));
 
 GX_SetupVtxFormat_VBO();
+GX_InvalidateVtxCache();
 GX_SetArray(GX_VA_POS, g_vbo.vertex_data, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX0, g_vbo.vertex_data + 12, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX1, g_vbo.vertex_data + 20, GX_VBO_VERT_SIZE);

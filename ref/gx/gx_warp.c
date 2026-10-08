@@ -74,6 +74,7 @@ static struct
 
 static void GX_SetupVtxFormat( void )
 {
+	GX_SetChanVtxColor( false );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );

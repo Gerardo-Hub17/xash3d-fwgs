@@ -55,6 +55,8 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 
+	GX_SetChanVtxColor( true );
+	GX_SetNumTevStages( 1 );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_CLR0, GX_DIRECT );
@@ -200,6 +202,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 
+	GX_SetChanVtxColor( true );
+	GX_SetNumTevStages( 1 );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_CLR0, GX_DIRECT );

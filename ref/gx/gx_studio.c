@@ -140,6 +140,8 @@ static int g_nFaceFlags, g_nForceFaceFlags;
 
 static void GX_SetupVtxFormatStudio( qboolean useColor, qboolean useTex )
 {
+	GX_SetChanVtxColor( useColor );
+	GX_SetNumTevStages( 1 );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_CLR0, useColor ? GX_DIRECT : GX_NONE );

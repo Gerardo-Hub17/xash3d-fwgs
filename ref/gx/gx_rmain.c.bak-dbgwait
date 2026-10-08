@@ -28,9 +28,6 @@ extern double g_gx_cpu_time_ms;
 #include <gccore.h>
 #include <ogc/gx.h>
 
-extern void GX_DbgWait( const char *tag );
-extern void GX_MemReport( const char *tag );
-
 #define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
 
 #define IsLiquidContents( cnt ) ( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
@@ -53,32 +50,22 @@ void GX_ReloadProjectionMtx( float zbias )
 {
     Mtx44 biased;
     memcpy( biased, gx_projection_mtx, sizeof( Mtx44 ));
-    biased[2][3] -= zbias;
+    biased[3][2] -= zbias;
     GX_LoadProjectionMtx( biased, gx_projection_type );
 }
 
-/*
- * The engine's matrix4x4 is row-major with the translation in column 3
- * (m[0][3], m[1][3], m[2][3]) and a GL-style clip space (z in [-1, 1]).
- * GX's Mtx/Mtx44 use the very same row-major layout, so the matrix must be
- * copied as is, NOT transposed. The only difference is the depth range: GX
- * clips z to [-w, 0], so remap z_gx = ( z_gl - w ) / 2.
- */
 void Matrix4x4_ToMtx44( Mtx44 dst, const matrix4x4 src )
 {
     for( int r = 0; r < 4; r++ )
         for( int c = 0; c < 4; c++ )
-            dst[r][c] = src[r][c];
-
-    for( int c = 0; c < 4; c++ )
-        dst[2][c] = ( src[2][c] - src[3][c] ) * 0.5f;
+            dst[c][r] = src[r][c];
 }
 
 void Matrix4x4_ToMtx( Mtx dst, const matrix4x4 src )
 {
     for( int r = 0; r < 3; r++ )
         for( int c = 0; c < 4; c++ )
-            dst[r][c] = src[r][c];
+            dst[c][r] = src[r][c];
 }
 
 static void GX_EnableFog( qboolean enable,
@@ -94,7 +81,7 @@ static void GX_EnableFog( qboolean enable,
             (u8)(b * 255.0f),
             (u8)(a * 255.0f)
         };
-        GX_SetFog( fogType, fogStart, fogEnd, 4.0f, Q_max( 256.0f, RI.farClip ), fogColor );
+        GX_SetFog( fogType, fogStart, fogEnd, 4.0f, gldepthmax * 2.0f, fogColor );
     }
     else
     {
@@ -896,7 +883,6 @@ void R_BeginFrame( qboolean clearScene )
 	static int bf;
 	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
 	bf++;
-	GX_DbgWait( "beginframe start" );
 
     glConfig.softwareGammaUpdate = false;
 
@@ -908,17 +894,13 @@ void R_BeginFrame( qboolean clearScene )
         clearScene && ENGINE_GET_PARM( PARM_CONNSTATE ) != ca_cinematic )
 #endif
     {
-        // Limpiar el EFB con un quad negro de pantalla completa.
-        // Sin esto el EFB conserva lo que dibujó el frame anterior
-        // (o basura de la inicialización) y la pantalla muestra rayas.
-        R_ClearScreen();
+        // GX_InvalidateTexAll(); // REMOVIDO: causaba re-subida de texturas cada frame
     }
 
     R_CheckCvars();
     GXT( "cvars ok" );
     R_Set2DMode( true );
     GXT( "2d on" );
-    GX_DbgWait( "after 2d on" );
 
     if( FBitSet( gl_texture_nearest.flags | gl_lightmap_nearest.flags |
                  gl_texture_anisotropy.flags | gl_texture_lodbias.flags, FCVAR_CHANGED ))
