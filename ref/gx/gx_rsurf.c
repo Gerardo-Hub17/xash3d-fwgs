@@ -1626,8 +1626,21 @@ static void R_DrawTextureChains( void )
 				for( ; s != NULL; s = s->texturechain )
 					R_RenderBrushPoly( s, CULL_VISIBLE );
 
-				GX_Bind( XASH_TEXTURE0, t->gl_texturenum );
+				GX_Bind( XASH_TEXTURE0, ( gx_testmode == 6 ) ? tr.whiteTexture : t->gl_texturenum );
+				if( gx_world_dbg > 0 )
+				{
+					gl_texture_t *gt = R_GetTexture( t->gl_texturenum );
+					int nf = 0;
+					for( msurface_t *q = batch_head; q; q = q->texturechain ) nf++;
+					gEngfuncs.Con_Printf( "[WCHAIN] #%d %s tex=%d %dx%d fmt=%d mips=%d surfs=%d ...\n", i, t->name, t->gl_texturenum,
+						gt ? gt->width : 0, gt ? gt->height : 0, gt ? (int)gt->format : -1, gt ? (int)gt->numMips : -1, nf );
+				}
 				DrawGLPolyBatchChain_VBO( batch_head );
+				if( gx_world_dbg > 0 )
+				{
+					GX_DrawDone();
+					gEngfuncs.Con_Printf( "[WCHAIN]   ok\n" );
+				}
 			}
 		t->texturechain = NULL;
 	}
@@ -2228,19 +2241,24 @@ void R_DrawWorld( void )
 
 	start = gEngfuncs.pfnTime();
 
+	if( gx_world_dbg > 0 ) gEngfuncs.Con_Printf( "[WORLD] chains start\n" );
 	R_DrawTextureChains();
+	if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] chains done\n" ); }
 
 	if( !ENGINE_GET_PARM( PARM_DEV_OVERVIEW ))
 	{
 		DrawDecalsBatch();
 		GX_ResetFogColor();
+		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] decals done\n" ); }
 		R_BlendLightmaps();
+		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] lightmaps done\n" ); }
 		R_RenderFullbrights( R_HasEnabledVBO( ));
 		R_RenderDetails( R_HasEnabledVBO() ? 2 : 3 );
 		R_DrawTriangleOutlines();
 
 		if( skychain )
 			R_DrawSkyBox();
+		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] sky/extras done\n" ); }
 	}
 
 	end = gEngfuncs.pfnTime();
