@@ -58,8 +58,6 @@ GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX1,
 GX_TEX_ST, GX_F32, 0);
 }
 
-// reserved[0] = first vertex in the VBO, or -1 when the surface is not in it
-// and has to be drawn directly. reserved[1] = index count.
 static void GX_VBO_BuildSurface(msurface_t *surf)
 {
 glpoly2_t *p;
@@ -107,28 +105,7 @@ static qboolean GX_VBO_ModelWanted(model_t *m)
 return m != NULL && m->name[0] != '*' && m->type == mod_brush;
 }
 
-for (i = 0; i < p->numverts; i++)
-{
-float *src = p->verts[i];
-float *dst = (float *)(g_vbo.vertex_data
-+ g_vbo.num_verts_used * GX_VBO_VERT_SIZE);
-dst[0] = src[0]; dst[1] = src[1];
-dst[2] = src[2]; dst[3] = src[3];
-dst[4] = src[4]; dst[5] = src[5];
-dst[6] = src[6];
-g_vbo.num_verts_used++;
-}
-surf->info->reserved[1] += (p->numverts - 2) * 3;
-}
 
-if (g_vbo.num_verts_used > surf_start)
-{
-DCFlushRange(g_vbo.vertex_data
-+ surf_start * GX_VBO_VERT_SIZE,
-(g_vbo.num_verts_used - surf_start)
-* GX_VBO_VERT_SIZE);
-}
-}
 
 static void GX_VBO_BuildWorld(void)
 {
@@ -170,18 +147,13 @@ m->surfaces[j].info->reserved[1] = 0;
 }
 }
 
-gEngfuncs.Con_Printf("VBO: %d of %d verts (%.2f MB), %d surfaces drawn directly
-",
+gEngfuncs.Con_Printf("VBO: %d of %d verts (%.2f MB), %d surfaces drawn directly\n",
 g_vbo.num_verts_used, total,
 (g_vbo.num_verts_used * GX_VBO_VERT_SIZE) / (1024.0f * 1024.0f),
 g_vbo.overflow);
 }
 
-gEngfuncs.Con_Printf("VBO: %d verts (%.2f MB)\n",
-g_vbo.num_verts_used,
-(g_vbo.num_verts_used * GX_VBO_VERT_SIZE)
-/ (1024.0f * 1024.0f));
-}
+
 
 static void GX_SetupVtxFormat_Direct(void)
 {
@@ -307,52 +279,7 @@ if (has_direct)
 GX_VBO_DrawDirect(head, true);
 }
 
-for (i = 1; i < p->numverts - 1; i++)
-{
-if (g_vbo.num_indices + 3
->= GX_VBO_MAX_IDX)
-return;
-g_vbo.index_data[g_vbo.num_indices++]
-= (u16)local;
-g_vbo.index_data[g_vbo.num_indices++]
-= (u16)(local + i);
-g_vbo.index_data[g_vbo.num_indices++]
-= (u16)(local + i + 1);
-}
-local += p->numverts;
-}
-}
 
-if (g_vbo.num_indices == 0)
-return;
-
-DCFlushRange(g_vbo.index_data,
-g_vbo.num_indices * sizeof(u16));
-
-GX_SetupVtxFormat_VBO();
-GX_SetArray(GX_VA_POS, g_vbo.vertex_data,
-GX_VBO_VERT_SIZE);
-GX_SetArray(GX_VA_TEX0, g_vbo.vertex_data + 12,
-GX_VBO_VERT_SIZE);
-GX_SetArray(GX_VA_TEX1, g_vbo.vertex_data + 20,
-GX_VBO_VERT_SIZE);
-
-GX_Begin(GX_TRIANGLES, GX_VTXFMT0,
-g_vbo.num_indices);
-
-{
-int i;
-for (i = 0; i < g_vbo.num_indices; i++)
-{
-u16 idx = g_vbo.index_data[i];
-GX_Position1x16(idx);
-GX_TexCoord1x16(idx);
-GX_TexCoord1x16(idx);
-}
-}
-
-GX_End();
-}
 
 static void DrawGLPolyBatchChain_VBO(msurface_t *head)
 {
