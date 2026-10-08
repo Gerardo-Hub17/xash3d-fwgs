@@ -498,42 +498,10 @@ static qboolean GX_GetSrcFmt( pixformat_t fmt, gx_srcfmt_t *s )
 
 static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt )
 {
-	gx_srcfmt_t s;
-	qboolean hasAlpha = false, constRGB = true, haveRef = false;
-	byte rr = 0, rg = 0, rb = 0;
-
-	if( !src || !GX_GetSrcFmt( fmt, &s ) )
-		return GX_TF_RGBA8;
-
-	if( s.a < 0 )
-		return GX_TF_RGB565;
-
-	for( int i = 0, n = width * height; i < n; i++, src += s.bpp )
-	{
-		byte a = src[s.a];
-
-		if( a == 255 ) { if( !constRGB && hasAlpha ) break; }
-		else hasAlpha = true;
-
-		if( a == 0 ) continue;
-
-		if( !haveRef )
-		{
-			rr = src[s.r]; rg = src[s.g]; rb = src[s.b];
-			haveRef = true;
-		}
-		else if( src[s.r] != rr || src[s.g] != rg || src[s.b] != rb )
-		{
-			constRGB = false;
-		}
-	}
-
-	if( !hasAlpha )
-		return GX_TF_RGB565;
-	if( constRGB && haveRef && rr >= 240 && rg >= 240 && rb >= 240 )
-		return GX_TF_IA4;
-	return GX_TF_RGB5A3;
+	(void)src; (void)width; (void)height; (void)fmt;
+	return GX_TF_RGBA8;
 }
+
 
 static void GX_ConvertToNative( byte *dst, const byte *src, int width, int height, pixformat_t fmt, u8 gxFmt )
 {
