@@ -59,6 +59,8 @@ void GX_MemReport( const char *tag )
 
 #include "crclib.h"
 
+static int g_diagFmtCount;
+
 static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth );
 
 
@@ -683,6 +685,12 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	}
 
 	GX_SetTextureDimensions( tex, pic->width, pic->height, pic->depth );
+	if( g_diagFmtCount < 10 )
+	{
+		g_diagFmtCount++;
+		gEngfuncs.Con_Printf( "[FMTDIAG] #%d %s pic->type=%d flags=0x%X %dx%d\n",
+			g_diagFmtCount, tex->name, (int)pic->type, pic->flags, pic->width, pic->height );
+	}
 
 	tex->fogParams[0] = pic->fogParams[0];
 	tex->fogParams[1] = pic->fogParams[1];
