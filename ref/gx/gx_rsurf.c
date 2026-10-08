@@ -1050,7 +1050,7 @@ static void R_BlendLightmaps( void )
 {
 	msurface_t	*newsurf = NULL;
 
-	if( !R_HasLightmap() )
+	if( !R_HasLightmap() || gx_testmode == 5 )
 		return;
 
 	GX_SetupFogColorForSurfacesEx( r_detailtextures.value ? 3 : 2, 1.0f, true );
@@ -2243,6 +2243,17 @@ void R_DrawWorld( void )
 	end = gEngfuncs.pfnTime();
 
 	r_stats.t_world_draw = end - start;
+
+	if( gx_world_dbg > 0 )
+	{
+		int pages = 0;
+		gx_world_dbg--;
+		for( int i = 0; i < MAX_LIGHTMAPS; i++ )
+			if( tr.lightmapTextures[i] ) pages++;
+		gEngfuncs.Con_Printf( "[WORLD] polys=%d leafs=%d lightmap pages=%d haslightdata=%d t_node=%.1fms t_draw=%.1fms\n",
+			(int)r_stats.c_world_polys, (int)r_stats.c_world_leafs, pages,
+			WORLDMODEL->lightdata ? 1 : 0, r_stats.t_world_node * 1000.0, r_stats.t_world_draw * 1000.0 );
+	}
 	tr.num_draw_decals = 0;
 	skychain = NULL;
 
