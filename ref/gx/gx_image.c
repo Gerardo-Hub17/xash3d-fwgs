@@ -59,6 +59,8 @@ void GX_MemReport( const char *tag )
 
 #include "crclib.h"
 
+static int g_diagTexIdx;
+
 static int g_diagFmtCount;
 
 static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth );
@@ -500,33 +502,43 @@ static qboolean GX_GetSrcFmt( pixformat_t fmt, gx_srcfmt_t *s )
 
 static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt )
 {
-gx_srcfmt_t s;
-qboolean hasAlpha = false, constRGB = true, haveRef = false;
-byte rr = 0, rg = 0, rb = 0;
+	gx_srcfmt_t s;
+	qboolean hasAlpha = false, constRGB = true, haveRef = false;
+	byte rr = 0, rg = 0, rb = 0;
 
-if( !src || !GX_GetSrcFmt( fmt, &s ))
- GX_TF_RGBA8;
+	if( !src || !GX_GetSrcFmt( fmt, &s ) )
+		return GX_TF_RGBA8;
 
-if( s.a < 0 )
- GX_TF_RGB565;
+	if( s.a < 0 )
+		return GX_TF_RGB565;
 
-for( int i = 0, n = width * height; i < n; i++, src += s.bpp )
-{
-te a = src[s.a];
-a == 255 ) { if( !constRGB && hasAlpha ) break; }
-hasAlpha = true;
-a == 0 ) continue;
-!haveRef )
-= src[s.r]; rg = src[s.g]; rb = src[s.b];
-= true;
-if( src[s.r] != rr || src[s.g] != rg || src[s.b] != rb )
-stRGB = false;
+	for( int j = 0, n = width * height; j < n; j++, src += s.bpp )
+	{
+		byte a = src[s.a];
+
+		if( a == 255 ) { if( !constRGB && hasAlpha ) break; }
+		else hasAlpha = true;
+
+		if( a == 0 ) continue;
+
+		if( !haveRef )
+		{
+			rr = src[s.r]; rg = src[s.g]; rb = src[s.b];
+			haveRef = true;
+		}
+		else if( src[s.r] != rr || src[s.g] != rg || src[s.b] != rb )
+		{
+			constRGB = false;
+		}
+	}
+
+	if( !hasAlpha )
+		return GX_TF_RGB565;
+	if( constRGB && haveRef && rr >= 240 && rg >= 240 && rb >= 240 )
+		return GX_TF_IA4;
+	return GX_TF_RGB5A3;
 }
 
-if( !hasAlpha ) return GX_TF_RGB565;
-if( constRGB && haveRef && rr >= 240 && rg >= 240 && rb >= 240 ) return GX_TF_IA4;
-return GX_TF_RGB5A3;
-}
 
 
 
@@ -734,8 +746,16 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 	if( !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( pic->flags, IMAGE_ONEBIT_ALPHA ))
 		data = GX_ApplyFilter( data, tex->width, tex->height );
 
-	GX_UploadMipLevel( tex, 0, tex->width, tex->height, dataFmt, data,
-		GX_PickFormat( data, tex->width, tex->height, dataFmt ));
+		{
+		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
+		if( g_diagTexIdx < 15 )
+		{
+			g_diagTexIdx++;
+			gEngfuncs.Con_Printf( "[UPLDIAG] #%d %s dataFmt=%d -> gxFmt=%d %dx%d\n",
+				g_diagTexIdx, tex->name, (int)dataFmt, (int)picked, tex->width, tex->height );
+		}
+		GX_UploadMipLevel( tex, 0, tex->width, tex->height, dataFmt, data, picked );
+	}
 
 	if( data != pic->buffer )
 		Mem_Free( data );
