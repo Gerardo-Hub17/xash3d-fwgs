@@ -262,7 +262,7 @@ int i;
 DCFlushRange(g_vbo.index_data, g_vbo.num_indices * sizeof(u16));
 
 GX_SetupVtxFormat_VBO();
-GX_InvalidateVtxCache();
+GX_InvVtxCache();
 GX_SetArray(GX_VA_POS, g_vbo.vertex_data, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX0, g_vbo.vertex_data + 12, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX1, g_vbo.vertex_data + 20, GX_VBO_VERT_SIZE);
