@@ -181,53 +181,61 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 
 static size_t GX_CalcTexSizeForFormat( u8 fmt, int width, int height )
 {
-int w4 = ( width + 3 ) & ~3, h4 = ( height + 3 ) & ~3;
-return (size_t)w4 * h4 * ( fmt == GX_TF_RGBA8 ? 4 : 2 );
+	int w4 = ( width + 3 ) & ~3, h4 = ( height + 3 ) & ~3;
+	return (size_t)w4 * h4 * ( fmt == GX_TF_RGBA8 ? 4 : 2 );
 }
 
 /* actualiza un sub-rectangulo (RGBA) dentro de la textura nativa (RGBA8 o RGB565), como glTexSubImage2D */
 void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rgba )
 {
-gl_texture_t *tex = R_GetTexture( texnum );
-int tw, tx, ty;
+	gl_texture_t *tex = R_GetTexture( texnum );
+	int tw, tx, ty;
 
-if( !tex || !tex->nativeData || !rgba )
-;
-if( tex->format != GX_TF_RGBA8 && tex->format != GX_TF_RGB565 )
-;
+	if( !tex || !tex->nativeData || !rgba )
+		return;
+	if( tex->format != GX_TF_RGBA8 && tex->format != GX_TF_RGB565 )
+		return;
 
-tw = ( (int)tex->width + 3 ) & ~3;
+	tw = ( (int)tex->width + 3 ) & ~3;
 
-for( ty = 0; ty < h; ty++ )
-{
-t py = y + ty;
-py < 0 || py >= (int)tex->height ) continue;
+	for( ty = 0; ty < h; ty++ )
+	{
+		int py = y + ty;
+		if( py < 0 || py >= (int)tex->height ) continue;
 
-tx = 0; tx < w; tx++ )
-t px = x + tx;
-st byte *p;
-te *tile;
-t in;
+		for( tx = 0; tx < w; tx++ )
+		{
+			int px = x + tx;
+			const byte *p;
+			byte *tile;
+			int in;
 
-px < 0 || px >= (int)tex->width ) continue;
+			if( px < 0 || px >= (int)tex->width ) continue;
 
-= rgba + ( ty * w + tx ) * 4;
- = ( py & 3 ) * 4 + ( px & 3 );
+			p = rgba + ( ty * w + tx ) * 4;
+			in = ( py & 3 ) * 4 + ( px & 3 );
 
-tex->format == GX_TF_RGBA8 )
-= (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
- * 2 + 0] = p[3];
- * 2 + 1] = p[0];
-+ in * 2 + 0] = p[1];
-+ in * 2 + 1] = p[2];
-c = (u16)( ( ( p[0] >> 3 ) << 11 ) | ( ( p[1] >> 2 ) << 5 ) | ( p[2] >> 3 ) );
-= (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 32;
- * 2 + 0] = (byte)( c >> 8 );
- * 2 + 1] = (byte)( c & 0xFF );
-DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
-GX_InvalidateTexAll();
+			if( tex->format == GX_TF_RGBA8 )
+			{
+				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
+				tile[in * 2 + 0] = p[3];
+				tile[in * 2 + 1] = p[0];
+				tile[32 + in * 2 + 0] = p[1];
+				tile[32 + in * 2 + 1] = p[2];
+			}
+			else
+			{
+				u16 c = (u16)( ( ( p[0] >> 3 ) << 11 ) | ( ( p[1] >> 2 ) << 5 ) | ( p[2] >> 3 ) );
+				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 32;
+				tile[in * 2 + 0] = (byte)( c >> 8 );
+				tile[in * 2 + 1] = (byte)( c & 0xFF );
+			}
+		}
+	}
+
+	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
+	GX_InvalidateTexAll();
 }
-
 void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
 	switch( fmt )
