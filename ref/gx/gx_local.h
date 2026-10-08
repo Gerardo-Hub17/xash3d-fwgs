@@ -284,6 +284,7 @@ void Matrix4x4_ToMtx( Mtx dst, const matrix4x4 src );
 
 void GX_ReadPixelsRGBA( int x, int y, int w, int h, byte *out );
 void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt );
+void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rgba );
 
 void GX_ApplyTextureParams( gl_texture_t *tex );
 void GX_RebuildLightmaps( void );

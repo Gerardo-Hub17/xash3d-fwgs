@@ -179,6 +179,55 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 	}
 }
 
+static size_t GX_CalcTexSizeForFormat( u8 fmt, int width, int height )
+{
+int w4 = ( width + 3 ) & ~3, h4 = ( height + 3 ) & ~3;
+return (size_t)w4 * h4 * ( fmt == GX_TF_RGBA8 ? 4 : 2 );
+}
+
+/* actualiza un sub-rectangulo (RGBA) dentro de la textura nativa (RGBA8 o RGB565), como glTexSubImage2D */
+void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rgba )
+{
+gl_texture_t *tex = R_GetTexture( texnum );
+int tw, tx, ty;
+
+if( !tex || !tex->nativeData || !rgba )
+;
+if( tex->format != GX_TF_RGBA8 && tex->format != GX_TF_RGB565 )
+;
+
+tw = ( (int)tex->width + 3 ) & ~3;
+
+for( ty = 0; ty < h; ty++ )
+{
+t py = y + ty;
+py < 0 || py >= (int)tex->height ) continue;
+
+tx = 0; tx < w; tx++ )
+t px = x + tx;
+st byte *p;
+te *tile;
+t in;
+
+px < 0 || px >= (int)tex->width ) continue;
+
+= rgba + ( ty * w + tx ) * 4;
+ = ( py & 3 ) * 4 + ( px & 3 );
+
+tex->format == GX_TF_RGBA8 )
+= (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
+ * 2 + 0] = p[3];
+ * 2 + 1] = p[0];
++ in * 2 + 0] = p[1];
++ in * 2 + 1] = p[2];
+c = (u16)( ( ( p[0] >> 3 ) << 11 ) | ( ( p[1] >> 2 ) << 5 ) | ( p[2] >> 3 ) );
+= (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 32;
+ * 2 + 0] = (byte)( c >> 8 );
+ * 2 + 1] = (byte)( c & 0xFF );
+DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
+GX_InvalidateTexAll();
+}
+
 void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
 	switch( fmt )
@@ -216,7 +265,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 
 	size_t nativeSize = (size_t)( cols * rows ) * 4;
 
-	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL )
+	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL && tex->format == GX_TF_RGBA8 )
 	{
 		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
@@ -236,6 +285,8 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 
 		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
+
+		tex->format = GX_TF_RGBA8;
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
 			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );

@@ -1467,8 +1467,8 @@ static qboolean R_CheckLightMap( msurface_t *fa )
 
 		R_UpdateSurfaceCachedLight( fa );
 
-		GX_UpdateTexture( tr.lightmapTextures[fa->lightmaptexturenum],
-			smax, tmax, smax, tmax, temp, PF_RGBA_32 );
+		GX_UpdateTextureSub( tr.lightmapTextures[fa->lightmaptexturenum],
+			fa->light_s, fa->light_t, smax, tmax, temp );
 
 		return false;
 	}
