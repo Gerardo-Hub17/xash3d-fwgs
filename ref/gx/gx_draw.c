@@ -217,6 +217,50 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
 	/* GX_InvalidateTexAll() quitado: se llamaba en cada lightmap por frame y destruia el rendimiento */
 }
+static void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
+{
+	int tw = ( width + 3 ) & ~3;
+	int srcBpp;
+	int sr, sg, sb;
+
+	switch( fmt )
+	{
+	case PF_RGBA_32: srcBpp = 4; sr = 0; sg = 1; sb = 2; break;
+	case PF_BGRA_32: srcBpp = 4; sr = 2; sg = 1; sb = 0; break;
+	case PF_RGB_24:  srcBpp = 3; sr = 0; sg = 1; sb = 2; break;
+	case PF_BGR_24:  srcBpp = 3; sr = 2; sg = 1; sb = 0; break;
+	case PF_LUMINANCE: srcBpp = 1; sr = sg = sb = 0; break;
+	default: srcBpp = 4; sr = 0; sg = 1; sb = 2; break;
+	}
+
+	for( int ty = 0; ty < height; ty += 4 )
+	{
+		for( int tx = 0; tx < width; tx += 4 )
+		{
+			byte *tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 32;
+			for( int y = 0; y < 4; y++ )
+			{
+				int sy = ty + y;
+				if( sy >= height ) sy = height - 1;
+				for( int x = 0; x < 4; x++ )
+				{
+					int sx = tx + x;
+					const byte *t;
+					int in;
+					byte r, g, b;
+					u16 c;
+					if( sx >= width ) sx = width - 1;
+					t = src + ( sy * width + sx ) * srcBpp;
+					r = t[sr]; g = t[sg]; b = t[sb];
+					c = (u16)( ( ( r >> 3 ) << 11 ) | ( ( g >> 2 ) << 5 ) | ( b >> 3 ) );
+					in = ( y * 4 + x ) * 2;
+					tile[in + 0] = (byte)( c >> 8 );
+					tile[in + 1] = (byte)( c & 0xFF );
+				}
+			}
+		}
+	}
+}
 void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
 	switch( fmt )
@@ -252,11 +296,11 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 
 	gl_texture_t *tex = R_GetTexture( texnum );
 
-	size_t nativeSize = (size_t)( cols * rows ) * 4;
+	size_t nativeSize = (size_t)( cols * rows ) * 2; /* RGB565 = 2 bytes/pixel */
 
 	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL && tex->format == GX_TF_RGBA8 )
 	{
-		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 		GX_InvalidateTexAll();
 	}
@@ -272,7 +316,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 		tex->width  = cols;
 		tex->height = rows;
 
-		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
 		tex->format = GX_TF_RGB565;
