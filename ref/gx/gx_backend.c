@@ -225,11 +225,17 @@ void GX_MultiTexCoord2f( int tmu, float s, float t )
 
 void GX_SetChanVtxColor( qboolean vtx )
 {
-u8 src = vtx ? GX_SRC_VTX : GX_SRC_REG;
+	u8 src = vtx ? GX_SRC_VTX : GX_SRC_REG;
 
-GX_SetNumChans( 1 );
-GX_SetChanCtrl( GX_COLOR0A0, GX_DISABLE, src, src, GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE );
+	GX_SetNumChans( 1 );
+	GX_SetChanCtrl( GX_COLOR0A0, GX_DISABLE, src, src, GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE );
+	if( !vtx )
+	{
+		GXColor white = { 255, 255, 255, 255 };
+		GX_SetChanMatColor( GX_COLOR0A0, white );
+	}
 }
+
 
 void GX_SetupTexturedPipeline( void )
 {
