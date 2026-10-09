@@ -14,6 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include <stdio.h>
 #include "gx_local.h"
 
 #include "xash3d_mathlib.h"
@@ -640,6 +641,29 @@ static void LM_UploadBlock( qboolean dynamic )
 		r_lightmap.flags = IMAGE_HAS_COLOR;
 		r_lightmap.buffer = gx_lms.lightmap_buffer;
 
+		if( i == 0 )
+		{
+			FILE *bf = fopen( "sd:/xash3d/lm0.bmp", "wb" );
+			if( bf )
+			{
+				int W = BLOCK_SIZE, H = BLOCK_SIZE, rowb = W * 3, hs = 54;
+				unsigned char h[54] = { 'B','M' };
+				unsigned fs = hs + rowb * H;
+				memcpy( h + 2, &fs, 4 ); h[10] = hs; h[14] = 40;
+				memcpy( h + 18, &W, 4 ); memcpy( h + 22, &H, 4 );
+				h[26] = 1; h[28] = 24;
+				{ unsigned isz = rowb * H; memcpy( h + 34, &isz, 4 ); }
+				fwrite( h, 1, 54, bf );
+				for( int y = H - 1; y >= 0; y-- )
+					for( int x = 0; x < W; x++ )
+					{
+						const byte *px = gx_lms.lightmap_buffer + ( y * W + x ) * 4;
+						fputc( px[2], bf ); fputc( px[1], bf ); fputc( px[0], bf );
+					}
+				fclose( bf );
+			}
+		}
+
 		tr.lightmapTextures[i] = GX_CreateTexture( lmName,
 			BLOCK_SIZE, BLOCK_SIZE,
 			gx_lms.lightmap_buffer,
@@ -1051,6 +1075,48 @@ static void R_BlendLightmaps( void )
 
 	if( !R_HasLightmap() || gx_testmode == 5 )
 		return;
+
+	if( gx_testmode != 9 )
+	{
+		/* Pase de lightmap con UNA sola textura (TEXMAP0): resultado = lightmap * framebuffer.
+		   La textura difusa ya se dibujo en el primer pase. Evita el TEV de 2 texturas. */
+		GX_SetNumTevStages( 1 );
+		GX_SetNumTexGens( 1 );
+		GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX1, GX_IDENTITY );
+		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL );
+		GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC );
+		GX_SetTevColorOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+		GX_SetTevAlphaIn( GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA );
+		GX_SetTevAlphaOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
+		if( gl_overbright.value )
+			GX_SetBlendMode( GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_SRCCLR, GX_LO_CLEAR );
+		else
+			GX_SetBlendMode( GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_ZERO, GX_LO_CLEAR );
+		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_FALSE );
+		GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
+
+		for( int i = 0; i < MAX_LIGHTMAPS; i++ )
+		{
+			msurface_t *surf;
+			if( !gx_lms.lightmap_surfaces[i] )
+				continue;
+			GX_Bind( 0, ( gx_testmode == 10 ) ? tr.grayTexture : tr.lightmapTextures[i] );
+			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
+				surf->texturechain = surf->info->lightmapchain;
+			DrawGLPolyBatchChain_VBO( gx_lms.lightmap_surfaces[i] );
+			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
+				surf->texturechain = NULL;
+		}
+
+		GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
+		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+		GX_SetNumTexGens( 1 );
+		GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
+		GX_SetNumTevStages( 1 );
+		GX_EnableTextureUnit( 0, true );
+		/* dinamicos (flashlight/dlights) omitidos en este modo */
+		return;
+	}
 
 	GX_SetupFogColorForSurfacesEx( r_detailtextures.value ? 3 : 2, 1.0f, true );
 
@@ -1639,7 +1705,7 @@ static void R_DrawTextureChains( void )
 
 				/* el pase de lightmaps ya dibuja textura x lightmap: no dibujar dos veces
 				   las superficies con lightmap (solo las que no pasan por ese pase) */
-				if( gx_testmode != 5 && R_HasLightmap( ))
+				if( gx_testmode == 9 && R_HasLightmap( ))
 				{
 					msurface_t *nh = NULL, *nt = NULL, *q, *nx;
 					for( q = batch_head; q != NULL; q = nx )
