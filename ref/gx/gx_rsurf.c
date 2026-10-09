@@ -641,28 +641,6 @@ static void LM_UploadBlock( qboolean dynamic )
 		r_lightmap.flags = IMAGE_HAS_COLOR;
 		r_lightmap.buffer = gx_lms.lightmap_buffer;
 
-		if( i == 0 )
-		{
-			FILE *bf = fopen( "sd:/xash3d/lm0.bmp", "wb" );
-			if( bf )
-			{
-				int W = BLOCK_SIZE, H = BLOCK_SIZE, rowb = W * 3, hs = 54;
-				unsigned char h[54] = { 'B','M' };
-				unsigned fs = hs + rowb * H;
-				memcpy( h + 2, &fs, 4 ); h[10] = hs; h[14] = 40;
-				memcpy( h + 18, &W, 4 ); memcpy( h + 22, &H, 4 );
-				h[26] = 1; h[28] = 24;
-				{ unsigned isz = rowb * H; memcpy( h + 34, &isz, 4 ); }
-				fwrite( h, 1, 54, bf );
-				for( int y = H - 1; y >= 0; y-- )
-					for( int x = 0; x < W; x++ )
-					{
-						const byte *px = gx_lms.lightmap_buffer + ( y * W + x ) * 4;
-						fputc( px[2], bf ); fputc( px[1], bf ); fputc( px[0], bf );
-					}
-				fclose( bf );
-			}
-		}
 
 		tr.lightmapTextures[i] = GX_CreateTexture( lmName,
 			BLOCK_SIZE, BLOCK_SIZE,

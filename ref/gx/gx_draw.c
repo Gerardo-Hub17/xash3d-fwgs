@@ -250,7 +250,7 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 }
 
 
-static void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
+static __attribute__((unused)) void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
 	int tw = ( width + 3 ) & ~3;
 	int srcBpp;
@@ -289,6 +289,45 @@ static void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int 
 					in = ( y * 4 + x ) * 2;
 					tile[in + 0] = (byte)( c >> 8 );
 					tile[in + 1] = (byte)( c & 0xFF );
+				}
+			}
+		}
+	}
+}
+static void GX_ConvertToRGBA8Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
+{
+	int tw = ( width + 3 ) & ~3;
+	int srcBpp, sr, sg, sb, sa;
+
+	switch( fmt )
+	{
+	case PF_BGRA_32: srcBpp = 4; sr = 2; sg = 1; sb = 0; sa = 3; break;
+	case PF_RGB_24:  srcBpp = 3; sr = 0; sg = 1; sb = 2; sa = -1; break;
+	case PF_BGR_24:  srcBpp = 3; sr = 2; sg = 1; sb = 0; sa = -1; break;
+	case PF_LUMINANCE: srcBpp = 1; sr = sg = sb = 0; sa = -1; break;
+	default: srcBpp = 4; sr = 0; sg = 1; sb = 2; sa = 3; break;
+	}
+
+	for( int ty = 0; ty < height; ty += 4 )
+	{
+		for( int tx = 0; tx < width; tx += 4 )
+		{
+			byte *tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 64;
+			for( int y = 0; y < 4; y++ )
+			{
+				int sy = ty + y;
+				if( sy >= height ) sy = height - 1;
+				for( int x = 0; x < 4; x++ )
+				{
+					int sx = tx + x;
+					const byte *t;
+					int in = y * 4 + x;
+					if( sx >= width ) sx = width - 1;
+					t = src + ( sy * width + sx ) * srcBpp;
+					tile[in * 2 + 0] = ( sa >= 0 ) ? t[sa] : 255;
+					tile[in * 2 + 1] = t[sr];
+					tile[32 + in * 2 + 0] = t[sg];
+					tile[32 + in * 2 + 1] = t[sb];
 				}
 			}
 		}
@@ -333,7 +372,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 
 	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL && tex->format == GX_TF_RGBA8 )
 	{
-		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		GX_ConvertToRGBA8Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 		GX_InvalidateTexAll();
 	}
@@ -349,13 +388,13 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 		tex->width  = cols;
 		tex->height = rows;
 
-		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
+		GX_ConvertToRGBA8Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
-		tex->format = GX_TF_I8; /* lightmaps dinamicos en escala de grises */
+		tex->format = GX_TF_RGBA8;
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
-			GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE );
+			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
 
 	GX_ApplyTextureParams( tex );
