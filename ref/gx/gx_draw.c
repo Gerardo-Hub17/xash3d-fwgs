@@ -119,65 +119,46 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
-	int bpp, rOff, gOff, bOff, aOff;
-	qboolean hasAlpha = true;
+	int tw = ( width + 3 ) & ~3;
+	int srcBpp = 4; /* siempre PF_RGBA_32/PF_BGRA_32 */
+	int sr = ( fmt == PF_BGRA_32 ) ? 2 : 0;
+	int sb = ( fmt == PF_BGRA_32 ) ? 0 : 2;
+	int sg = 1;
+	int sa = 3;
 
-	switch( fmt )
+	if( fmt != PF_RGBA_32 && fmt != PF_BGRA_32 )
 	{
-	case PF_RGBA_32:
-		bpp = 4; rOff = 0; gOff = 1; bOff = 2; aOff = 3;
-		break;
-	case PF_BGRA_32:
-		bpp = 4; rOff = 2; gOff = 1; bOff = 0; aOff = 3;
-		break;
-	case PF_RGB_24:
-		bpp = 3; rOff = 0; gOff = 1; bOff = 2; aOff = -1; hasAlpha = false;
-		break;
-	case PF_BGR_24:
-		bpp = 3; rOff = 2; gOff = 1; bOff = 0; aOff = -1; hasAlpha = false;
-		break;
-	case PF_LUMINANCE:
-		bpp = 1; rOff = gOff = bOff = 0; aOff = -1; hasAlpha = false;
-		break;
-	default:
-		gEngfuncs.Con_DPrintf( S_ERROR "%s: unsupported pixel format %i\n", __func__, fmt );
-		return;
+		/* Fallback: asumir RGBA */
+		sr = 0; sg = 1; sb = 2; sa = 3;
 	}
 
 	for( int ty = 0; ty < height; ty += 4 )
 	{
 		for( int tx = 0; tx < width; tx += 4 )
 		{
-			byte *arBlock = dst;
-			byte *gbBlock = dst + 32;
-
+			byte *tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 64;
 			for( int y = 0; y < 4; y++ )
 			{
 				int sy = ty + y;
 				if( sy >= height ) sy = height - 1;
-
 				for( int x = 0; x < 4; x++ )
 				{
 					int sx = tx + x;
+					const byte *t;
+					int in;
 					if( sx >= width ) sx = width - 1;
-
-					const byte *texel = src + ( sy * width + sx ) * bpp;
-					byte r = texel[rOff];
-					byte g = texel[gOff];
-					byte b = texel[bOff];
-					byte a = hasAlpha ? texel[aOff] : 255;
-
-					*arBlock++ = a;
-					*arBlock++ = r;
-					*gbBlock++ = g;
-					*gbBlock++ = b;
+					t = src + ( sy * width + sx ) * srcBpp;
+					in = ( y * 4 + x ) * 2;
+					tile[in + 0] = t[sa];
+					tile[in + 1] = t[sr];
+					tile[32 + in + 0] = t[sg];
+					tile[32 + in + 1] = t[sb];
 				}
 			}
-
-			dst += 64;
 		}
 	}
 }
+
 
 static size_t GX_CalcTexSizeForFormat( u8 fmt, int width, int height )
 {
@@ -234,7 +215,7 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 	}
 
 	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
-	GX_InvalidateTexAll();
+	/* GX_InvalidateTexAll() quitado: se llamaba en cada lightmap por frame y destruia el rendimiento */
 }
 void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {

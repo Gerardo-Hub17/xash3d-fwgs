@@ -184,6 +184,11 @@ void GX_ApplyTextureParams( gl_texture_t *tex )
 		DCFlushRange( tex->nativeData,
 			GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ));
 		GX_InvalidateTexAll();
+
+		/* el texObj cambio: forzar que GX_Bind lo recargue al hardware */
+		for( int u = 0; u < MAX_TEXTURE_UNITS; u++ )
+			if( glState.currentTexturesIndex[u] == (int)( tex - gl_textures ))
+				glState.currentTexturesIndex[u] = 0;
 	}
 }
 
@@ -437,30 +442,21 @@ static void GX_BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth,
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
-	int bpp, rOff, gOff, bOff, aOff;
-	qboolean hasAlpha = true;
+	gx_srcfmt_t s;
+	int tw, tx, ty;
 
-	switch( fmt )
-	{
-	case PF_RGBA_32:  bpp = 4; rOff=0; gOff=1; bOff=2; aOff=3; break;
-	case PF_BGRA_32:  bpp = 4; rOff=2; gOff=1; bOff=0; aOff=3; break;
-	case PF_RGB_24:   bpp = 3; rOff=0; gOff=1; bOff=2; aOff=-1; hasAlpha=false; break;
-	case PF_BGR_24:   bpp = 3; rOff=2; gOff=1; bOff=0; aOff=-1; hasAlpha=false; break;
-	case PF_LUMINANCE:bpp = 1; rOff=gOff=bOff=0; aOff=-1; hasAlpha=false; break;
-	default:
-		// Never leave the buffer uninitialised: it is memalign()ed and would
-		// show up as random coloured noise on screen.
-		gEngfuncs.Con_Printf( S_ERROR "%s: unsupported pixel format %i (%dx%d)\n", __func__, fmt, width, height );
-		memset( dst, 0, (size_t)(( width + 3 ) & ~3 ) * (( height + 3 ) & ~3 ) * 4 );
+	if( !GX_GetSrcFmt( fmt, &s ) )
 		return;
-	}
 
-	for( int ty = 0; ty < height; ty += 4 )
+	tw = ( width + 3 ) & ~3;
+
+	/* GX RGBA8: tiles 4x4. Primeros 32 bytes del tile: A,R,A,R... (16 pixeles). */
+	/* Ultimos 32 bytes: G,B,G,B... para los mismos 16 pixeles. */
+	for( ty = 0; ty < height; ty += 4 )
 	{
-		for( int tx = 0; tx < width; tx += 4 )
+		for( tx = 0; tx < width; tx += 4 )
 		{
-			byte *arBlock = dst;
-			byte *gbBlock = dst + 32;
+			byte *tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 64;
 			for( int y = 0; y < 4; y++ )
 			{
 				int sy = ty + y;
@@ -468,22 +464,24 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 				for( int x = 0; x < 4; x++ )
 				{
 					int sx = tx + x;
+					const byte *t;
+					byte r, g, b, a;
+					int in;
 					if( sx >= width ) sx = width - 1;
-					const byte *texel = src + ( sy * width + sx ) * bpp;
-					byte r = texel[rOff];
-					byte g = texel[gOff];
-					byte b = texel[bOff];
-					byte a = hasAlpha ? texel[aOff] : 255;
-					*arBlock++ = a;
-					*arBlock++ = r;
-					*gbBlock++ = g;
-					*gbBlock++ = b;
+					t = src + ( sy * width + sx ) * s.bpp;
+					r = t[s.r]; g = t[s.g]; b = t[s.b];
+					a = ( s.a >= 0 ) ? t[s.a] : 255;
+					in = ( y * 4 + x ) * 2;
+					tile[in + 0] = a;
+					tile[in + 1] = r;
+					tile[32 + in + 0] = g;
+					tile[32 + in + 1] = b;
 				}
 			}
-			dst += 64;
 		}
 	}
 }
+
 
 typedef struct { int bpp, r, g, b, a; } gx_srcfmt_t;
 
