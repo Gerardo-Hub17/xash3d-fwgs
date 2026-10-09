@@ -442,19 +442,23 @@ static void GX_BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth,
 
 static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
-	gx_srcfmt_t s;
-	int tw, tx, ty;
+	int tw = ( width + 3 ) & ~3;
+	int srcBpp;
+	int sr, sg, sb, sa;
 
-	if( !GX_GetSrcFmt( fmt, &s ) )
-		return;
-
-	tw = ( width + 3 ) & ~3;
-
-	/* GX RGBA8: tiles 4x4. Primeros 32 bytes del tile: A,R,A,R... (16 pixeles). */
-	/* Ultimos 32 bytes: G,B,G,B... para los mismos 16 pixeles. */
-	for( ty = 0; ty < height; ty += 4 )
+	switch( fmt )
 	{
-		for( tx = 0; tx < width; tx += 4 )
+	case PF_RGBA_32: srcBpp = 4; sr = 0; sg = 1; sb = 2; sa = 3; break;
+	case PF_BGRA_32: srcBpp = 4; sr = 2; sg = 1; sb = 0; sa = 3; break;
+	case PF_RGB_24:  srcBpp = 3; sr = 0; sg = 1; sb = 2; sa = -1; break;
+	case PF_BGR_24:  srcBpp = 3; sr = 2; sg = 1; sb = 0; sa = -1; break;
+	case PF_LUMINANCE: srcBpp = 1; sr = sg = sb = 0; sa = -1; break;
+	default: srcBpp = 4; sr = 0; sg = 1; sb = 2; sa = 3; break;
+	}
+
+	for( int ty = 0; ty < height; ty += 4 )
+	{
+		for( int tx = 0; tx < width; tx += 4 )
 		{
 			byte *tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 64;
 			for( int y = 0; y < 4; y++ )
@@ -465,22 +469,20 @@ static void GX_ConvertToRGBA8( byte *dst, const byte *src, int width, int height
 				{
 					int sx = tx + x;
 					const byte *t;
-					byte r, g, b, a;
 					int in;
 					if( sx >= width ) sx = width - 1;
-					t = src + ( sy * width + sx ) * s.bpp;
-					r = t[s.r]; g = t[s.g]; b = t[s.b];
-					a = ( s.a >= 0 ) ? t[s.a] : 255;
+					t = src + ( sy * width + sx ) * srcBpp;
 					in = ( y * 4 + x ) * 2;
-					tile[in + 0] = a;
-					tile[in + 1] = r;
-					tile[32 + in + 0] = g;
-					tile[32 + in + 1] = b;
+					tile[in + 0] = ( sa >= 0 ) ? t[sa] : 255;
+					tile[in + 1] = t[sr];
+					tile[32 + in + 0] = t[sg];
+					tile[32 + in + 1] = t[sb];
 				}
 			}
 		}
 	}
 }
+
 
 
 typedef struct { int bpp, r, g, b, a; } gx_srcfmt_t;
