@@ -276,6 +276,28 @@ void GX_ClearExtensions( void )
 	memset( glConfig.extension, 0, sizeof( glConfig.extension ));
 }
 
+/* Regiones TMEM propias: la callback por defecto de libogc da solo 32KB por texmap,
+ * y una textura 256x256 RGB565 (128KB) pisa el TMEM del texmap vecino (lightmap) => arcoiris. */
+static GXTexRegion gx_texregions[8];
+
+static GXTexRegion *GX_TexRegionCB( GXTexObj *obj, u8 mapid )
+{
+	(void)obj;
+	return &gx_texregions[mapid & 7];
+}
+
+static void GX_InitTexRegions( void )
+{
+	for( int i = 0; i < 8; i++ )
+	{
+		u32 off = ( i & 3 ) * 0x20000;
+		GX_InitTexCacheRegion( &gx_texregions[i], GX_FALSE,
+			off, GX_TEXCACHE_128K,
+			0x80000 + off, GX_TEXCACHE_128K );
+	}
+	GX_SetTexRegionCallback( GX_TexRegionCB );
+	GX_InvalidateTexAll();
+}
 static void GX_InitCommands( void )
 {
 	gEngfuncs.Cvar_RegisterVariable( &r_lighting_ambient );
@@ -399,6 +421,7 @@ void GX_OnContextCreated( void )
 	gxvid.fifo = memalign( 32, GX_FIFO_SIZE );
 	memset( gxvid.fifo, 0, GX_FIFO_SIZE );
 	GX_Init( gxvid.fifo, GX_FIFO_SIZE );
+	GX_InitTexRegions();
 
 	GX_SetCopyClear( black, GX_MAX_Z24 );
 	GX_SetViewport( 0.0f, 0.0f, (f32)rmode->fbWidth, (f32)rmode->efbHeight, 0.0f, 1.0f );
