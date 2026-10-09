@@ -170,44 +170,75 @@ static size_t GX_CalcTexSizeForFormat( u8 fmt, int width, int height )
 void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rgba )
 {
 	gl_texture_t *tex = R_GetTexture( texnum );
-	int tw, tx, ty;
+	int tx, ty;
 
 	if( !tex || !tex->nativeData || !rgba )
 		return;
-	if( tex->format != GX_TF_RGBA8 && tex->format != GX_TF_RGB565 )
-		return;
 
-	tw = ( (int)tex->width + 3 ) & ~3;
-
-	for( ty = 0; ty < h; ty++ )
+	/* Buffer origen: RGBA (p[0]=R, p[1]=G, p[2]=B, p[3]=A) */
+	if( tex->format == GX_TF_I8 )
 	{
-		int py = y + ty;
-		if( py < 0 || py >= (int)tex->height ) continue;
-
-		for( tx = 0; tx < w; tx++ )
+		int tw8 = ( (int)tex->width + 7 ) & ~7;
+		for( ty = 0; ty < h; ty++ )
 		{
-			int px = x + tx;
-			const byte *p;
-			byte *tile;
-			int in;
-
-			if( px < 0 || px >= (int)tex->width ) continue;
-
-			p = rgba + ( ty * w + tx ) * 4;
-			in = ( py & 3 ) * 4 + ( px & 3 );
-
-			/* El buffer viene RGBA de R_BuildLightMap: p[0]=R, p[1]=G, p[2]=B, p[3]=A */
-			if( tex->format == GX_TF_RGBA8 )
+			int py = y + ty;
+			if( py < 0 || py >= (int)tex->height ) continue;
+			for( tx = 0; tx < w; tx++ )
 			{
-				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
-				tile[in * 2 + 0] = p[3]; /* A */
-				tile[in * 2 + 1] = p[0]; /* R */
-				tile[32 + in * 2 + 0] = p[1]; /* G */
-				tile[32 + in * 2 + 1] = p[2]; /* B */
+				int px = x + tx;
+				const byte *p;
+				byte *tile;
+				byte luma;
+				if( px < 0 || px >= (int)tex->width ) continue;
+				p = rgba + ( ty * w + tx ) * 4;
+				luma = (byte)( ( p[0] * 77 + p[1] * 150 + p[2] * 29 ) >> 8 );
+				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw8 >> 3 ) + ( px >> 3 ) ) * 32;
+				tile[( py & 3 ) * 8 + ( px & 7 )] = luma;
 			}
-			else
+		}
+	}
+	else if( tex->format == GX_TF_RGBA8 )
+	{
+		int tw = ( (int)tex->width + 3 ) & ~3;
+		for( ty = 0; ty < h; ty++ )
+		{
+			int py = y + ty;
+			if( py < 0 || py >= (int)tex->height ) continue;
+			for( tx = 0; tx < w; tx++ )
 			{
-				u16 c = (u16)( ( ( p[0] >> 3 ) << 11 ) | ( ( p[1] >> 2 ) << 5 ) | ( p[2] >> 3 ) );
+				int px = x + tx;
+				const byte *p;
+				byte *tile;
+				int in;
+				if( px < 0 || px >= (int)tex->width ) continue;
+				p = rgba + ( ty * w + tx ) * 4;
+				in = ( py & 3 ) * 4 + ( px & 3 );
+				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
+				tile[in * 2 + 0] = p[3];
+				tile[in * 2 + 1] = p[0];
+				tile[32 + in * 2 + 0] = p[1];
+				tile[32 + in * 2 + 1] = p[2];
+			}
+		}
+	}
+	else if( tex->format == GX_TF_RGB565 )
+	{
+		int tw = ( (int)tex->width + 3 ) & ~3;
+		for( ty = 0; ty < h; ty++ )
+		{
+			int py = y + ty;
+			if( py < 0 || py >= (int)tex->height ) continue;
+			for( tx = 0; tx < w; tx++ )
+			{
+				int px = x + tx;
+				const byte *p;
+				byte *tile;
+				int in;
+				u16 c;
+				if( px < 0 || px >= (int)tex->width ) continue;
+				p = rgba + ( ty * w + tx ) * 4;
+				c = (u16)( ( ( p[0] >> 3 ) << 11 ) | ( ( p[1] >> 2 ) << 5 ) | ( p[2] >> 3 ) );
+				in = ( py & 3 ) * 4 + ( px & 3 );
 				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 32;
 				tile[in * 2 + 0] = (byte)( c >> 8 );
 				tile[in * 2 + 1] = (byte)( c & 0xFF );
@@ -217,6 +248,7 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 
 	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
 }
+
 
 static void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
@@ -320,10 +352,10 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
-		tex->format = GX_TF_RGBA8;
+		tex->format = GX_TF_I8; /* lightmaps dinamicos en escala de grises */
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
-			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );
+			GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
 
 	GX_ApplyTextureParams( tex );

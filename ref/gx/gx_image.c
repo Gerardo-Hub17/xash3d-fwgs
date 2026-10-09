@@ -790,7 +790,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		{
 		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
 		if( FBitSet( tex->flags, TF_ATLAS_PAGE ))
-			picked = GX_TF_RGBA8; /* atlas de lightmap: RGBA8 con tiles 4x4 */
+			picked = GX_TF_I8; /* TEST: lightmap en escala de grises (1 byte/pixel) */
 		if( g_diagTexIdx < 15 )
 		{
 			g_diagTexIdx++;
