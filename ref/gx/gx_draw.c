@@ -275,10 +275,10 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 		GX_ConvertToRGBA8( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
-		tex->format = GX_TF_RGBA8;
+		tex->format = GX_TF_RGB565;
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
-			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );
+			GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
 
 	GX_ApplyTextureParams( tex );

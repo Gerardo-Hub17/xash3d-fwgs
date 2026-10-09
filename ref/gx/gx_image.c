@@ -507,7 +507,7 @@ static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt
 	byte rr = 0, rg = 0, rb = 0;
 
 	if( !src || !GX_GetSrcFmt( fmt, &s ) )
-		return GX_TF_RGBA8;
+		return GX_TF_RGB565;
 
 	if( s.a < 0 )
 		return GX_TF_RGB565;
@@ -758,7 +758,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 			free( tex->nativeData );
 			tex->nativeData = NULL;
 		}
-		tex->format = GX_TF_RGBA8; // dynamic/raw textures: gx_draw.c writes RGBA8 into them
+		tex->format = GX_TF_RGB565; // forzado: cabe en TMEM 128K como el skybox
 		size_t size = GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 );
 		tex->nativeData = memalign( 32, size );
 		if( !tex->nativeData )
