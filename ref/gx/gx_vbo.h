@@ -152,6 +152,8 @@ gEngfuncs.Con_Printf("VBO: %d of %d verts (%.2f MB), %d surfaces drawn directly\
 g_vbo.num_verts_used, total,
 (g_vbo.num_verts_used * GX_VBO_VERT_SIZE) / (1024.0f * 1024.0f),
 g_vbo.overflow);
+DCFlushRange(g_vbo.vertex_data, g_vbo.num_verts_used * GX_VBO_VERT_SIZE);
+GX_InvVtxCache();
 }
 
 
@@ -262,7 +264,6 @@ int i;
 DCFlushRange(g_vbo.index_data, g_vbo.num_indices * sizeof(u16));
 
 GX_SetupVtxFormat_VBO();
-GX_InvVtxCache();
 GX_SetArray(GX_VA_POS, g_vbo.vertex_data, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX0, g_vbo.vertex_data + 12, GX_VBO_VERT_SIZE);
 GX_SetArray(GX_VA_TEX1, g_vbo.vertex_data + 20, GX_VBO_VERT_SIZE);

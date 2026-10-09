@@ -1091,6 +1091,9 @@ static void R_BlendLightmaps( void )
 	GX_EnableTextureUnit( 0, true );
 	GX_EnableTextureUnit( 1, true );
 
+	if( gx_testmode == 7 ) /* diagnostico: mostrar SOLO el lightmap */
+		GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ONE );
+
 	for( int i = 0; i < MAX_LIGHTMAPS; i++ )
 	{
 		if( gx_lms.lightmap_surfaces[i] )
@@ -1603,7 +1606,7 @@ static void R_DrawTextureChains( void )
 	if( skychain )
 		R_DrawClouds();
 
-	skychain = NULL;
+	/* NO anular skychain aqui: R_DrawWorld lo necesita para dibujar el skybox */
 
 	R_DrawVBO( !r_fullbright->value && !!WORLDMODEL->lightdata, true );
 
@@ -2274,16 +2277,19 @@ void R_DrawWorld( void )
 
 	if( !ENGINE_GET_PARM( PARM_DEV_OVERVIEW ))
 	{
-		DrawDecalsBatch();
+		if( gx_testmode != 8 ) DrawDecalsBatch();
 		GX_ResetFogColor();
 		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] decals done\n" ); }
 		R_BlendLightmaps();
 		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] lightmaps done\n" ); }
-		R_RenderFullbrights( R_HasEnabledVBO( ));
-		R_RenderDetails( R_HasEnabledVBO() ? 2 : 3 );
+		if( gx_testmode != 8 )
+		{
+			R_RenderFullbrights( R_HasEnabledVBO( ));
+			R_RenderDetails( R_HasEnabledVBO() ? 2 : 3 );
+		}
 		R_DrawTriangleOutlines();
 
-		if( skychain )
+		if( skychain && gx_testmode != 8 )
 			R_DrawSkyBox();
 		if( gx_world_dbg > 0 ) { GX_DrawDone(); gEngfuncs.Con_Printf( "[WORLD] sky/extras done\n" ); }
 	}

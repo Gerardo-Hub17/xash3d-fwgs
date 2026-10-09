@@ -149,6 +149,7 @@ void GX_Present( void )
 	GX_DrawDone();
 	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: CopyDisp\n", n );
 	GX_CopyDisp( gxvid.xfb[gxvid.fb], GX_TRUE );
+	GX_DrawDone(); /* esperar a que la copia EFB->XFB termine antes de mostrarla (evita tearing) */
 
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
 	VIDEO_Flush();
