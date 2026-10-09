@@ -196,13 +196,14 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 			p = rgba + ( ty * w + tx ) * 4;
 			in = ( py & 3 ) * 4 + ( px & 3 );
 
+			/* El buffer viene RGBA de R_BuildLightMap: p[0]=R, p[1]=G, p[2]=B, p[3]=A */
 			if( tex->format == GX_TF_RGBA8 )
 			{
 				tile = (byte *)tex->nativeData + ( ( py >> 2 ) * ( tw >> 2 ) + ( px >> 2 ) ) * 64;
-				tile[in * 2 + 0] = p[3];
-				tile[in * 2 + 1] = p[0];
-				tile[32 + in * 2 + 0] = p[1];
-				tile[32 + in * 2 + 1] = p[2];
+				tile[in * 2 + 0] = p[3]; /* A */
+				tile[in * 2 + 1] = p[0]; /* R */
+				tile[32 + in * 2 + 0] = p[1]; /* G */
+				tile[32 + in * 2 + 1] = p[2]; /* B */
 			}
 			else
 			{
@@ -215,8 +216,8 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 	}
 
 	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
-	/* GX_InvalidateTexAll() quitado: se llamaba en cada lightmap por frame y destruia el rendimiento */
 }
+
 static void GX_ConvertToRGB565Tiles( byte *dst, const byte *src, int width, int height, pixformat_t fmt )
 {
 	int tw = ( width + 3 ) & ~3;
@@ -296,7 +297,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 
 	gl_texture_t *tex = R_GetTexture( texnum );
 
-	size_t nativeSize = (size_t)( cols * rows ) * 2; /* RGB565 = 2 bytes/pixel */
+	size_t nativeSize = (size_t)( cols * rows ) * 4; /* RGBA8 = 4 bytes/pixel */
 
 	if( cols == (int)tex->width && rows == (int)tex->height && tex->nativeData != NULL && tex->format == GX_TF_RGBA8 )
 	{
@@ -319,10 +320,10 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 		GX_ConvertToRGB565Tiles( (byte *)tex->nativeData, raw, cols, rows, fmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
-		tex->format = GX_TF_RGB565;
+		tex->format = GX_TF_RGBA8;
 
 		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)cols, (u16)rows,
-			GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE );
+			GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
 
 	GX_ApplyTextureParams( tex );
