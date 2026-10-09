@@ -545,7 +545,7 @@ static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt
 static void GX_ConvertToNative( byte *dst, const byte *src, int width, int height, pixformat_t fmt, u8 gxFmt )
 {
 	gx_srcfmt_t s;
-	int tileW, tileH;
+	int tw, tx, ty;
 
 	if( gxFmt == GX_TF_RGBA8 || !GX_GetSrcFmt( fmt, &s ) )
 	{
@@ -553,55 +553,96 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 		return;
 	}
 
-	tileW = ( gxFmt == GX_TF_IA4 || gxFmt == GX_TF_I8 ) ? 8 : 4;
-	tileH = 4;
+	/* GX espera texturas swizzled en tiles de 4x4 (o 8x4 para IA4/I8). */
+	tw = ( width + 3 ) & ~3;
 
-	for( int ty = 0; ty < height; ty += tileH )
+	if( gxFmt == GX_TF_IA4 || gxFmt == GX_TF_I8 )
 	{
-		for( int tx = 0; tx < width; tx += tileW )
+		/* Tiles 8x4 */
+		int tw8 = ( width + 7 ) & ~7;
+		for( ty = 0; ty < height; ty += 4 )
 		{
-			for( int y = 0; y < tileH; y++ )
+			for( tx = 0; tx < width; tx += 8 )
+			{
+				for( int y = 0; y < 4; y++ )
+				{
+					int sy = ty + y;
+					if( sy >= height ) sy = height - 1;
+					for( int x = 0; x < 8; x++ )
+					{
+						int sx = tx + x;
+						const byte *t;
+						byte r, g, b, a;
+						byte *tile;
+						int in;
+						if( sx >= width ) sx = width - 1;
+						t = src + ( sy * width + sx ) * s.bpp;
+						r = t[s.r]; g = t[s.g]; b = t[s.b];
+						a = ( s.a >= 0 ) ? t[s.a] : 255;
+						tile = dst + ( ( ty >> 2 ) * ( tw8 >> 3 ) + ( tx >> 3 ) ) * 32;
+						in = y * 8 + x;
+						if( gxFmt == GX_TF_IA4 )
+							tile[in] = (byte)((( a * 15 + 127 ) / 255 ) << 4 ) | 0x0F;
+						else /* GX_TF_I8 */
+							tile[in] = (byte)(( r * 77 + g * 150 + b * 29 ) >> 8 );
+					}
+				}
+			}
+		}
+		return;
+	}
+
+	/* Tiles 4x4 para RGB565, RGB5A3, IA8 */
+	for( ty = 0; ty < height; ty += 4 )
+	{
+		for( tx = 0; tx < width; tx += 4 )
+		{
+			for( int y = 0; y < 4; y++ )
 			{
 				int sy = ty + y;
 				if( sy >= height ) sy = height - 1;
-
-				for( int x = 0; x < tileW; x++ )
+				for( int x = 0; x < 4; x++ )
 				{
 					int sx = tx + x;
+					const byte *t;
+					byte r, g, b, a;
+					byte *tile;
+					int in;
 					if( sx >= width ) sx = width - 1;
-
-					const byte *t = src + ( sy * width + sx ) * s.bpp;
-					byte r = t[s.r], g = t[s.g], b = t[s.b];
-					byte a = ( s.a >= 0 ) ? t[s.a] : 255;
-
+					t = src + ( sy * width + sx ) * s.bpp;
+					r = t[s.r]; g = t[s.g]; b = t[s.b];
+					a = ( s.a >= 0 ) ? t[s.a] : 255;
+					tile = dst + ( ( ty >> 2 ) * ( tw >> 2 ) + ( tx >> 2 ) ) * 32;
+					in = ( y * 4 + x ) * 2;
 					if( gxFmt == GX_TF_RGB565 )
 					{
-						u16 v = (( r >> 3 ) << 11 ) | (( g >> 2 ) << 5 ) | ( b >> 3 );
-						dst[0] = v >> 8; dst[1] = v & 0xFF; dst += 2;
+						u16 v = (u16)( ( ( r >> 3 ) << 11 ) | ( ( g >> 2 ) << 5 ) | ( b >> 3 ) );
+						tile[in + 0] = (byte)( v >> 8 );
+						tile[in + 1] = (byte)( v & 0xFF );
 					}
 					else if( gxFmt == GX_TF_RGB5A3 )
 					{
 						u16 v;
 						if( a >= 0xE0 )
-							v = 0x8000 | (( r >> 3 ) << 10 ) | (( g >> 3 ) << 5 ) | ( b >> 3 );
+							v = (u16)( 0x8000 | ( ( r >> 3 ) << 10 ) | ( ( g >> 3 ) << 5 ) | ( b >> 3 ) );
 						else
-							v = (( a >> 5 ) << 12 ) | (( r >> 4 ) << 8 ) | (( g >> 4 ) << 4 ) | ( b >> 4 );
-						dst[0] = v >> 8; dst[1] = v & 0xFF; dst += 2;
+							v = (u16)( ( ( a >> 5 ) << 12 ) | ( ( r >> 4 ) << 8 ) | ( ( g >> 4 ) << 4 ) | ( b >> 4 ) );
+						tile[in + 0] = (byte)( v >> 8 );
+						tile[in + 1] = (byte)( v & 0xFF );
 					}
-					else if( gxFmt == GX_TF_I8 ) // 8-bit luma (grayscale)
+					else /* GX_TF_IA8 */
 					{
-							byte y = (byte)(( r * 77 + g * 150 + b * 29 ) >> 8 );
-							*dst++ = y;
-					}
-					else // GX_TF_IA4: white intensity, 4 bit alpha
-					{
-						*dst++ = (byte)((( a * 15 + 127 ) / 255 ) << 4 ) | 0x0F;
+						/* I = luma, A = alpha */
+						byte luma = (byte)(( r * 77 + g * 150 + b * 29 ) >> 8 );
+						tile[in + 0] = luma;
+						tile[in + 1] = a;
 					}
 				}
 			}
 		}
 	}
 }
+
 
 byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal )
 {
