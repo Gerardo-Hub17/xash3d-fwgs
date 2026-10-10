@@ -641,6 +641,28 @@ static void LM_UploadBlock( qboolean dynamic )
 		r_lightmap.flags = IMAGE_HAS_COLOR;
 		r_lightmap.buffer = gx_lms.lightmap_buffer;
 
+		if( gx_testmode == 12 )
+		{
+			for( int k = 0; k < BLOCK_SIZE * BLOCK_SIZE; k++ )
+			{
+				gx_lms.lightmap_buffer[k*4+0] = 128;
+				gx_lms.lightmap_buffer[k*4+1] = 128;
+				gx_lms.lightmap_buffer[k*4+2] = 128;
+				gx_lms.lightmap_buffer[k*4+3] = 255;
+			}
+		}
+		else if( gx_testmode == 13 )
+		{
+			for( int k = 0; k < BLOCK_SIZE * BLOCK_SIZE; k++ )
+			{
+				gx_lms.lightmap_buffer[k*4+0] = (byte)(( k % BLOCK_SIZE ) * 255 / ( BLOCK_SIZE - 1 ));
+				gx_lms.lightmap_buffer[k*4+1] = (byte)(( k / BLOCK_SIZE ) * 255 / ( BLOCK_SIZE - 1 ));
+				gx_lms.lightmap_buffer[k*4+2] = 0;
+				gx_lms.lightmap_buffer[k*4+3] = 255;
+			}
+		}
+
+
 
 		tr.lightmapTextures[i] = GX_CreateTexture( lmName,
 			BLOCK_SIZE, BLOCK_SIZE,

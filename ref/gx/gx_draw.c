@@ -247,6 +247,7 @@ void GX_UpdateTextureSub( int texnum, int x, int y, int w, int h, const byte *rg
 	}
 
 	DCFlushRange( tex->nativeData, GX_CalcTexSizeForFormat( tex->format, tex->width, tex->height ) );
+	GX_InvalidateTexAll();
 }
 
 

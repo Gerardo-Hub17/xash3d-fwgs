@@ -75,6 +75,8 @@ static gl_texture_t    *gl_textures;
 static gl_texture_t    *gl_texturesHashTable[TEXTURES_HASH_SIZE];
 static uint             gl_numTextures;
 
+extern int gx_testmode;
+
 #define IsLightMap( tex ) ( FBitSet(( tex )->flags, TF_ATLAS_PAGE ))
 
 static void        GX_SetTextureDimensions( gl_texture_t *tex, int width, int height, int depth );
@@ -790,7 +792,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		{
 		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
 		if( FBitSet( tex->flags, TF_ATLAS_PAGE ))
-			picked = GX_TF_RGBA8; /* atlas de lightmap: RGBA8 con tiles 4x4 */
+			picked = ( gx_testmode == 14 ) ? GX_TF_RGB565 : GX_TF_RGBA8;
 		if( g_diagTexIdx < 15 )
 		{
 			g_diagTexIdx++;
