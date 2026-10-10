@@ -646,6 +646,7 @@ static void LM_UploadBlock( qboolean dynamic )
 			BLOCK_SIZE, BLOCK_SIZE,
 			gx_lms.lightmap_buffer,
 			TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE );
+        if( i < 3 ) gEngfuncs.Con_Printf("[LMDIAG] p%d px0=%02X%02X%02X%02X px1=%02X%02X%02X%02X\n", i, gx_lms.lightmap_buffer[0], gx_lms.lightmap_buffer[1], gx_lms.lightmap_buffer[2], gx_lms.lightmap_buffer[3], gx_lms.lightmap_buffer[4], gx_lms.lightmap_buffer[5], gx_lms.lightmap_buffer[6], gx_lms.lightmap_buffer[7]);
 
 		if( ++gx_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 			gEngfuncs.Host_Error( "%s: full\n", __func__ );
@@ -1062,7 +1063,7 @@ static void R_BlendLightmaps( void )
 		GX_SetNumTexGens( 1 );
 		GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX1, GX_IDENTITY );
 		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL );
-		GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC );
+		if( gx_testmode == 11 ) { GX_SetTevKColorSel( GX_TEVSTAGE0, GX_TEV_KCSEL_4_8 ); GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_KONST ); } else GX_SetTevColorIn( GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC );
 		GX_SetTevColorOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
 		GX_SetTevAlphaIn( GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA );
 		GX_SetTevAlphaOp( GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV );
@@ -1078,6 +1079,26 @@ static void R_BlendLightmaps( void )
 			msurface_t *surf;
 			if( !gx_lms.lightmap_surfaces[i] )
 				continue;
+						{
+				static int lmlog;
+				if( lmlog < 6 )
+				{
+					int cnt = 0;
+					msurface_t *q;
+					lmlog++;
+					for( q = gx_lms.lightmap_surfaces[i]; q != NULL; q = q->info->lightmapchain ) cnt++;
+					gEngfuncs.Con_Printf( "[LMDRAW] page %d tex=%d surfs=%d\n", i, (int)tr.lightmapTextures[i], cnt );
+					q = gx_lms.lightmap_surfaces[i];
+					for( int k = 0; k < 3 && q; k++, q = q->info->lightmapchain )
+					{
+						glpoly2_t *pp = q->polys;
+						gEngfuncs.Con_Printf( "[LMDRAW]   s%d ls=%d lt=%d vbo=%d nv=%d", k, (int)q->light_s, (int)q->light_t, (int)q->info->reserved[0], pp ? pp->numverts : -1 );
+						if( pp && pp->numverts >= 3 )
+							gEngfuncs.Con_Printf( " uv0=%.3f,%.3f uv1=%.3f,%.3f uv2=%.3f,%.3f", pp->verts[0][5], pp->verts[0][6], pp->verts[1][5], pp->verts[1][6], pp->verts[2][5], pp->verts[2][6] );
+						gEngfuncs.Con_Printf( "\n" );
+					}
+				}
+			}
 			GX_Bind( 0, ( gx_testmode == 10 ) ? tr.grayTexture : tr.lightmapTextures[i] );
 			for( surf = gx_lms.lightmap_surfaces[i]; surf != NULL; surf = surf->info->lightmapchain )
 				surf->texturechain = surf->info->lightmapchain;

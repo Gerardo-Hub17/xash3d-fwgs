@@ -383,8 +383,8 @@ void GX_OnContextCreated( void )
 		FILE *tf = fopen( "sd:/xash3d/gxtest.txt", "r" );
 		if( tf )
 		{
-			int c = fgetc( tf );
-			if( c >= '0' && c <= '9' ) gx_testmode = c - '0';
+			int c = 0;
+			if( fscanf( tf, "%d", &c ) == 1 && c >= 0 && c < 100 ) gx_testmode = c;
 			fclose( tf );
 		}
 		gEngfuncs.Con_Printf( "[GX] testmode = %d\n", gx_testmode );
