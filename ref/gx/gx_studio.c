@@ -1319,6 +1319,50 @@ static void R_StudioDrawChromeMesh( short *ptricmds, vec3_t *pstudionorms, float
 	}
 }
 
+/*
+===============
+R_StudioSetupSkin
+
+Bindea la textura de la skin del mesh (antes era un stub vacio: los modelos
+usaban la ultima textura que hubiera quedado bindeada).
+===============
+*/
+static void R_StudioSetupSkin( studiohdr_t *ptexturehdr, int index )
+{
+	mstudiotexture_t *ptexture = NULL;
+
+	if( FBitSet( g_nForceFaceFlags, STUDIO_NF_CHROME ))
+		return;
+
+	if( ptexturehdr == NULL )
+		return;
+
+	/* el cliente puede no haber llamado a StudioRemapColors */
+	if( m_fDoRemap ) ptexture = gEngfuncs.CL_GetRemapInfoForEntity( RI.currententity )->ptexture;
+	if( !ptexture ) ptexture = (mstudiotexture_t *)((byte *)ptexturehdr + ptexturehdr->textureindex );
+
+	GX_Bind( XASH_TEXTURE0, ptexture[index].index );
+}
+
+/* No cambia el estado global del studio renderer */
+mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
+{
+	studiohdr_t *phdr;
+	studiohdr_t *thdr;
+	mstudiotexture_t *ptexture;
+
+	if(( phdr = gEngfuncs.Mod_Extradata( mod_studio, e->model )) == NULL )
+		return NULL;
+
+	thdr = m_pStudioHeader;
+	if( !thdr ) return NULL;
+
+	if( m_fDoRemap ) ptexture = gEngfuncs.CL_GetRemapInfoForEntity( e )->ptexture;
+	else ptexture = (mstudiotexture_t *)((byte *)thdr + thdr->textureindex );
+
+	return ptexture;
+}
+
 static void R_StudioSubmitMesh( short *ptricmds, vec3_t *pstudionorms, float s, float t, float shellscale, int tesslevel )
 {
 	if( tesslevel > 0 )
