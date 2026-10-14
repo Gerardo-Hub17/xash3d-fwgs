@@ -54,7 +54,12 @@ target_compile_definitions(cl_dll PRIVATE
 target_compile_options(cl_dll PRIVATE
         -fpermissive -fno-exceptions -fno-rtti -fms-extensions
         -Wno-write-strings -ffunction-sections
-        -fno-unwind-tables -fno-asynchronous-unwind-tables)
+        -fno-unwind-tables -fno-asynchronous-unwind-tables
+        -fvisibility=hidden)
+
+set_target_properties(cl_dll PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES)
 
 add_library(hl STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/agrunt.cpp
