@@ -18,6 +18,7 @@
 #include "wrect.h"
 #include "cl_dll.h"
 #include "cl_util.h"
+#include "cl_entity.h"
 
 #ifdef max
 #undef max

@@ -43,6 +43,7 @@ target_compile_definitions(cs_client PRIVATE
 	LINUX _LINUX
 	stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
 	_snprintf=snprintf _vsnprintf=vsnprintf
+	uint32=uint32_t
 	_inline=inline __inline=inline
 	XASH_OGC XASH_WII GEKKO HW_RVL
 	__BYTE_ORDER__=__ORDER_BIG_ENDIAN__)
