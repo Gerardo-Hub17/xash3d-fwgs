@@ -1,3 +1,4 @@
+#include <cstddef>
 // wii / Xash3D FWGS: tabla de enlace estatico para el cliente CS 1.6.
 // El engine resuelve funciones por nombre via lib_cl_dll_exports[].
 // NO incluimos cdll_int.h para evitar arrastrar todo el arbol de headers.
