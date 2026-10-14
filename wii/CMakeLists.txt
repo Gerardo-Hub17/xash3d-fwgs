@@ -15,7 +15,7 @@ file(GLOB CS_STUDIO_SRC "${ROOT}/cl_dll/studio/*.cpp")
 file(GLOB CS_INPUT_SRC "${ROOT}/cl_dll/input/*.cpp")
 file(GLOB CS_PM_SRC "${ROOT}/pm_shared/*.cpp")
 file(GLOB CS_GAMSH_SRC "${ROOT}/game_shared/*.cpp")
-file(GLOB MINIUTL_SRC "${ROOT}/3rdparty/mainui_cpp/miniutl/*.cpp")
+file(GLOB MINIUTL_SRC "${ROOT}/3rdparty/mainui/miniutl/*.cpp")
 file(GLOB CS_PARTICLEMAN_SRC "${ROOT}/cl_dll/particleman/*.cpp")
 
 list(REMOVE_ITEM CS_CLIENT_SRC "${ROOT}/cl_dll/ev_hldm.cpp" "${ROOT}/cl_dll/inputw32.cpp")
@@ -33,9 +33,9 @@ target_include_directories(cs_client PRIVATE
 	${ROOT}/cl_dll/include ${ROOT}/cl_dll/include/hud ${ROOT}/cl_dll/include/studio
 	${ROOT}/cl_dll/include/math ${ROOT}/cl_dll ${ROOT}/common ${ROOT}/engine
 	${ROOT}/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/public
-	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui_cpp
-	${ROOT}/3rdparty/mainui_cpp/controls ${ROOT}/3rdparty/mainui_cpp/menus
-	${ROOT}/3rdparty/mainui_cpp/miniutl ${ROOT}/cl_dll/particleman)
+	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui
+	${ROOT}/3rdparty/mainui/controls ${ROOT}/3rdparty/mainui/menus
+	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman)
 
 target_compile_definitions(cs_client PRIVATE
 	CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>

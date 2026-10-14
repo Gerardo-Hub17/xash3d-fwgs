@@ -20,7 +20,7 @@ jobs:
           apt-get update && apt-get install -y git cmake build-essential
           git clone --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" -b "${GITHUB_REF_NAME}" src
           cd src
-          git submodule update --init --depth 1 3rdparty/mainui_cpp
+          git submodule update --init --recursive --depth 1 3rdparty/mainui
 
       - name: Configure
         run: |
