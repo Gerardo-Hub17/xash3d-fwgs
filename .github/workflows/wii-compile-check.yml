@@ -28,7 +28,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake \
             -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build (make -k: seguir tras el primer error para ver todos)
+      - name: Build (make -k - seguir tras el primer error)
         run: |
           cd build
           make -k -j$(nproc) 2>&1 | tee ../build.log || true
