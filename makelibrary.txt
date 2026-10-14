@@ -1,76 +1,60 @@
 
 #The works in this specific manner
-add_library(cl_dll STATIC
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ev_hldm.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_events.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_objects.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_weapons.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ammo.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ammo_secondary.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ammohistory.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/battery.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/cdll_int.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/com_weapons.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/death.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/demo.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/entity.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ev_common.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/events.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/flashlight.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/GameStudioModelRenderer.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/geiger.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/health.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hud.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hud_msg.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hud_redraw.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hud_spectator.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hud_update.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/in_camera.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/input.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/input_goldsource.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/input_mouse.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/input_xash3d.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/interpolation.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/menu.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/message.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/parsemsg.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/saytext.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/status_icons.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/statusbar.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/studio_util.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/StudioModelRenderer.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/text_message.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/train.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/tri.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/util.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/view.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/scoreboard.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/MOTD.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared/vcs_info.c
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/link_helper.cpp
-)
-target_compile_definitions(cl_dll PRIVATE
--DXASH_OGC -DCLIENT_DLL -DNO_VOICEGAMEMGR -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf
-)
-target_compile_options(cl_dll PRIVATE
--fno-exceptions -fpermissive -MMD -MP
--fomit-frame-pointer -ffunction-sections -fno-unwind-tables -fno-asynchronous-unwind-tables
-#-G0
-#-fno-lto
-)
+file(GLOB CS_CLIENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/*.cpp")
+file(GLOB CS_EV_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/events/*.cpp")
+file(GLOB CS_WPN_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/cs_wpn/*.cpp")
+file(GLOB CS_WPNSH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/dlls/wpn_shared/*.cpp")
+file(GLOB CS_HUD_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/hud/*.cpp")
+file(GLOB CS_STUDIO_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/studio/*.cpp")
+file(GLOB CS_INPUT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/input/*.cpp")
+file(GLOB CS_PM_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/*.cpp")
+file(GLOB CS_GAMSH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/game_shared/*.cpp")
+file(GLOB MINIUTL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/miniutl/*.cpp")
+file(GLOB CS_PARTICLEMAN_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/particleman/*.cpp")
+
+list(REMOVE_ITEM CS_CLIENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/ev_hldm.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/inputw32.cpp")
+list(REMOVE_ITEM CS_INPUT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/input/input_sdl.cpp")
+list(REMOVE_ITEM CS_WPN_SRC "${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/cs_wpn/cs_baseentity.cpp")
+list(APPEND CS_CLIENT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/utflib.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/strlcpy.c ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/strlcat.c)
+list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SRC}
+        ${CS_STUDIO_SRC} ${CS_PM_SRC} ${CS_INPUT_SRC} ${CS_GAMSH_SRC} ${MINIUTL_SRC}
+        ${CS_PARTICLEMAN_SRC})
+
+add_library(cl_dll STATIC ${CS_CLIENT_SRC})
 
 target_include_directories(cl_dll PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/common
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/engine
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/external
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/utils/fake_vgui/include
-)
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/hud
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/studio
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/math
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared
+        ${CMAKE_CURRENT_SOURCE_DIR}/dlls
+        ${CMAKE_CURRENT_SOURCE_DIR}/game_shared
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/dlls
+        ${CMAKE_CURRENT_SOURCE_DIR}/public/cl_dll
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/controls
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/menus
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/miniutl
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/particleman)
+
+target_compile_definitions(cl_dll PRIVATE
+        CS16_CLIENT CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
+        LINUX _LINUX
+        stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
+        _snprintf=snprintf _vsnprintf=vsnprintf
+        uint32=uint32_t _inline=inline __inline=inline
+        XASH_WII GEKKO HW_RVL __BYTE_ORDER__=__ORDER_BIG_ENDIAN__)
+
+target_compile_options(cl_dll PRIVATE
+        -fpermissive -fno-exceptions -fno-rtti -fms-extensions
+        -Wno-write-strings -ffunction-sections
+        -fno-unwind-tables -fno-asynchronous-unwind-tables)
 
 add_library(hl STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/agrunt.cpp
