@@ -1,6 +1,3 @@
-#ifdef CS16_CLIENT
-#include "../cs16/engine/cdll_int.h"
-#else
 /***
 *
 *	Copyright (c) 1999, Valve LLC. All rights reserved.
@@ -470,4 +467,3 @@ extern void NullDst(void);
 
 #endif // CDLL_INT_H
 	
-#endif // CS16_CLIENT
