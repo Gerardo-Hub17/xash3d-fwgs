@@ -72,8 +72,10 @@ target_include_directories(filesystem_stdio PUBLIC
 	pm_shared
 	filesystem
 )
+set(XASH_GAME "cstrike" CACHE STRING "default game directory")
+
 target_compile_definitions(filesystem_stdio PRIVATE
-	-DXASH_GAMEDIR="valve"
+	-DXASH_GAMEDIR="${XASH_GAME}"
 	-DXASH_LOW_MEMORY=${XASH_LOW_MEMORY}
 	-DSTDINT_H=<stdint.h>
 	-DHAVE_STRNICMP=0
@@ -252,7 +254,7 @@ engine/common/http/net_http_xash.c
 set(XASH_OGC_DEFAULT_MODE -DDEFAULT_MODE_WIDTH=320 -DDEFAULT_MODE_HEIGHT=240)
 
 target_compile_definitions(xash PUBLIC
-    -DXASH_GAMEDIR="valve"
+    -DXASH_GAMEDIR="${XASH_GAME}"
     -DXASH_NO_OGG_CONTAINER=1
     -DHAVE_OGG=0
     -DHAVE_OPUSFILE=0
