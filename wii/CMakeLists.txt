@@ -21,8 +21,8 @@ file(GLOB CS_PARTICLEMAN_SRC "${ROOT}/cl_dll/particleman/*.cpp")
 list(REMOVE_ITEM CS_CLIENT_SRC "${ROOT}/cl_dll/ev_hldm.cpp" "${ROOT}/cl_dll/inputw32.cpp")
 list(REMOVE_ITEM CS_INPUT_SRC "${ROOT}/cl_dll/input/input_sdl.cpp")
 list(REMOVE_ITEM CS_WPN_SRC "${ROOT}/cl_dll/cs_wpn/cs_baseentity.cpp")
-list(APPEND CS_CLIENT_SRC ${ROOT}/common/interface.cpp ${ROOT}/public/utflib.cpp
-	${ROOT}/public/strlcpy.c ${ROOT}/public/strlcat.c)
+list(APPEND CS_CLIENT_SRC ${ROOT}/cs16-src/common/interface.cpp ${ROOT}/cs16-src/public/utflib.cpp
+	${ROOT}/cs16-src/public/strlcpy.c ${ROOT}/cs16-src/public/strlcat.c)
 list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SRC}
 	${CS_STUDIO_SRC} ${CS_PM_SRC} ${CS_INPUT_SRC} ${CS_GAMSH_SRC} ${MINIUTL_SRC}
 	${CS_PARTICLEMAN_SRC})
@@ -31,8 +31,8 @@ add_library(cs_client STATIC ${CS_CLIENT_SRC})
 
 target_include_directories(cs_client PRIVATE
 	${ROOT}/cl_dll/include ${ROOT}/cl_dll/include/hud ${ROOT}/cl_dll/include/studio
-	${ROOT}/cl_dll/include/math ${ROOT}/cl_dll ${ROOT}/common ${ROOT}/engine
-	${ROOT}/cs16-src/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/public
+	${ROOT}/cl_dll/include/math ${ROOT}/cl_dll ${ROOT}/cs16-src/common ${ROOT}/engine
+	${ROOT}/cs16-src/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/cs16-src/public
 	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui
 	${ROOT}/3rdparty/mainui/controls ${ROOT}/3rdparty/mainui/menus
 	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman)
