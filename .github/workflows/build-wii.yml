@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ref-gx
+      - "ref-gx*"
   workflow_dispatch:
 
 jobs:
