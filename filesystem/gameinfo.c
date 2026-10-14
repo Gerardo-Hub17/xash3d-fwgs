@@ -202,6 +202,16 @@ static void FS_InitGameInfo( gameinfo_t *GameInfo, const char *gamedir, qboolean
 	else
 	{
 		Q_strncpy( GameInfo->basedir, fs_basedir, sizeof( GameInfo->basedir ));
+		
+		// wii: mods derivados de HL (cstrike, czero, etc.) no incluyen
+		// todos los recursos compartidos del mod base (gfx.wad, sonidos
+		// de UI, etc.), por eso forzamos valve como basedir para que
+		// el engine lo anada automaticamente al search path.
+		if( !Q_stricmp( gamedir, "cstrike" ) || !Q_stricmp( gamedir, "czero" ) ||
+		    !Q_stricmp( gamedir, "cstrike_beta" ))
+		{
+			Q_strncpy( GameInfo->basedir, "valve", sizeof( GameInfo->basedir ));
+		}
 		Q_strncpy( GameInfo->title, gamedir, sizeof( GameInfo->title ));
 		Q_strncpy( GameInfo->startmap, "c0a0", sizeof( GameInfo->startmap ));
 		Q_strncpy( GameInfo->dll_path, "cl_dlls", sizeof( GameInfo->dll_path ));
