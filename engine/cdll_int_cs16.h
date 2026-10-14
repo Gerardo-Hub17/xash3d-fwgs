@@ -26,6 +26,7 @@
 extern "C" {
 #endif
 
+#include "mathlib.h"
 #include "const.h"
 #include "steam/steamtypes.h"
 #include "ref_params.h"
