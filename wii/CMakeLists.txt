@@ -36,10 +36,11 @@ target_include_directories(cs_client PRIVATE
 	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui
 	${ROOT}/3rdparty/mainui/controls ${ROOT}/3rdparty/mainui/menus
 	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman
-	${ROOT}/cs16-src/public/dlls)
+	${ROOT}/cs16-src/public/dlls
+        ${ROOT}/cs16/public)
 
 target_compile_definitions(cs_client PRIVATE
-	CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
+        CS16_CLIENT CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
 	LINUX _LINUX
 	stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
 	_snprintf=snprintf _vsnprintf=vsnprintf
