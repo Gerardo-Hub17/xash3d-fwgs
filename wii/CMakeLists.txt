@@ -35,13 +35,17 @@ target_include_directories(cs_client PRIVATE
 	${ROOT}/cs16-src/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/cs16-src/public
 	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui
 	${ROOT}/3rdparty/mainui/controls ${ROOT}/3rdparty/mainui/menus
-	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman)
+	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman
+	${ROOT}/cs16-src/public/dlls)
 
 target_compile_definitions(cs_client PRIVATE
 	CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
 	LINUX _LINUX
 	stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
-	_snprintf=snprintf _vsnprintf=vsnprintf)
+	_snprintf=snprintf _vsnprintf=vsnprintf
+	_inline=inline __inline=inline
+	XASH_OGC XASH_WII GEKKO HW_RVL
+	__BYTE_ORDER__=__ORDER_BIG_ENDIAN__)
 
 target_compile_options(cs_client PRIVATE
 	-fpermissive -fno-exceptions -fno-rtti -fms-extensions -Wno-write-strings

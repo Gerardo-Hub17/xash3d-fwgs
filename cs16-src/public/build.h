@@ -137,6 +137,9 @@ Then you can use another oneliner to query all variables:
 		#define XASH_SUNOS 1
 	#elif defined __EMSCRIPTEN__
 		#define XASH_EMSCRIPTEN 1
+	#elif defined __wii__ || defined GEKKO || defined HW_RVL || defined __PPC__
+		#define XASH_WII 1
+		#define XASH_CONSOLE_PLATFORM 1
 	#else
 		#error
 	#endif
