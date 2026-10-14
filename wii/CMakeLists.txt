@@ -21,7 +21,7 @@ file(GLOB CS_PARTICLEMAN_SRC "${ROOT}/cl_dll/particleman/*.cpp")
 list(REMOVE_ITEM CS_CLIENT_SRC "${ROOT}/cl_dll/ev_hldm.cpp" "${ROOT}/cl_dll/inputw32.cpp")
 list(REMOVE_ITEM CS_INPUT_SRC "${ROOT}/cl_dll/input/input_sdl.cpp")
 list(REMOVE_ITEM CS_WPN_SRC "${ROOT}/cl_dll/cs_wpn/cs_baseentity.cpp")
-list(APPEND CS_CLIENT_SRC ${ROOT}/cs16-src/common/interface.cpp ${ROOT}/cs16-src/public/utflib.cpp
+list(APPEND CS_CLIENT_SRC ${ROOT}/cs16-src/public/utflib.cpp
 	${ROOT}/cs16-src/public/strlcpy.c ${ROOT}/cs16-src/public/strlcat.c)
 list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SRC}
 	${CS_STUDIO_SRC} ${CS_PM_SRC} ${CS_INPUT_SRC} ${CS_GAMSH_SRC} ${MINIUTL_SRC}

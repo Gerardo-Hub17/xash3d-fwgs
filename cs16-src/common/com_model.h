@@ -8,6 +8,8 @@
 // com_model.h
 #if !defined( COM_MODEL_H )
 #define COM_MODEL_H
+
+#include "xash3d_types.h"
 #if defined( _WIN32 )
 #ifndef __MINGW32__
 #pragma once
