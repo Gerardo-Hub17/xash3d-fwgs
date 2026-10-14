@@ -13,7 +13,7 @@ file(GLOB CS_WPNSH_SRC "${ROOT}/dlls/wpn_shared/*.cpp")
 file(GLOB CS_HUD_SRC "${ROOT}/cl_dll/hud/*.cpp")
 file(GLOB CS_STUDIO_SRC "${ROOT}/cl_dll/studio/*.cpp")
 file(GLOB CS_INPUT_SRC "${ROOT}/cl_dll/input/*.cpp")
-file(GLOB CS_PM_SRC "${ROOT}/pm_shared/*.cpp")
+file(GLOB CS_PM_SRC "${ROOT}/cs16-src/pm_shared/*.cpp")
 file(GLOB CS_GAMSH_SRC "${ROOT}/game_shared/*.cpp")
 file(GLOB MINIUTL_SRC "${ROOT}/3rdparty/mainui/miniutl/*.cpp")
 file(GLOB CS_PARTICLEMAN_SRC "${ROOT}/cl_dll/particleman/*.cpp")
@@ -32,7 +32,7 @@ add_library(cs_client STATIC ${CS_CLIENT_SRC})
 target_include_directories(cs_client PRIVATE
 	${ROOT}/cl_dll/include ${ROOT}/cl_dll/include/hud ${ROOT}/cl_dll/include/studio
 	${ROOT}/cl_dll/include/math ${ROOT}/cl_dll ${ROOT}/common ${ROOT}/engine
-	${ROOT}/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/public
+	${ROOT}/cs16-src/pm_shared ${ROOT}/dlls ${ROOT}/game_shared ${ROOT}/public
 	${ROOT}/public/cl_dll ${ROOT}/3rdparty/mainui
 	${ROOT}/3rdparty/mainui/controls ${ROOT}/3rdparty/mainui/menus
 	${ROOT}/3rdparty/mainui/miniutl ${ROOT}/cl_dll/particleman)
