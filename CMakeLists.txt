@@ -444,6 +444,7 @@ target_compile_options(xash PUBLIC
 
 target_link_options(xash PUBLIC
             -Wl,--build-id=none
+            -Wl,--allow-multiple-definition
 )
 # Puente de simbolos para GX (independiente del soft)
 target_sources(xash PRIVATE ref/gx/gx_soft_bridge.c)
