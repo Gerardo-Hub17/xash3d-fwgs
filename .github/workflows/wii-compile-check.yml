@@ -1,0 +1,49 @@
+name: Wii compile check (client)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'wii/**'
+      - 'cl_dll/**'
+      - '.github/workflows/wii-compile-check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitppc:latest
+      options: --user root
+    steps:
+      - name: Checkout (solo el submodulo que hace falta)
+        run: |
+          apt-get update && apt-get install -y git cmake build-essential
+          git clone --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" -b "${GITHUB_REF_NAME}" src
+          cd src
+          git submodule update --init --depth 1 3rdparty/mainui_cpp
+
+      - name: Configure
+        run: |
+          cmake -S src/wii -B build \
+            -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (make -k: seguir tras el primer error para ver todos)
+        run: |
+          cd build
+          make -k -j$(nproc) 2>&1 | tee ../build.log || true
+
+      - name: Resumen de errores
+        run: |
+          echo "=== Archivos con error ==="
+          grep -E "error:" build.log | sed -E 's/:[0-9]+:[0-9]+:.*error:/: error:/' | sort | uniq -c | sort -rn | head -n 60
+          echo "=== Primeros 80 errores ==="
+          grep -E "error:" build.log | head -n 80
+          echo "=== Total ==="
+          grep -c "error:" build.log || true
+
+      - name: Subir log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
