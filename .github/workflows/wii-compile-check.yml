@@ -6,6 +6,9 @@ on:
     paths:
       - 'wii/**'
       - 'cl_dll/**'
+      - 'cs16-src/**'
+      - 'engine/common/**'
+      - 'engine/custom.h'
       - '.github/workflows/wii-compile-check.yml'
 
 jobs:
