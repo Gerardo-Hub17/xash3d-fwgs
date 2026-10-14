@@ -2741,6 +2741,16 @@ COM_AddAppDirectoryToSearchPath
 static void GAME_EXPORT COM_AddAppDirectoryToSearchPath( const char *pszBaseDir, const char *appName )
 {
 	FS_AddGameHierarchy( pszBaseDir, FS_NOWRITE_PATH );
+
+	// wii: mods derivados de HL (cstrike, czero, etc.) necesitan
+	// leer gfx.wad y otros recursos del mod base "valve" sin que el
+	// usuario duplique archivos. Anadimos valve como fallback.
+	if( !Q_stricmp( pszBaseDir, "cstrike" ) ||
+	    !Q_stricmp( pszBaseDir, "czero" ) ||
+	    !Q_stricmp( pszBaseDir, "cstrike_beta" ))
+	{
+		FS_AddGameHierarchy( "valve", FS_NOWRITE_PATH );
+	}
 }
 
 
