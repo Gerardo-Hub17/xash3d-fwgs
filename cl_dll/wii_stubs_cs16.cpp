@@ -1,3 +1,4 @@
+#include <cstddef>
 // wii / Xash3D FWGS: stubs para enlace estatico.
 // El motor en Wii no usa el patron CreateInterface/InterfaceReg; proveemos
 // los simbolos minimos que el cliente CS16 referencia en cdll_int.cpp.
