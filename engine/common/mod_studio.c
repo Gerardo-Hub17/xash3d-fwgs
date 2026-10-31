@@ -1180,10 +1180,19 @@ void Mod_PreloadSeqGroups( model_t *mod, studiohdr_t *phdr )
         Mem_Free( buf );
 
 #if XASH_BIG_ENDIAN
+        {
+            mstudioseqgroup_t *pgrp = (mstudioseqgroup_t *)((byte *)phdr + phdr->seqgroupindex ) + g;
+            Con_Printf( "[PRELOAD] %s grupo %i/%i: %s (interno '%s', %i bytes, %i bones)\n",
+                mod->name, g, phdr->numseqgroups, filepath, pgrp->name, (int)filesize, phdr->numbones );
+        }
         for( int i = 0; i < phdr->numseq; i++ )
         {
             if( pseq[i].seqgroup == g )
+            {
+                Con_Printf( "[PRELOAD]   seq %i '%s' blends %i frames %i animindex %i\n",
+                    i, pseq[i].label, pseq[i].numblends, pseq[i].numframes, pseq[i].animindex );
                 Mod_SwapStudioSeqGroupAnims( phdr, &pseq[i], (byte *)paSequences[g].data, (size_t)filesize );
+            }
         }
 #endif
     }
