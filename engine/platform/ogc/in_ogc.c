@@ -1699,8 +1699,9 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
     view->angles[PITCH] -= f_pitch;
     view->angles[PITCH] += tpitch;
 
-    // Estilo CoD: ademas de apuntar, el arma se ladea hacia el lado donde apuntas...
-    roll_lean = f_px * wii_ir_gunsway.value;
+    // Estilo CoD: ademas de apuntar, el arma se ladea al apuntar a un lado (la parte de
+    // arriba va hacia el lado contrario al puntero, como cuando el arma "pesa")...
+    roll_lean = -f_px * wii_ir_gunsway.value;
     view->angles[ROLL]  += droll + roll_lean;
     view->angles[ROLL]   = bound( -90.0f, view->angles[ROLL], 90.0f );
 
@@ -1717,6 +1718,12 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
     // Clamp duro para Wii
     if( view->angles[PITCH] > 89.0f ) view->angles[PITCH] = 89.0f;
     if( view->angles[PITCH] < -89.0f ) view->angles[PITCH] = -89.0f;
+    
+    while( view->angles[YAW] > 180.0f ) view->angles[YAW] -= 360.0f;
+    while( view->angles[YAW] < -180.0f ) view->angles[YAW] += 360.0f;
+
+    VectorCopy( view->angles, view->curstate.angles );
+    VectorCopy( view->angles, view->latched.prevangles );
 }
 
 /*
