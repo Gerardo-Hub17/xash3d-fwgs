@@ -654,7 +654,12 @@ void Host_Frame( double time )
 	// Walk every pool sentinel each frame. Corruption on this port shows up
 	// long after the fact as something unrelated, so the point is to catch it
 	// in the frame it happens rather than wherever it eventually bites.
-	Mem_Check(); // silencioso: solo habla si encuentra un centinela pisado
+	// Recorrer todos los pools cuesta varios ms por cuadro en la Wii (miles de bloques),
+	// asi que solo se hace cada ~10 s: suficiente para avisar, sin bajar los fps.
+	static int mc_frame;
+
+	if(( ++mc_frame % 600 ) == 0 )
+		Mem_Check();
 #endif
 
 	// decide the simulation time
