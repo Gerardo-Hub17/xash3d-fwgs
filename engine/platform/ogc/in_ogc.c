@@ -41,7 +41,9 @@ static CVAR_DEFINE_AUTO( wii_ir, "1", FCVAR_ARCHIVE, "aim with the Wii remote po
 static CVAR_DEFINE_AUTO( wii_ir_deadzone, "0.35", FCVAR_ARCHIVE, "fraction of the screen where pointing does not turn the view" );
 static CVAR_DEFINE_AUTO( wii_ir_yawspeed, "220", FCVAR_ARCHIVE, "degrees per second of turn at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per second of pitch at the screen edge" );
-static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon leans towards the pointer" );
+static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon rolls towards the pointer at the screen edge (0 = off, negative = inverted)" );
+static CVAR_DEFINE_AUTO( wii_gun_shift, "2", FCVAR_ARCHIVE, "units the weapon slides sideways/vertically towards the pointer at the screen edge (0 = off)" );
+static CVAR_DEFINE_AUTO( wii_gun_smooth, "12", FCVAR_ARCHIVE, "how fast the weapon catches up with the pointer (higher = snappier, lower = heavier, 0 = no smoothing)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
 static CVAR_DEFINE_AUTO( wii_buttons, "1", FCVAR_ARCHIVE, "read the remote and nunchuk buttons straight from WPAD" );
@@ -743,6 +745,8 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_ir_yawspeed );
 	Cvar_RegisterVariable( &wii_ir_pitchspeed );
 	Cvar_RegisterVariable( &wii_ir_gunsway );
+	Cvar_RegisterVariable( &wii_gun_shift );
+	Cvar_RegisterVariable( &wii_gun_smooth );
 	Cvar_RegisterVariable( &wii_ir_cursor );
 Cvar_RegisterVariable( &wii_nunchuk_sens );
 	Cvar_RegisterVariable( &wii_buttons );
@@ -1640,41 +1644,79 @@ centre while the pointer moves independently, which looks wrong.
 */
 void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 {
+    // valores filtrados: el arma "pesa" y alcanza al puntero con un pequeno retraso, como en los CoD
+    static float f_yaw, f_pitch, f_px, f_py;
     float dyaw = 0.0f, dpitch = 0.0f, droll = 0.0f, tpitch = 0.0f;
+    float px = 0.0f, py = 0.0f, k, roll_lean = 0.0f;
+    qboolean have_pointer;
 
     if( !view )
         return;
 
     // Calcula el offset angular real (mismo que el disparo), asi el arma
     // apunta EXACTAMENTE al crosshair, no solo se inclina un poco.
-    if( !OGC_GetPointerAngles( &dyaw, &dpitch ))
+    have_pointer = OGC_GetPointerAngles( &dyaw, &dpitch );
+    if( !have_pointer )
         dyaw = dpitch = 0.0f;
+    else
+    {
+        px = bound( -1.0f, ogc_pointer[0], 1.0f );
+        py = bound( -1.0f, ogc_pointer[1], 1.0f );
+    }
 
     // Giro del propio mando (acelerometro): al girar el Wiimote el arma gira igual
     OGC_GetRemoteTilt( &droll, &tpitch );
 
-    if( dyaw == 0.0f && dpitch == 0.0f && droll == 0.0f && tpitch == 0.0f )
-        return;
-
     // Blindaje NaN/Inf
     if( isnan( dyaw ) || isinf( dyaw ) ) dyaw = 0.0f;
     if( isnan( dpitch ) || isinf( dpitch ) ) dpitch = 0.0f;
+    if( isnan( px ) || isinf( px ) ) px = 0.0f;
+    if( isnan( py ) || isinf( py ) ) py = 0.0f;
+
+    // filtro exponencial hacia el objetivo (wii_gun_smooth <= 0 -> sin filtro)
+    if( wii_gun_smooth.value > 0.0f )
+    {
+        k = 1.0f - expf( -(float)host.realframetime * wii_gun_smooth.value );
+        k = bound( 0.0f, k, 1.0f );
+    }
+    else k = 1.0f;
+
+    f_yaw   += ( dyaw   - f_yaw   ) * k;
+    f_pitch += ( dpitch - f_pitch ) * k;
+    f_px    += ( px     - f_px    ) * k;
+    f_py    += ( py     - f_py    ) * k;
+
+    if( fabsf( f_yaw ) < 0.01f )   f_yaw = 0.0f;
+    if( fabsf( f_pitch ) < 0.01f ) f_pitch = 0.0f;
+    if( fabsf( f_px ) < 0.001f )   f_px = 0.0f;
+    if( fabsf( f_py ) < 0.001f )   f_py = 0.0f;
+
+    if( f_yaw == 0.0f && f_pitch == 0.0f && f_px == 0.0f && f_py == 0.0f && droll == 0.0f && tpitch == 0.0f )
+        return;
 
     // Aplica el offset angular al arma
-    view->angles[YAW]   += dyaw;
-    view->angles[PITCH] -= dpitch;
+    view->angles[YAW]   += f_yaw;
+    view->angles[PITCH] -= f_pitch;
     view->angles[PITCH] += tpitch;
-    view->angles[ROLL]  += droll;
+
+    // Estilo CoD: ademas de apuntar, el arma se ladea hacia el lado donde apuntas...
+    roll_lean = f_px * wii_ir_gunsway.value;
+    view->angles[ROLL]  += droll + roll_lean;
     view->angles[ROLL]   = bound( -90.0f, view->angles[ROLL], 90.0f );
+
+    // ...y se desliza un poco hacia ese lado (derecha/izquierda y arriba/abajo)
+    if( wii_gun_shift.value != 0.0f && ( f_px != 0.0f || f_py != 0.0f ))
+    {
+        vec3_t right, up;
+
+        AngleVectors( refState.viewangles, NULL, right, up );
+        VectorMA( view->origin, f_px * wii_gun_shift.value, right, view->origin );
+        VectorMA( view->origin, -f_py * wii_gun_shift.value * 0.6f, up, view->origin );
+    }
 
     // Clamp duro para Wii
     if( view->angles[PITCH] > 89.0f ) view->angles[PITCH] = 89.0f;
     if( view->angles[PITCH] < -89.0f ) view->angles[PITCH] = -89.0f;
-    while( view->angles[YAW] > 180.0f ) view->angles[YAW] -= 360.0f;
-    while( view->angles[YAW] < -180.0f ) view->angles[YAW] += 360.0f;
-
-    VectorCopy( view->angles, view->curstate.angles );
-    VectorCopy( view->angles, view->latched.prevangles );
 }
 
 /*
