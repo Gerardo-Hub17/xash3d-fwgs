@@ -2301,7 +2301,7 @@ check savegame for valid
 */
 int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 {
-	int     i, tag, size, nNumberOfFields, nFieldSize, tokenSize, tokenCount, tableCount;
+	int	i, tag, size, size_total, nNumberOfFields, nFieldSize, tokenSize, tokenCount;
 	char	*pData, *pSaveData, *pFieldName, **pTokenList;
 	string	mapName, description;
 	file_t	*f;
@@ -2349,11 +2349,12 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 	mapName[0] = '\0';
 	comment[0] = '\0';
 
+	// el .sav (JSAV) solo guarda size, tokenCount y tokenSize: tableCount va en el .HL1 (VALV)
 	FS_Read( f, &size, sizeof( int ));
-	FS_Read( f, &tableCount, sizeof( int ));
 	FS_Read( f, &tokenCount, sizeof( int ));	// These two ints are the token list
 	FS_Read( f, &tokenSize, sizeof( int ));
 	size += tokenSize;
+	size_total = size;
 
 	// sanity check.
 	if( tokenCount < 0 || tokenCount > SAVE_HASHSTRINGS )
@@ -2391,9 +2392,10 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 	// short, short (size, index of field name)
 	nFieldSize = *(short *)pData;
 	pData += sizeof( short );
-	pFieldName = pTokenList[*(short *)pData];
+	i = *(short *)pData;
+	pFieldName = ( pTokenList && i >= 0 && i < tokenCount ) ? pTokenList[i] : NULL;
 
-	if( Q_stricmp( pFieldName, "GameHeader" ))
+	if( !pFieldName || Q_stricmp( pFieldName, "GameHeader" ))
 	{
 		Q_strncpy( comment, "<missing GameHeader>", MAX_STRING );
 		if( pTokenList ) Mem_Free( pTokenList );
@@ -2404,13 +2406,16 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 
 	// int (fieldcount)
 	pData += sizeof( short );
-	nNumberOfFields = (int)*pData;
+	// es un int del formato nativo (el DLL lo escribe sin convertir): en big-endian
+	// leer solo el primer byte (como hace el codigo original) daria siempre 0 campos
+	memcpy( &nNumberOfFields, pData, sizeof( int ));
 	pData += nFieldSize;
 
 	// each field is a short (size), short (index of name), binary string of "size" bytes (data)
-	for( i = 0; i < nNumberOfFields; i++ )
+	for( i = 0; i < nNumberOfFields && i < 64; i++ )
 	{
 		size_t size;
+		int tokenIndex;
 		// Data order is:
 		// Size
 		// szName
@@ -2418,8 +2423,12 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 		nFieldSize = *(short *)pData;
 		pData += sizeof( short );
 
-		pFieldName = pTokenList[*(short *)pData];
+		tokenIndex = *(short *)pData;
+		pFieldName = ( pTokenList && tokenIndex >= 0 && tokenIndex < tokenCount ) ? pTokenList[tokenIndex] : NULL;
 		pData += sizeof( short );
+
+		if( !pFieldName || nFieldSize < 0 || pData + nFieldSize > pSaveData + size_total )
+			break;
 
 		size = Q_min( nFieldSize, MAX_STRING );
 
