@@ -125,6 +125,7 @@ CVAR_DEFINE_AUTO( r_studio_sort_textures, "0", FCVAR_GLCONFIG, "change draw orde
 CVAR_DEFINE_AUTO( r_studio_drawelements, "1", FCVAR_GLCONFIG, "use glDrawElements for studiomodels" );
 CVAR_DEFINE_AUTO( r_studio_builtin_renderer, "0", 0, "use built-in studio model renderer instead of the one provided by client library (debugging)" );
 CVAR_DEFINE_AUTO( gx_studio_maxdist, "0", FCVAR_ARCHIVE, "do not draw monsters and players farther than this many units (0 = always draw)" );
+CVAR_DEFINE_AUTO( gx_studio_flatdist, "600", FCVAR_ARCHIVE, "models farther than this many units get one flat light value instead of per-vertex lighting (0 = always per-vertex)" );
 static cvar_t			*cl_righthand = NULL;
 
 static r_studio_interface_t	*pStudioDraw;
@@ -1491,6 +1492,19 @@ static void R_StudioDrawPointsImpl( void )
 		R_StudioGenerateNormals();
 	}
 
+	// modelos lejanos: una sola luz plana por mesh en vez de una por normal (la iluminacion
+	// por normal es casi la mitad del coste de un modelo grande y a distancia no se nota)
+	qboolean lodflat = false;
+
+	if( gx_studio_flatdist.value > 64.0f && RI.currententity != tr.viewent
+		&& !FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
+	{
+		vec3_t d;
+
+		VectorSubtract( RI.currententity->origin, RI.rvp.vieworigin, d );
+		lodflat = DotProduct( d, d ) > gx_studio_flatdist.value * gx_studio_flatdist.value;
+	}
+
 	int k = 0;
 	for( int j = 0; j < m_pSubModel->nummesh; j++ )
 	{
@@ -1511,9 +1525,20 @@ static void R_StudioDrawPointsImpl( void )
 				VectorSet( g_studio.lightvalues[k], tr.blend, tr.blend, tr.blend );
 			}
 		}
-		else
-		{
-			for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
+		else if( lodflat && !FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+{
+vec3_t zero = { 0.0f, 0.0f, 0.0f }, flat;
+float lv_tmp;
+
+R_StudioLighting( &lv_tmp, -1, g_nFaceFlags | STUDIO_NF_FLATSHADE, zero );
+VectorScale( g_studio.lightcolor, lv_tmp, flat );
+
+for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
+VectorCopy( flat, g_studio.lightvalues[k] );
+}
+else
+{
+for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 			{
 				float lv_tmp;
 				if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))

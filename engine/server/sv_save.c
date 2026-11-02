@@ -2299,6 +2299,24 @@ SV_GetSaveComment
 check savegame for valid
 ==================
 */
+// Los datos que escribe el DLL del juego (cabeceras de bloque, numero de campos) van en
+// little-endian aunque la Wii sea big-endian, y no estan alineados: se leen con memcpy + swap.
+static short SaveCommentShort( const char *p )
+{
+	short v;
+
+	memcpy( &v, p, sizeof( v ));
+	return LittleShort( v );
+}
+
+static int SaveCommentInt( const char *p )
+{
+	int v;
+
+	memcpy( &v, p, sizeof( v ));
+	return LittleLong( v );
+}
+
 int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 {
 	int	i, tag, size, size_total, nNumberOfFields, nFieldSize, tokenSize, tokenCount;
@@ -2390,9 +2408,9 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 	else pTokenList = NULL;
 
 	// short, short (size, index of field name)
-	nFieldSize = *(short *)pData;
+	nFieldSize = SaveCommentShort( pData );
 	pData += sizeof( short );
-	i = *(short *)pData;
+	i = SaveCommentShort( pData );
 	pFieldName = ( pTokenList && i >= 0 && i < tokenCount ) ? pTokenList[i] : NULL;
 
 	if( !pFieldName || Q_stricmp( pFieldName, "GameHeader" ))
@@ -2406,9 +2424,7 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 
 	// int (fieldcount)
 	pData += sizeof( short );
-	// es un int del formato nativo (el DLL lo escribe sin convertir): en big-endian
-	// leer solo el primer byte (como hace el codigo original) daria siempre 0 campos
-	memcpy( &nNumberOfFields, pData, sizeof( int ));
+	nNumberOfFields = SaveCommentInt( pData );
 	pData += nFieldSize;
 
 	// each field is a short (size), short (index of name), binary string of "size" bytes (data)
@@ -2420,10 +2436,10 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 		// Size
 		// szName
 		// Actual Data
-		nFieldSize = *(short *)pData;
+		nFieldSize = SaveCommentShort( pData );
 		pData += sizeof( short );
 
-		tokenIndex = *(short *)pData;
+		tokenIndex = SaveCommentShort( pData );
 		pFieldName = ( pTokenList && tokenIndex >= 0 && tokenIndex < tokenCount ) ? pTokenList[tokenIndex] : NULL;
 		pData += sizeof( short );
 
