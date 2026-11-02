@@ -362,7 +362,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 	byte *raw;
 	if( cols != width || rows != height )
 	{
-		raw = GX_ResampleTexture( buffer, cols, rows, width, height, false );
+		raw = GL_ResampleTexture( buffer, cols, rows, width, height, false );
 		cols = width;
 		rows = height;
 	}
