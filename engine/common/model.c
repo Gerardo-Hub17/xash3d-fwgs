@@ -196,7 +196,10 @@ void Mod_Init( void )
 	{
 		extern convar_t wii_preload_anims;
 		extern void Mod_MapCRC_f( void );
+		extern convar_t wii_preload_kb, wii_preload_reserve;
 		Cvar_RegisterVariable( &wii_preload_anims );
+		Cvar_RegisterVariable( &wii_preload_kb );
+		Cvar_RegisterVariable( &wii_preload_reserve );
 		Cmd_AddCommand( "wii_mapcrc", Mod_MapCRC_f, "print the multiplayer CRC of a map, read two different ways" );
 	}
 #endif
@@ -518,6 +521,12 @@ static void Mod_PurgeStudioCache( void )
 
 	Mem_EmptyPool( com_studiocache );
 	Mod_ClearStudioCache();
+#if XASH_OGC
+	{
+		extern void Mod_ResetPreloadBudget( void );
+		Mod_ResetPreloadBudget();
+	}
+#endif
 }
 
 /*

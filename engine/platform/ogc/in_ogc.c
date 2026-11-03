@@ -42,7 +42,7 @@ static CVAR_DEFINE_AUTO( wii_ir_deadzone, "0.35", FCVAR_ARCHIVE, "fraction of th
 static CVAR_DEFINE_AUTO( wii_ir_yawspeed, "220", FCVAR_ARCHIVE, "degrees per second of turn at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per second of pitch at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon rolls towards the pointer at the screen edge (0 = off, negative = inverted)" );
-static CVAR_DEFINE_AUTO( wii_gun_shift, "-5", FCVAR_ARCHIVE, "units the weapon slides sideways/vertically towards the pointer at the screen edge (0 = off)" );
+static CVAR_DEFINE_AUTO( wii_gun_shift, "-7", FCVAR_ARCHIVE, "units the weapon slides sideways/vertically towards the pointer at the screen edge (0 = off)" );
 static CVAR_DEFINE_AUTO( wii_gun_smooth, "0", FCVAR_ARCHIVE, "how fast the weapon catches up with the pointer (higher = snappier, lower = heavier, 0 = no smoothing)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );

@@ -20,6 +20,10 @@ GNU General Public License for more details.
 #include "library.h"
 #include "ref_common.h"
 #include "swaplib.h"
+#if XASH_OGC
+#include <malloc.h>
+#include <ogc/system.h>
+#endif
 
 typedef int (*STUDIOAPI)( int, sv_blending_interface_t**, server_studio_api_t*,  float (*transform)[3][4], float (*bones)[MAXSTUDIOBONES][3][4] );
 
@@ -1123,6 +1127,27 @@ modelo (pantalla de carga) y se les da el byteswap de todas sus secuencias.
 =================
 */
 CVAR_DEFINE_AUTO( wii_preload_anims, "1", FCVAR_ARCHIVE, "preload sequence group files (barney01.mdl...) at model load instead of in the middle of the game" );
+CVAR_DEFINE_AUTO( wii_preload_kb, "2048", FCVAR_ARCHIVE, "most KB of sequence group files preloaded per level (the rest load on demand)" );
+CVAR_DEFINE_AUTO( wii_preload_reserve, "10240", FCVAR_ARCHIVE, "KB of free memory that preloading must leave untouched" );
+
+// KB cargados por la precarga en el nivel actual (se pone a 0 al cambiar de nivel)
+static size_t mod_preload_bytes;
+
+void Mod_ResetPreloadBudget( void )
+{
+    mod_preload_bytes = 0;
+}
+
+// memoria libre real: lo que queda sin pedir en MEM2 mas los huecos libres del heap de newlib
+static size_t Mod_FreeMemoryKB( void )
+{
+#if XASH_OGC
+    struct mallinfo mi = mallinfo();
+    return (( (size_t)SYS_GetArena2Hi() - (size_t)SYS_GetArena2Lo()) + (size_t)mi.fordblks ) / 1024;
+#else
+    return (size_t)-1;
+#endif
+}
 
 void Mod_PreloadSeqGroups( model_t *mod, studiohdr_t *phdr )
 {
@@ -1168,6 +1193,20 @@ void Mod_PreloadSeqGroups( model_t *mod, studiohdr_t *phdr )
         // mismo nombre que arma R_StudioGetAnim
         Q_snprintf( filepath, sizeof( filepath ), "%s/%s%i%i.mdl", modelpath, modelname, g / 10, g % 10 );
 
+        // la RAM de la Wii no alcanza para precargar todos los enemigos del nivel: hay un
+        // presupuesto por nivel y un minimo de memoria libre. Lo que no entre se carga
+        // bajo demanda como antes (un tiron al primer uso, pero sin cerrar el juego)
+        {
+            size_t fsize = (size_t)FS_FileSize( filepath, false );
+
+            if( fsize == 0 || ( mod_preload_bytes + fsize ) / 1024 > (size_t)Q_max( 0.0f, wii_preload_kb.value ))
+                continue;
+
+            // FS_LoadFile y la copia al pool coexisten un momento: hace falta el doble
+            if( Mod_FreeMemoryKB() < ( fsize * 2 ) / 1024 + (size_t)Q_max( 0.0f, wii_preload_reserve.value ))
+                continue;
+        }
+
         buf = FS_LoadFile( filepath, &filesize, false );
         if( !buf || !filesize || LittleLong( IDSEQGRPHEADER ) != *(uint *)buf )
         {
@@ -1178,21 +1217,13 @@ void Mod_PreloadSeqGroups( model_t *mod, studiohdr_t *phdr )
         paSequences[g].data = Mem_Calloc( com_studiocache, filesize );
         memcpy( paSequences[g].data, buf, filesize );
         Mem_Free( buf );
+        mod_preload_bytes += (size_t)filesize;
 
 #if XASH_BIG_ENDIAN
-        {
-            mstudioseqgroup_t *pgrp = (mstudioseqgroup_t *)((byte *)phdr + phdr->seqgroupindex ) + g;
-            Con_Printf( "[PRELOAD] %s grupo %i/%i: %s (interno '%s', %i bytes, %i bones)\n",
-                mod->name, g, phdr->numseqgroups, filepath, pgrp->name, (int)filesize, phdr->numbones );
-        }
         for( int i = 0; i < phdr->numseq; i++ )
         {
             if( pseq[i].seqgroup == g )
-            {
-                Con_Printf( "[PRELOAD]   seq %i '%s' blends %i frames %i animindex %i\n",
-                    i, pseq[i].label, pseq[i].numblends, pseq[i].numframes, pseq[i].animindex );
                 Mod_SwapStudioSeqGroupAnims( phdr, &pseq[i], (byte *)paSequences[g].data, (size_t)filesize );
-            }
         }
 #endif
     }
