@@ -84,6 +84,44 @@ static struct
 
 static qboolean gx_video_initialized = false;
 
+extern float OGC_GetAspect( void );
+
+// Ancho que ocupa la imagen en la senal de video. El modo por defecto de libogc
+// usa 640 de los 720 muestreos (deja ~40 a cada lado en negro); en 16:9 se usa
+// todo el ancho para que la imagen llene la pantalla. El framebuffer sigue siendo
+// de 640 y el VI lo escala.
+#define GX_VI_MAX_WIDTH 720
+
+static int gx_vi_default_w, gx_vi_default_x;
+
+// Ajusta rmode->viWidth/viXOrigin segun wii_aspect. Devuelve true si cambiaron.
+static qboolean GX_UpdateViWidth( void )
+{
+	GXRModeObj *rmode = gxvid.rmode;
+	int w, x;
+
+	if( !rmode )
+		return false;
+
+	if( OGC_GetAspect() > 1.5f )
+	{
+		w = GX_VI_MAX_WIDTH;
+		x = 0;
+	}
+	else
+	{
+		w = gx_vi_default_w;
+		x = gx_vi_default_x;
+	}
+
+	if( rmode->viWidth == w && rmode->viXOrigin == x )
+		return false;
+
+	rmode->viWidth = w;
+	rmode->viXOrigin = x;
+	return true;
+}
+
 #define GX_FIFO_SIZE ( 256 * 1024 )
 
 // Diagnostic modes, read once from sd:/xash3d/gxtest.txt (one digit):
@@ -212,6 +250,15 @@ void GX_Present( void )
 
 	gxvid.fb ^= 1;
 	n++;
+
+	// wii_aspect cambio en el menu: reconfigurar el ancho del VI al vuelo
+	if( GX_UpdateViWidth( ))
+	{
+		VIDEO_Configure( gxvid.rmode );
+		VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb ^ 1] ); // el ultimo cuadro mostrado
+		VIDEO_Flush();
+		VIDEO_WaitVSync();
+	}
 }
 
 static void GX_SetDefaultTexState( void )
@@ -432,6 +479,8 @@ void GX_SetupAttributes( int safegl )
 	VIDEO_Init();
 
 	gxvid.rmode = VIDEO_GetPreferredMode( NULL );
+	gx_vi_default_w = gxvid.rmode->viWidth;
+	gx_vi_default_x = gxvid.rmode->viXOrigin;
 }
 
 void GX_OnContextCreated( void )
@@ -478,6 +527,7 @@ void GX_OnContextCreated( void )
 	VIDEO_ClearFrameBuffer( rmode, gxvid.xfb[1], COLOR_BLACK );
 
 
+	GX_UpdateViWidth();
 	VIDEO_Configure( rmode );
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
 	VIDEO_SetBlack( FALSE );
