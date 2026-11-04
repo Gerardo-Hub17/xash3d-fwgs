@@ -253,6 +253,7 @@ static float V_CalcFov( float *fov_x, float width, float height )
 	return RAD2DEG( half_fov_y ) * 2;
 }
 
+#if !XASH_OGC
 /*
 ====================
 V_AdjustFov
@@ -281,6 +282,7 @@ static void V_AdjustFov( float *fov_x, float *fov_y, float width, float height, 
 	if( *fov_x < x ) *fov_x = x;
 	else *fov_y = y;
 }
+#endif // !XASH_OGC
 
 /*
 =============
@@ -313,12 +315,22 @@ static void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
 	// calc FOV
 	rvp->fov_x = bound( 10.0f, cl.local.scr_fov, 150.0f ); // this is a final fov value
 
-	// first we need to compute FOV and other things that needs for frustum properly work
-	rvp->fov_y = V_CalcFov( &rvp->fov_x, clgame.viewport[2], clgame.viewport[3] );
+#if XASH_OGC
+        {
+                const float aspect = OGC_GetAspect();
+                float fov_y = V_CalcFov( &rvp->fov_x, 640.0f, 480.0f );
 
-	// adjust FOV for widescreen
-	if( refState.wideScreen && r_adjust_fov.value )
-		V_AdjustFov( &rvp->fov_x, &rvp->fov_y, clgame.viewport[2], clgame.viewport[3], false );
+                rvp->fov_x = V_CalcFov( &fov_y, 480.0f, 480.0f * aspect );
+                rvp->fov_y = fov_y;
+        }
+#else
+        // first we need to compute FOV and other things that needs for frustum properly work
+        rvp->fov_y = V_CalcFov( &rvp->fov_x, clgame.viewport[2], clgame.viewport[3] );
+
+        // adjust FOV for widescreen
+        if( refState.wideScreen && r_adjust_fov.value )
+                V_AdjustFov( &rvp->fov_x, &rvp->fov_y, clgame.viewport[2], clgame.viewport[3], false );
+#endif
 
 	rvp->flags = 0;
 

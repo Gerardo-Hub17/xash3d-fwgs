@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "qfont.h"
 #include "input.h"
 #include "library.h"
+#include "platform/platform.h"
 
 CVAR_DEFINE_AUTO( scr_centertime, "2.5", 0, "centerprint hold time" );
 CVAR_DEFINE_AUTO( scr_loading, "0", 0, "loading bar progress" );
@@ -685,6 +686,21 @@ void SCR_UpdateScreen( void )
 	qboolean screen_redraw = true; // assume screen has been redrawn
 
 	if( !V_PreRender( )) return;
+
+#if XASH_OGC
+	{
+		// wii_aspect changed: the HUD virtual size depends on it, so redo VidInit
+		static float last_aspect;
+		const float aspect = OGC_GetAspect();
+
+		if( last_aspect != aspect )
+		{
+			if( last_aspect != 0.0f )
+				SCR_VidInit();
+			last_aspect = aspect;
+		}
+	}
+#endif
 
 	switch( cls.state )
 	{

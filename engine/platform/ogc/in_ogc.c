@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include <wiiuse/wpad.h>
 #include <ogc/pad.h>
+#include <ogc/conf.h>
 #include <ogc/usbmouse.h>
 #include <wiikeyboard/keyboard.h>
 
@@ -44,6 +45,7 @@ static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per s
 static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon rolls towards the pointer at the screen edge (0 = off, negative = inverted)" );
 static CVAR_DEFINE_AUTO( wii_gun_shift, "-7", FCVAR_ARCHIVE, "units the weapon slides sideways/vertically towards the pointer at the screen edge (0 = off)" );
 static CVAR_DEFINE_AUTO( wii_gun_smooth, "0", FCVAR_ARCHIVE, "how fast the weapon catches up with the pointer (higher = snappier, lower = heavier, 0 = no smoothing)" );
+static CVAR_DEFINE_AUTO( wii_aspect, "0", FCVAR_ARCHIVE, "TV aspect ratio used to draw (0 = follow the Wii system setting, 1 = 4:3, 2 = 16:9)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
 static CVAR_DEFINE_AUTO( wii_buttons, "1", FCVAR_ARCHIVE, "read the remote and nunchuk buttons straight from WPAD" );
@@ -259,6 +261,28 @@ salen rectos de la camara. El cursor de los menus conserva su ultima posicion.
 static void OGC_SetSource( int src )
 {
 	ogc_src = src;
+}
+
+float OGC_GetAspect( void )
+{
+	static int sys_wide = -1;
+	int mode = (int)wii_aspect.value;
+
+	if( mode == 1 ) return 4.0f / 3.0f;
+	if( mode == 2 ) return 16.0f / 9.0f;
+
+	if( sys_wide < 0 )
+		sys_wide = ( CONF_GetAspectRatio() == CONF_ASPECT_16_9 ) ? 1 : 0;
+
+	return sys_wide ? ( 16.0f / 9.0f ) : ( 4.0f / 3.0f );
+}
+
+static void OGC_PointerTans( float *tx, float *ty )
+{
+	float half = tan( DEG2RAD( bound( 10.0f, cl.local.scr_fov, 150.0f ) * 0.5f ));
+
+	*ty = half * 0.75f; // vertical FOV is defined against a 4:3 picture
+	*tx = *ty * OGC_GetAspect( );
 }
 
 static qboolean OGC_GetPointerAngles( float *dyaw, float *dpitch );
@@ -748,6 +772,7 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_gun_shift );
 	Cvar_RegisterVariable( &wii_gun_smooth );
 	Cvar_RegisterVariable( &wii_ir_cursor );
+	Cvar_RegisterVariable( &wii_aspect );
 Cvar_RegisterVariable( &wii_nunchuk_sens );
 	Cvar_RegisterVariable( &wii_buttons );
 	Cvar_RegisterVariable( &wii_showinput );
@@ -1281,20 +1306,18 @@ so a shot fired along these angles lands exactly under the pointer.
 */
 static qboolean OGC_GetPointerAngles( float *dyaw, float *dpitch )
 {
-	float halffov, tanhalf, aspect;
+	float tx, ty;
 
 	// con el raton USB en uso el puntero IR no apunta (el mando suele estar en la mesa)
 	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 )
 		return false;
 
-	halffov = bound( 10.0f, cl.local.scr_fov, 150.0f ) * 0.5f;
-	tanhalf = tan( DEG2RAD( halffov ));
-	aspect  = (float)refState.height / (float)refState.width;
+	OGC_PointerTans( &tx, &ty );
 
 	// screen x grows right and yaw decreases right; screen y grows down and
 	// pitch increases down
-	*dyaw   = -RAD2DEG( atan( ogc_pointer[0] * tanhalf ));
-	*dpitch =  RAD2DEG( atan( ogc_pointer[1] * tanhalf * aspect ));
+	*dyaw   = -RAD2DEG( atan( ogc_pointer[0] * tx ));
+	*dpitch =  RAD2DEG( atan( ogc_pointer[1] * ty ));
 
 	return true;
 }
@@ -1557,7 +1580,7 @@ void OGC_RestoreAim( vec3_t viewangles )
 void OGC_ApplyPointerToAim( vec3_t viewangles, float *forwardmove, float *sidemove )
 {
 	float dyaw, dpitch;
-	float xt, yt, halffov, aspect;
+	float xt, yt;
 	vec3_t fwd, right, up, dir, cam;
 
 #ifdef XASH_OGC_AIMPROOF
@@ -1575,10 +1598,12 @@ void OGC_ApplyPointerToAim( vec3_t viewangles, float *forwardmove, float *sidemo
 	// inclinada (mirando arriba/abajo) el disparo quedaba mucho mas cerca del
 	// centro que el reticulo. Se calcula la direccion real (misma proyeccion que
 	// el reticulo) y de ahi los angulos del comando.
-	halffov = bound( 10.0f, cl.local.scr_fov, 150.0f ) * 0.5f;
-	xt = ogc_pointer[0] * tan( DEG2RAD( halffov ));
-	aspect = (float)refState.height / (float)refState.width;
-	yt = ogc_pointer[1] * tan( DEG2RAD( halffov )) * aspect;
+	{
+		float tx, ty;
+		OGC_PointerTans( &tx, &ty );
+		xt = ogc_pointer[0] * tx;
+		yt = ogc_pointer[1] * ty;
+	}
 
 	VectorCopy( viewangles, cam );
 	AngleVectors( cam, fwd, right, up );

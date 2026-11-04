@@ -320,8 +320,45 @@ SPR_AdjustSize
 draw hudsprite routine
 ====================
 */
+// the crosshair follows the view, not the HUD, so it ignores the HUD margins
+static qboolean cl_hud_nomargin;
+
 void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 {
+	float mx = 0.0f, my = 0.0f; // inset per side, as a fraction of the screen
+
+	if( !cl_hud_nomargin )
+	{
+		mx = bound( 0.0f, hud_margin_x.value, 20.0f ) * 0.01f;
+		my = bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f;
+	}
+
+	if( mx <= 0.0f && my <= 0.0f && refState.width == clgame.scrInfo.iWidth && refState.height == clgame.scrInfo.iHeight )
+		return;
+
+	// scale for screen sizes
+	float xscale = refState.width / (float)clgame.scrInfo.iWidth;
+	float yscale = refState.height / (float)clgame.scrInfo.iHeight;
+	*x *= xscale;
+	*y *= yscale;
+	*w *= xscale;
+	*h *= yscale;
+
+	// shrink the whole HUD towards the centre so its edges sit inside the margin
+	if( mx > 0.0f )
+	{
+		const float k = 1.0f - 2.0f * mx;
+		*x = refState.width * mx + *x * k;
+		*w *= k;
+	}
+
+	if( my > 0.0f )
+	{
+		const float k = 1.0f - 2.0f * my;
+		*y = refState.height * my + *y * k;
+		*h *= k;
+	}
+}
 	if( refState.width == clgame.scrInfo.iWidth && refState.height == clgame.scrInfo.iHeight )
 		return;
 
@@ -879,7 +916,9 @@ static void CL_DrawCrosshair( void )
 	clgame.ds.pSprite = clgame.ds.pCrosshair;
 	Vector4Copy( clgame.ds.rgbaCrosshair, clgame.ds.spriteColor );
 
+	cl_hud_nomargin = true;
 	pfnSPR_DrawHoles( 0, x, y, &clgame.ds.rcCrosshair );
+	cl_hud_nomargin = false;
 }
 
 /*
@@ -1706,6 +1745,19 @@ int GAME_EXPORT CL_GetScreenInfo( SCREENINFO *pscrinfo )
 		clgame.scrInfo.iHeight = refState.height;
 		ClearBits( clgame.scrInfo.iFlags, SCRINFO_STRETCHED );
 	}
+
+#if XASH_OGC
+	// a 16:9 TV stretches the 640x480 framebuffer horizontally: give the HUD a
+	// proportionally wider virtual screen (853x480) so sprites and text keep
+	// their shape. SPR_AdjustSize maps it back onto the framebuffer.
+	if( refState.width > 0 && refState.height > 0 )
+	{
+		float xk = OGC_GetAspect() * refState.height / refState.width;
+
+		if( xk > 1.001f || xk < 0.999f )
+			clgame.scrInfo.iWidth = (int)( clgame.scrInfo.iWidth * xk + 0.5f );
+	}
+#endif
 
 	if( !pscrinfo ) return 0;
 
