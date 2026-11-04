@@ -908,7 +908,7 @@ void SCR_VidInit( void )
 	// update screen sizes for menu
 	if( gameui.globals )
 	{
-		gameui.globals->scrWidth = refState.width;
+		gameui.globals->scrWidth = UI_VirtualWidth();
 		gameui.globals->scrHeight = refState.height;
 	}
 

@@ -1193,6 +1193,8 @@ qboolean UI_LoadProgs( void );
 void UI_UpdateMenu( float realtime );
 void UI_KeyEvent( int key, qboolean down );
 void UI_MouseMove( int x, int y );
+float UI_XScale( void );
+int UI_VirtualWidth( void );
 void UI_SetActiveMenu( qboolean fActive );
 void UI_AddServerToList( netadr_t adr, const char *info );
 void UI_GetCursorPos( int *pos_x, int *pos_y );

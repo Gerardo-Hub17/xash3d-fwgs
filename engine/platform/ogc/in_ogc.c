@@ -1839,19 +1839,31 @@ void OGC_PointerMove( float *pitch, float *yaw )
     if( scale <= 0.0f )
         return;
 
+    // en 16:9 la pantalla es mas ancha: la zona muerta horizontal (fraccion del
+    // ancho) pedia un barrido de mano mayor y, con el FOV horizontal mas grande,
+    // el giro avanzaba menos pantalla por segundo. Se compensa con la relacion
+    // 16:9 / 4:3 (1.0 en 4:3).
+    {
+        const float k = OGC_GetAspect() * 0.75f;
+        const float dzx = bound( 0.0f, deadzone / k, 0.95f );
+        const float scx = 1.0f - dzx;
+
+        if( isnan( nx ) || isinf( nx ) ) nx = 0.0f;
+
+        if( fabs( nx ) > dzx )
+        {
+            float over = ( fabs( nx ) - dzx ) / scx;
+            if( nx < 0.0f ) over = -over;
+
+            *yaw -= over * wii_ir_yawspeed.value * k * (float)host.realframetime;
+
+            if( isnan( *yaw ) || isinf( *yaw ) ) *yaw = 0.0f;
+        }
+    }
+
     // Blindaje NaN/Inf antes de aplicar
     if( isnan( nx ) || isinf( nx ) ) nx = 0.0f;
     if( isnan( ny ) || isinf( ny ) ) ny = 0.0f;
-
-    if( fabs( nx ) > deadzone )
-    {
-        float over = ( fabs( nx ) - deadzone ) / scale;
-        if( nx < 0.0f ) over = -over;
-
-        *yaw -= over * wii_ir_yawspeed.value * (float)host.realframetime;
-
-        if( isnan( *yaw ) || isinf( *yaw ) ) *yaw = 0.0f;
-    }
 
     if( fabs( ny ) > deadzone )
     {

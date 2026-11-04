@@ -20,6 +20,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h" // !!svgame.hInstance
 #include "vid_common.h"
+#include "platform/platform.h"
 
 static void 	UI_UpdateUserinfo( void );
 
@@ -73,7 +74,7 @@ void UI_KeyEvent( int key, qboolean down )
 void UI_MouseMove( int x, int y )
 {
 	if( !gameui.hInstance ) return;
-	gameui.dllFuncs.pfnMouseMove( x, y );
+	gameui.dllFuncs.pfnMouseMove( (int)( x / UI_XScale( )), y );
 }
 
 void UI_SetActiveMenu( qboolean fActive )
@@ -283,6 +284,36 @@ void UI_ConnectionProgress_ParseServerInfo( const char *server )
 	}
 }
 
+/*
+=============
+UI_XScale
+
+Framebuffer pixels per menu pixel, horizontally. On a 16:9 TV the 640x480
+framebuffer is stretched, so the menu is laid out on a wider virtual screen
+(853x480) and squeezed back here when drawing: its widgets keep their shape
+and use the whole width. 1.0 everywhere else.
+=============
+*/
+float UI_XScale( void )
+{
+#if XASH_OGC
+	if( refState.width > 0 && refState.height > 0 )
+	{
+		float k = OGC_GetAspect() * refState.height / refState.width;
+
+		if( k > 1.001f )
+			return 1.0f / k;
+	}
+#endif
+	return 1.0f;
+}
+
+// width of the virtual menu screen, what mainui sees as ScreenWidth
+int UI_VirtualWidth( void )
+{
+	return (int)( refState.width / UI_XScale( ) + 0.5f );
+}
+
 static void GAME_EXPORT UI_DrawLogo( const char *filename, float x, float y, float width, float height )
 {
 	movie_state_t	*cin_state;
@@ -326,9 +357,9 @@ static void GAME_EXPORT UI_DrawLogo( const char *filename, float x, float y, flo
 
 	AVI_SetParm( cin_state,
 		AVI_RENDER_TEXNUM, 0,
-		AVI_RENDER_X, (int)x,
+		AVI_RENDER_X, (int)( x * UI_XScale( )),
 		AVI_RENDER_Y, (int)y,
-		AVI_RENDER_W, (int)width,
+		AVI_RENDER_W, (int)( width * UI_XScale( )),
 		AVI_RENDER_H, (int)height,
 		AVI_PARM_LAST );
 
@@ -479,6 +510,9 @@ static void PIC_DrawGeneric( float x, float y, float width, float height, const 
 	// pass scissor test if supposed
 	if( !CL_Scissor( &gameui.ds.scissor, &x, &y, &width, &height, &s1, &t1, &s2, &t2 ))
 		return;
+
+	x *= UI_XScale( );
+	width *= UI_XScale( );
 
 	ref.dllFuncs.R_DrawStretchPic( x, y, width, height, s1, t1, s2, t2, gameui.ds.gl_texturenum );
 	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
@@ -651,7 +685,7 @@ static void GAME_EXPORT pfnFillRGBA( int x, int y, int width, int height, int r,
 	b = bound( 0, b, 255 );
 	a = bound( 0, a, 255 );
 
-	ref.dllFuncs.FillRGBA( kRenderTransTexture, x, y, width, height, r, g, b, a );
+	ref.dllFuncs.FillRGBA( kRenderTransTexture, x * UI_XScale( ), y, width * UI_XScale( ), height, r, g, b, a );
 }
 
 /*
@@ -742,6 +776,9 @@ static void GAME_EXPORT pfnDrawCharacter( int ix, int iy, int iwidth, int iheigh
 	if( !CL_Scissor( &gameui.ds.scissor, &x, &y, &width, &height, &s1, &t1, &s2, &t2 ))
 		return;
 
+	x *= UI_XScale( );
+	width *= UI_XScale( );
+
 	ref.dllFuncs.GL_SetRenderMode( kRenderTransTexture );
 	ref.dllFuncs.R_DrawStretchPic( x, y, width, height, s1, t1, s2, t2, hFont );
 	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
@@ -758,10 +795,10 @@ static int GAME_EXPORT UI_DrawConsoleString( int x, int y, const char *string )
 {
 	if( !string || !*string ) return 0; // silent ignore
 
-	int drawLen = Con_DrawString( x, y, string, gameui.ds.textColor );
+	int drawLen = Con_DrawString( x * UI_XScale( ), y, string, gameui.ds.textColor );
 	MakeRGBA( gameui.ds.textColor, 255, 255, 255, 255 );
 
-	return (x + drawLen); // exclude color prexfixes
+	return (x + drawLen / UI_XScale( )); // exclude color prexfixes
 }
 
 /*
@@ -837,6 +874,10 @@ static void GAME_EXPORT pfnRenderScene( const ref_viewpass_t *rvp )
 
 	// don't allow special modes from menu
 	copy.flags = 0;
+
+	// viewport comes in menu pixels
+	copy.viewport[0] = (int)( copy.viewport[0] * UI_XScale( ));
+	copy.viewport[2] = (int)( copy.viewport[2] * UI_XScale( ));
 
 	ref.dllFuncs.R_Set2DMode( false );
 	GL_RenderFrame( &copy );
