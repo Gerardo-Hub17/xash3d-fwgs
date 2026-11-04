@@ -359,18 +359,6 @@ void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 		*h *= k;
 	}
 }
-	if( refState.width == clgame.scrInfo.iWidth && refState.height == clgame.scrInfo.iHeight )
-		return;
-
-	// scale for screen sizes
-	float xscale = refState.width / (float)clgame.scrInfo.iWidth;
-	float yscale = refState.height / (float)clgame.scrInfo.iHeight;
-
-	*x *= xscale;
-	*y *= yscale;
-	*w *= xscale;
-	*h *= yscale;
-}
 
 static void SPR_AdjustTexCoords( int texnum, float width, float height, float *s1, float *t1, float *s2, float *t2 )
 {
