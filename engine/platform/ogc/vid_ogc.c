@@ -278,7 +278,17 @@ void VID_SwapBuffers( void )
 
 qboolean VID_SetMode( void )
 {
-	return R_ChangeDisplaySettings( FB_WIDTH, FB_HEIGHT, 0 ) == rserr_ok;
+        int width = FB_WIDTH;
+        int height = FB_HEIGHT;
+
+        // Forzar resolucion 16:9 real (854x480) si la Wii esta en modo pantalla ancha.
+        // El renderizador GX comprimira la imagen al EFB de 640x480 y la TV la estirara.
+        if( CONF_GetAspectRatio() == CONF_ASPECT_16_9 )
+        {
+                width = 854;
+        }
+
+        return R_ChangeDisplaySettings( width, height, 0 ) == rserr_ok;
 }
 
 qboolean R_Init_Video( ref_graphic_apis_t type )
