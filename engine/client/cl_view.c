@@ -90,6 +90,9 @@ static void V_CalcViewRect( void )
 	if( full ) clgame.viewport[1] = 0;
 	else clgame.viewport[1] = ( refState.height - sb_lines - clgame.viewport[3] ) / 2;
 
+	// split screen: player 1 gets its half
+	if( CL_SplitActive( ))
+		CL_SplitViewport( 0, clgame.viewport );
 }
 
 /*
@@ -334,6 +337,12 @@ static void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
 
 	rvp->flags = 0;
 
+	if( CL_SplitActive( ))
+	{
+		CL_SplitFov( 0, cl.local.scr_fov, &rvp->fov_x, &rvp->fov_y );
+		SetBits( rvp->flags, RF_SPLIT_VIEW );
+	}
+
 	if( fd->onlyClientDraw )
 		SetBits( rvp->flags, RF_ONLY_CLIENTDRAW );
 	SetBits( rvp->flags, RF_DRAW_WORLD );
@@ -451,6 +460,9 @@ void V_RenderView( void )
 		viewnum++;
 
 	} while( rp.nextView );
+
+	// split screen: the second player's view
+	CL_SplitRenderView();
 
 	// draw debug triangles on a server
 	SV_DrawDebugTriangles ();

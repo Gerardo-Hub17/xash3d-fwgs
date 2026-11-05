@@ -3835,6 +3835,18 @@ static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewang
 
 /*
 =============
+SV_FakeClientMove
+
+engine side entry of pfnRunPlayerMove, used by the split screen player
+=============
+*/
+void SV_FakeClientMove( edict_t *ent, const vec3_t viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec )
+{
+	pfnRunPlayerMove( ent, viewangles, fmove, smove, upmove, buttons, impulse, msec );
+}
+
+/*
+=============
 pfnNumberOfEntities
 
 returns actual entity count

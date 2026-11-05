@@ -2760,6 +2760,11 @@ static void R_DrawViewModelImpl( void )
 void R_DrawViewModel( void )
 {
     double t0 = Platform_DoubleTime();
+
+    // split screen: the weapon in tr.viewent is player 1's, not this view's
+    if( FBitSet( RI.rvp.flags, RF_NO_VIEWMODEL ))
+        return;
+
     R_DrawViewModelImpl();
     OGC_ProfAdd( 25, Platform_DoubleTime() - t0 );
 }

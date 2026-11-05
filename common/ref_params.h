@@ -91,6 +91,8 @@ typedef struct ref_overview_s
 #define RF_DRAW_WORLD	(1<<0)		// pass should draw the world (otherwise it's player menu model)
 #define RF_DRAW_CUBEMAP	(1<<1)		// special 6x pass to render cubemap\skybox sides
 #define RF_DRAW_OVERVIEW	(1<<2)		// overview mode is active
+#define RF_SPLIT_VIEW (1<<8)
+#define RF_NO_VIEWMODEL (1<<9)
 #define RF_ONLY_CLIENTDRAW	(1<<3)		// nothing is drawn by the engine except clientDraw functions
 
 // intermediate struct for viewpass (or just a single frame)

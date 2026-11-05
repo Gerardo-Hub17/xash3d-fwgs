@@ -326,6 +326,8 @@ static qboolean cl_hud_nomargin;
 void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 {
 	float mx = 0.0f, my = 0.0f; // inset per side, as a fraction of the screen
+	float rx = 0.0f, ry = 0.0f; // region of the framebuffer the HUD is drawn on
+	float rw = refState.width, rh = refState.height;
 
 	if( !cl_hud_nomargin )
 	{
@@ -333,12 +335,23 @@ void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 		my = bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f;
 	}
 
-	if( mx <= 0.0f && my <= 0.0f && refState.width == clgame.scrInfo.iWidth && refState.height == clgame.scrInfo.iHeight )
+	if( CL_SplitActive( )) // split screen: the HUD of player 1 lives in its own view
+	{
+		int ix, iy, iw, ih;
+
+		CL_SplitRect( 0, &ix, &iy, &iw, &ih );
+		rx = ix;
+		ry = iy;
+		rw = iw;
+		rh = ih;
+	}
+
+	if( mx <= 0.0f && my <= 0.0f && rx == 0.0f && ry == 0.0f && rw == clgame.scrInfo.iWidth && rh == clgame.scrInfo.iHeight )
 		return;
 
 	// scale for screen sizes
-	float xscale = refState.width / (float)clgame.scrInfo.iWidth;
-	float yscale = refState.height / (float)clgame.scrInfo.iHeight;
+	float xscale = rw / (float)clgame.scrInfo.iWidth;
+	float yscale = rh / (float)clgame.scrInfo.iHeight;
 	*x *= xscale;
 	*y *= yscale;
 	*w *= xscale;
@@ -348,16 +361,19 @@ void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 	if( mx > 0.0f )
 	{
 		const float k = 1.0f - 2.0f * mx;
-		*x = refState.width * mx + *x * k;
+		*x = rw * mx + *x * k;
 		*w *= k;
 	}
 
 	if( my > 0.0f )
 	{
 		const float k = 1.0f - 2.0f * my;
-		*y = refState.height * my + *y * k;
+		*y = rh * my + *y * k;
 		*h *= k;
 	}
+
+	*x += rx;
+	*y += ry;
 }
 
 static void SPR_AdjustTexCoords( int texnum, float width, float height, float *s1, float *t1, float *s2, float *t2 )
@@ -843,6 +859,7 @@ static void CL_DrawCrosshair( void )
 {
 	int	x, y, width, height;
 	float xscale, yscale;
+	float rx = 0.0f, rw = refState.width, rh = refState.height;
 
 	if( !clgame.ds.pCrosshair || !cl_crosshair.value )
 		return;
@@ -855,8 +872,23 @@ static void CL_DrawCrosshair( void )
 	width = clgame.ds.rcCrosshair.right - clgame.ds.rcCrosshair.left;
 	height = clgame.ds.rcCrosshair.bottom - clgame.ds.rcCrosshair.top;
 
-	x = clgame.viewport[0] + ( clgame.viewport[2] >> 1 );
-	y = clgame.viewport[1] + ( clgame.viewport[3] >> 1 );
+	if( CL_SplitActive( ))
+	{
+		// player 1's view is a part of the screen (2D coordinates, top left origin)
+		int sx, sy, sw, sh;
+
+		CL_SplitRect( 0, &sx, &sy, &sw, &sh );
+		rx = sx;
+		rw = sw;
+		rh = sh;
+		x = sx + ( sw >> 1 );
+		y = sy + ( sh >> 1 );
+	}
+	else
+	{
+		x = clgame.viewport[0] + ( clgame.viewport[2] >> 1 );
+		y = clgame.viewport[1] + ( clgame.viewport[3] >> 1 );
+	}
 
 #if XASH_OGC
 	// Wii FPS: mover el crosshair segun la posicion del IR
@@ -875,7 +907,8 @@ static void CL_DrawCrosshair( void )
 
 	// g-cont - cl.crosshairangle is the autoaim angle.
 	// if we're not using autoaim, just draw in the middle of the screen
-	if( !VectorIsNull( cl.crosshairangle ))
+	// (WorldToScreen would use the matrices of player 2's view in split screen)
+	if( !VectorIsNull( cl.crosshairangle ) && !CL_SplitActive( ))
 	{
 		vec3_t	angles;
 		vec3_t	forward;
@@ -891,10 +924,11 @@ static void CL_DrawCrosshair( void )
 	}
 
 	// back to logical sizes
-	xscale = (float)clgame.scrInfo.iWidth / refState.width;
-	yscale = (float)clgame.scrInfo.iHeight / refState.height;
+	// (player 1's view always starts at the top left corner, so only x needs the offset)
+	xscale = (float)clgame.scrInfo.iWidth / rw;
+	yscale = (float)clgame.scrInfo.iHeight / rh;
 
-	x *= xscale;
+	x = ( x - rx ) * xscale;
 	y *= yscale;
 
 	// move at center the screen
@@ -949,6 +983,7 @@ void CL_DrawHUD( int state )
 		CL_DrawCrosshair ();
 		CL_DrawCenterPrint ();
 		clgame.dllFuncs.pfnRedraw( cl.time, cl.intermission );
+		CL_SplitDrawHUD ();
 		if( cl.intermission ) CL_DrawScreenFade ();
 		break;
 	case CL_PAUSED:
@@ -1746,6 +1781,17 @@ int GAME_EXPORT CL_GetScreenInfo( SCREENINFO *pscrinfo )
 			clgame.scrInfo.iWidth = (int)( clgame.scrInfo.iWidth * xk + 0.5f );
 	}
 #endif
+
+	// split screen: the HUD of player 1 is laid out on the size of its view
+	if( CL_SplitActive( ))
+	{
+		int hw, hh;
+
+		CL_SplitHudSize( &hw, &hh );
+		clgame.scrInfo.iWidth = hw;
+		clgame.scrInfo.iHeight = hh;
+		SetBits( clgame.scrInfo.iFlags, SCRINFO_STRETCHED );
+	}
 
 	if( !pscrinfo ) return 0;
 

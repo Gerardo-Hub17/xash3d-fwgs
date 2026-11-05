@@ -33,6 +33,7 @@ static int	g_userid = 1;
 
 static void SV_UserinfoChanged( sv_client_t *cl );
 static void SV_ExecuteClientCommand( sv_client_t *cl, const char *s );
+static void SV_PutClientInServer( sv_client_t *cl );
 
 /*
 =================
@@ -545,6 +546,54 @@ edict_t *GAME_EXPORT SV_FakeConnect( const char *netname )
 	SV_MaybeNotifyPlayerCountChange( cl, "local" );
 
 	return cl->edict;
+}
+
+/*
+==================
+SV_AddLocalPlayer
+
+A fake client that goes through the same steps a real one does (the game
+dll accepts it and puts it in the server), for the split screen player 2
+==================
+*/
+edict_t *SV_AddLocalPlayer( const char *netname )
+{
+	char reason[MAX_INFO_STRING];
+	sv_client_t *cl;
+	edict_t *ent;
+
+	if( sv.state != ss_active )
+		return NULL;
+
+	ent = SV_FakeConnect( netname );
+
+	if( !ent )
+		return NULL;
+
+	cl = SV_ClientFromEdict( ent, false );
+
+	if( !cl )
+		return NULL;
+
+	Q_strncpy( reason, "Connection rejected by game\n", sizeof( reason ));
+
+	if( !svgame.dllFuncs.pfnClientConnect( ent, cl->name, "127.0.0.1", reason ))
+	{
+		SV_DropClient( cl, false );
+		return NULL;
+	}
+
+	SV_PutClientInServer( cl );
+
+	// SV_PutClientInServer clears the entity flags
+	SetBits( ent->v.flags, FL_CLIENT|FL_FAKECLIENT );
+
+	return ent;
+}
+
+void SV_ClientCommandFor( sv_client_t *cl, const char *s )
+{
+	SV_ExecuteClientCommand( cl, s );
 }
 
 /*

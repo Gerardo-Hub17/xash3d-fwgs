@@ -1256,6 +1256,7 @@ crosshair sigue al IR. Con Classic/GameCube/raton se queda en el centro.
 */
 qboolean OGC_AimIsPointer( void )
 {
+	if( CL_SplitActive( )) return false;
 	return ogc_src == OGC_SRC_WII;
 }
 
@@ -1309,7 +1310,7 @@ static qboolean OGC_GetPointerAngles( float *dyaw, float *dpitch )
 	float tx, ty;
 
 	// con el raton USB en uso el puntero IR no apunta (el mando suele estar en la mesa)
-	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 )
+	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 || CL_SplitActive( ))
 		return false;
 
 	OGC_PointerTans( &tx, &ty );
@@ -1770,7 +1771,7 @@ void OGC_PointerMove( float *pitch, float *yaw )
     #define IR_TOLERANCE_FRAMES 5
 
     // con el raton USB en uso el puntero IR no apunta (el mando suele estar en la mesa)
-	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 )
+	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 || CL_SplitActive( ))
         return;
 
     if( WPAD_Probe( WPAD_CHAN_0, &type ) != WPAD_ERR_NONE )
@@ -2539,4 +2540,134 @@ static void OGC_PollNunchuk(void)
     }
 }
 
+qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, float *smove, word *buttons, int *weapon )
+{
+	static qboolean gc_seen;
+	static int last_dir;
+	float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
+	int dir = 0;
+	qboolean have = false, ir_turn = false;
+	u32 type = WPAD_EXP_NONE;
+	*dyaw = *dpitch = *fmove = *smove = 0.0f;
+	*buttons = 0;
+	*weapon = 0;
+	// GameCube pad 2 (SDL already scans the pads every frame)
+	{
+		u16 held = PAD_ButtonsHeld( PAD_CHAN1 );
+		float gx = bound( -1.0f, PAD_StickX( PAD_CHAN1 ) / 80.0f, 1.0f );
+		float gy = bound( -1.0f, PAD_StickY( PAD_CHAN1 ) / 80.0f, 1.0f );
+		float cx = bound( -1.0f, PAD_SubStickX( PAD_CHAN1 ) / 80.0f, 1.0f );
+		float cy = bound( -1.0f, PAD_SubStickY( PAD_CHAN1 ) / 80.0f, 1.0f );
+
+		// there is no cheap "connected" query that doesn't race SDL's scan:
+		// the pad counts once it has reported any input
+		if( held || fabsf( gx ) > 0.3f || fabsf( gy ) > 0.3f || fabsf( cx ) > 0.3f || fabsf( cy ) > 0.3f )
+			gc_seen = true;
+
+		if( gc_seen )
+		{
+			have = true;
+			lx = gx; ly = gy; rx = cx; ry = cy;
+
+			if( held & PAD_TRIGGER_R ) *buttons |= IN_ATTACK;
+			if( held & PAD_TRIGGER_L ) *buttons |= IN_ATTACK2;
+			if( held & PAD_TRIGGER_Z ) *buttons |= IN_DUCK;
+			if( held & PAD_BUTTON_A )  *buttons |= IN_JUMP;
+			if( held & PAD_BUTTON_X )  *buttons |= IN_USE;
+			if( held & PAD_BUTTON_Y )  *buttons |= IN_RELOAD;
+			if( held & PAD_BUTTON_LEFT )  dir = -1;
+			if( held & PAD_BUTTON_RIGHT ) dir = 1;
+		}
+	}
+	if( !have && WPAD_Probe( WPAD_CHAN_1, &type ) == WPAD_ERR_NONE )
+	{
+		WPADData *data = WPAD_Data( WPAD_CHAN_1 );
+		u32 held = WPAD_ButtonsHeld( WPAD_CHAN_1 );
+
+		if( data && type == WPAD_EXP_CLASSIC )
+		{
+			const joystick_t *l = &data->exp.classic.ljs;
+			const joystick_t *r = &data->exp.classic.rjs;
+
+			have = true;
+			lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
+			ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
+			rx = OGC_WpadAxis( r->pos.x, r->center.x, r->min.x, r->max.x );
+			ry = OGC_WpadAxis( r->pos.y, r->center.y, r->min.y, r->max.y );
+
+			if( held & WPAD_CLASSIC_BUTTON_FULL_R ) *buttons |= IN_ATTACK;
+			if( held & WPAD_CLASSIC_BUTTON_FULL_L ) *buttons |= IN_ATTACK2;
+			if( held & WPAD_CLASSIC_BUTTON_ZL )     *buttons |= IN_DUCK;
+			if( held & WPAD_CLASSIC_BUTTON_A )      *buttons |= IN_JUMP;
+			if( held & WPAD_CLASSIC_BUTTON_X )      *buttons |= IN_USE;
+			if( held & WPAD_CLASSIC_BUTTON_Y )      *buttons |= IN_RELOAD;
+			if( held & WPAD_CLASSIC_BUTTON_LEFT )   dir = -1;
+			if( held & WPAD_CLASSIC_BUTTON_RIGHT )  dir = 1;
+		}
+		else if( data && type == WPAD_EXP_NUNCHUK )
+		{
+			const joystick_t *l = &data->exp.nunchuk.js;
+
+			have = true;
+			ir_turn = true;
+			lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
+			ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
+
+			// same layout as player 1's remote
+			if( held & WPAD_NUNCHUK_BUTTON_Z ) *buttons |= IN_ATTACK;
+			if( held & WPAD_BUTTON_DOWN )      *buttons |= IN_ATTACK2;
+			if( held & WPAD_BUTTON_B )         *buttons |= IN_DUCK;
+			if( held & WPAD_BUTTON_A )         *buttons |= IN_JUMP;
+			if( held & WPAD_NUNCHUK_BUTTON_C ) *buttons |= IN_USE;
+			if( held & WPAD_BUTTON_MINUS )     *buttons |= IN_RELOAD;
+			if( held & WPAD_BUTTON_LEFT )      dir = -1;
+			if( held & WPAD_BUTTON_RIGHT )     dir = 1;
+
+			if( data->ir.valid && refState.width > 0 && refState.height > 0 )
+			{
+				const float nx = bound( -1.0f, ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f, 1.0f );
+				const float ny = bound( -1.0f, ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f, 1.0f );
+				const float dz = bound( 0.0f, wii_ir_deadzone.value, 0.95f );
+				const float k = OGC_GetAspect() * 0.75f;
+				const float dzx = bound( 0.0f, dz / k, 0.95f );
+
+				if( fabsf( nx ) > dzx )
+					*dyaw -= (( nx < 0.0f ? -1.0f : 1.0f ) * ( fabsf( nx ) - dzx ) / ( 1.0f - dzx )) * wii_ir_yawspeed.value * k * dt;
+				if( fabsf( ny ) > dz )
+					*dpitch += (( ny < 0.0f ? -1.0f : 1.0f ) * ( fabsf( ny ) - dz ) / ( 1.0f - dz )) * wii_ir_pitchspeed.value * dt;
+			}
+		}
+	}
+
+	if( !have )
+	{
+		last_dir = 0;
+		return false;
+	}
+
+	// movement
+	{
+		float mx, my;
+
+		OGC_ShapeLook( lx, ly, &mx, &my ); // same dead zone and curve as the look sticks
+		*smove = mx * 400.0f;
+		*fmove = my * 400.0f;
+	}
+
+	// look with a stick (not for the Nunchuk, it points)
+	if( !ir_turn )
+	{
+		float tx, ty;
+
+		OGC_ShapeLook( rx, ry, &tx, &ty );
+		*dyaw   -= tx * wii_ir_yawspeed.value * dt;
+		*dpitch -= ty * wii_ir_pitchspeed.value * dt;
+	}
+
+	// weapon cycling on the press, not while held
+	if( dir != last_dir )
+		*weapon = dir;
+	last_dir = dir;
+
+	return true;
 #endif // XASH_OGC

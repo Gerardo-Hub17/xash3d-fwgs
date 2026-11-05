@@ -556,6 +556,11 @@ void R_SetupGL( qboolean set_gl_state )
             gx_vp[0] = (f32)x; gx_vp[1] = (f32)y2; gx_vp[2] = (f32)(x2 - x); gx_vp[3] = (f32)(y - y2);
         }
         GX_SetViewport( gx_vp[0], gx_vp[1], gx_vp[2], gx_vp[3], gldepthmin, gldepthmax );
+
+        // sin scissor la guarda de GX deja pasar triangulos fuera del viewport: con la
+        // pantalla dividida invadirian la otra vista (R_Set2DMode lo restablece)
+        if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ))
+            GX_SetScissor( (u32)gx_vp[0], (u32)gx_vp[1], (u32)gx_vp[2], (u32)gx_vp[3] );
     }
     else
     {
@@ -774,6 +779,12 @@ void GX_ResetEffectState( void )
 #define GXPT_BEGIN() double gxpt = Platform_DoubleTime()
 #define GXPT_END( b ) do { double gxpn = Platform_DoubleTime(); OGC_ProfAdd(( b ), gxpn - gxpt ); gxpt = gxpn; } while( 0 )
 
+// split screen: the entity the view belongs to is not drawn in its own view
+static inline qboolean R_SkipViewEntity( const cl_entity_t *e )
+{
+    return FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RI.rvp.viewentity && e->index == RI.rvp.viewentity;
+}
+
 static void R_DrawEntitiesOnList( void )
 {
     GXPT_BEGIN();
@@ -785,6 +796,9 @@ static void R_DrawEntitiesOnList( void )
         RI.currentmodel  = RI.currententity->model;
 
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+            continue;
+
+        if( R_SkipViewEntity( RI.currententity ))
             continue;
 
         Assert( RI.currententity != NULL );
@@ -840,6 +854,9 @@ static void R_DrawEntitiesOnList( void )
         else tr.blend = 1.0f;
 
         if( tr.blend <= 0.0f ) continue;
+
+        if( R_SkipViewEntity( RI.currententity ))
+            continue;
 
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
             continue;

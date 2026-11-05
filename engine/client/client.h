@@ -1194,6 +1194,7 @@ void UI_UpdateMenu( float realtime );
 void UI_KeyEvent( int key, qboolean down );
 void UI_MouseMove( int x, int y );
 float UI_XScale( void );
+
 int UI_VirtualWidth( void );
 void UI_SetActiveMenu( qboolean fActive );
 void UI_AddServerToList( netadr_t adr, const char *info );
@@ -1215,6 +1216,20 @@ void UI_ConnectionProgress_Connect( const char *server );
 void UI_ConnectionProgress_ChangeLevel( void );
 void UI_ConnectionProgress_ParseServerInfo( const char *server );
 char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly ); // used by both UI and Render APIs
+
+//
+// cl_split.c
+//
+extern convar_t wii_split;
+void CL_SplitInit( void );
+qboolean CL_SplitActive( void );
+void CL_SplitFrame( void );
+void CL_SplitRect( int player, int *x, int *y, int *w, int *h );
+void CL_SplitViewport( int player, int *vp );
+void CL_SplitHudSize( int *w, int *h );
+void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
+void CL_SplitRenderView( void );
+void CL_SplitDrawHUD( void );
 
 //
 // cl_mobile.c

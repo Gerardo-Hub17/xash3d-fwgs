@@ -605,6 +605,7 @@ static qboolean SV_RunGameFrame( void )
 		{
 			sv.frametime = fps;
 
+			SV_SplitFrame();
 			SV_Physics();
 
 			sv.time_residual -= fps;
@@ -616,6 +617,7 @@ static qboolean SV_RunGameFrame( void )
 	}
 	else
 	{
+		SV_SplitFrame();
 		SV_Physics();
 		sv.time += sv.frametime;
 		return true;

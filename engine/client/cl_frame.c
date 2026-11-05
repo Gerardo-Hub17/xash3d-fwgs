@@ -949,7 +949,7 @@ qboolean CL_AddVisibleEntity( cl_entity_t *ent, int entityType )
 	{
 		cl.local.apply_effects = true;
 
-		if( !CL_IsThirdPerson( ) && ( ent->index == cl.viewentity ))
+		if( !CL_IsThirdPerson( ) && ( ent->index == cl.viewentity ) && !CL_SplitActive( ))
 		{
 			// we don't draw player in default renderer in firstperson mode
 			// but let the client.dll know about player entity anyway

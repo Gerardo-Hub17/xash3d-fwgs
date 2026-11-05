@@ -536,6 +536,8 @@ void SV_SendServerdata( sizebuf_t *msg, sv_client_t *cl );
 void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg );
 void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg );
 edict_t *SV_FakeConnect( const char *netname );
+edict_t *SV_AddLocalPlayer( const char *netname );
+void SV_ClientCommandFor( sv_client_t *cl, const char *s );
 void SV_BuildReconnect( sizebuf_t *msg );
 int SV_CalcPing( const sv_client_t *cl );
 void SV_UpdateServerInfo( void );
@@ -679,6 +681,19 @@ void SV_ClearGameState( void );
 //
 void SV_InitClientMove( void );
 void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed );
+
+//
+// sv_split.c
+//
+extern edict_t *sv_split_edict;
+qboolean SV_SplitActive( void );
+qboolean SV_SplitStart( const char *name );
+void SV_SplitStop( void );
+void SV_SplitSetInput( const vec3_t angles, float fmove, float smove, float upmove, word buttons );
+void SV_SplitCycleWeapon( int dir );
+void SV_SplitFrame( void );
+qboolean SV_SplitGetView( vec3_t origin, vec3_t punch, int *index, float *health, float *armor, float *frags );
+void SV_FakeClientMove( edict_t *ent, const vec3_t viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec );
 
 //
 // sv_world.c

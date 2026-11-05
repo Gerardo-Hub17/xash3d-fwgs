@@ -687,6 +687,8 @@ void SCR_UpdateScreen( void )
 
 	if( !V_PreRender( )) return;
 
+	CL_SplitFrame();
+
 #if XASH_OGC
 	{
 		// wii_aspect changed: the HUD virtual size depends on it, so redo VidInit
