@@ -1256,7 +1256,11 @@ crosshair sigue al IR. Con Classic/GameCube/raton se queda en el centro.
 */
 qboolean OGC_AimIsPointer( void )
 {
-	if( CL_SplitActive( )) return false;
+	// con la pantalla dividida la vista del jugador 1 es una mitad: el puntero
+	// ya no corresponde al centro de su vista
+	if( CL_SplitActive( ))
+		return false;
+
 	return ogc_src == OGC_SRC_WII;
 }
 
@@ -1771,7 +1775,7 @@ void OGC_PointerMove( float *pitch, float *yaw )
     #define IR_TOLERANCE_FRAMES 5
 
     // con el raton USB en uso el puntero IR no apunta (el mando suele estar en la mesa)
-	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 || CL_SplitActive( ))
+	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 )
         return;
 
     if( WPAD_Probe( WPAD_CHAN_0, &type ) != WPAD_ERR_NONE )
@@ -2540,6 +2544,16 @@ static void OGC_PollNunchuk(void)
     }
 }
 
+/*
+============
+OGC_Player2Input
+
+Controls of the split screen player 2, read straight from the second
+controller: a GameCube pad in port 2, or a remote in slot 2 with a Classic
+Controller or a Nunchuk (the Nunchuk turns by pointing at the screen, like
+player 1). Returns false while no such controller is in use.
+============
+*/
 qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, float *smove, word *buttons, int *weapon )
 {
 	static qboolean gc_seen;
@@ -2548,9 +2562,11 @@ qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, f
 	int dir = 0;
 	qboolean have = false, ir_turn = false;
 	u32 type = WPAD_EXP_NONE;
+
 	*dyaw = *dpitch = *fmove = *smove = 0.0f;
 	*buttons = 0;
 	*weapon = 0;
+
 	// GameCube pad 2 (SDL already scans the pads every frame)
 	{
 		u16 held = PAD_ButtonsHeld( PAD_CHAN1 );
@@ -2579,6 +2595,7 @@ qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, f
 			if( held & PAD_BUTTON_RIGHT ) dir = 1;
 		}
 	}
+
 	if( !have && WPAD_Probe( WPAD_CHAN_1, &type ) == WPAD_ERR_NONE )
 	{
 		WPADData *data = WPAD_Data( WPAD_CHAN_1 );
@@ -2670,4 +2687,6 @@ qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, f
 	last_dir = dir;
 
 	return true;
+}
+
 #endif // XASH_OGC

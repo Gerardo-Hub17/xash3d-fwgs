@@ -1,3 +1,5 @@
+/*
+sv_split.c - local second player for split screen
 Copyright (C) 2026
 
 This program is free software: you can redistribute it and/or modify
@@ -9,6 +11,10 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
+*/
+
+#include "common.h"
+#include "server.h"
 
 /*
 The second local player is a fake client of the listen server (the same kind
@@ -39,6 +45,10 @@ static const struct
 	{ 14, "weapon_satchel" },
 	{ 13, "weapon_tripmine" },
 	{ 15, "weapon_snark" },
+};
+
+edict_t *sv_split_edict;
+
 static vec3_t	sv_split_angles;
 static float	sv_split_fmove, sv_split_smove, sv_split_upmove;
 static word	sv_split_buttons;
@@ -60,7 +70,10 @@ qboolean SV_SplitActive( void )
 		return false;
 
 	cl = SV_ClientFromEdict( sv_split_edict, true );
+
 	return cl != NULL && FBitSet( cl->flags, FCL_FAKECLIENT );
+}
+
 /*
 =============
 SV_SplitStart
@@ -88,6 +101,8 @@ qboolean SV_SplitStart( const char *name )
 	sv_split_weapon = 1;
 
 	return true;
+}
+
 /*
 =============
 SV_SplitStop
@@ -99,6 +114,8 @@ void SV_SplitStop( void )
 		SV_DropClient( SV_ClientFromEdict( sv_split_edict, true ), false );
 
 	sv_split_edict = NULL;
+}
+
 /*
 =============
 SV_SplitSetInput
@@ -113,6 +130,7 @@ void SV_SplitSetInput( const vec3_t angles, float fmove, float smove, float upmo
 	sv_split_smove = smove;
 	sv_split_upmove = upmove;
 	sv_split_buttons = buttons;
+}
 
 /*
 =============
@@ -144,6 +162,8 @@ void SV_SplitCycleWeapon( int dir )
 		SV_ClientCommandFor( cl, cmd );
 		return;
 	}
+}
+
 /*
 =============
 SV_SplitFrame
@@ -164,6 +184,8 @@ void SV_SplitFrame( void )
 		sv_split_upmove, sv_split_buttons, sv_split_impulse, msec );
 
 	sv_split_impulse = 0; // impulses are one shot
+}
+
 /*
 =============
 SV_SplitGetView
@@ -189,3 +211,4 @@ qboolean SV_SplitGetView( vec3_t origin, vec3_t punch, int *index, float *health
 	if( frags ) *frags = v->frags;
 
 	return true;
+}

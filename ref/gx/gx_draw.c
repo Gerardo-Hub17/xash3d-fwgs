@@ -513,6 +513,8 @@ void R_Set2DMode( qboolean enable )
 		Matrix4x4_ToMtx44( gxProj, projection_matrix );
 		GX_LoadProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
 		GX_SaveProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
+
+		// the split screen views set a scissor of their own
 		GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
 
 		matrix4x4 worldview_matrix;

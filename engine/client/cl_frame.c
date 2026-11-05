@@ -949,6 +949,7 @@ qboolean CL_AddVisibleEntity( cl_entity_t *ent, int entityType )
 	{
 		cl.local.apply_effects = true;
 
+		// with split screen player 2 sees player 1's body (the renderer hides the viewentity per view)
 		if( !CL_IsThirdPerson( ) && ( ent->index == cl.viewentity ) && !CL_SplitActive( ))
 		{
 			// we don't draw player in default renderer in firstperson mode

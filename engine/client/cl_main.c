@@ -3643,6 +3643,7 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &hud_scale_minimal_width );
 	Cvar_RegisterVariable( &hud_margin_x );
 	Cvar_RegisterVariable( &hud_margin_y );
+	CL_SplitInit();
 	Cvar_RegisterVariable( &cl_showevents );
 	Cvar_Get( "lastdemo", "", FCVAR_ARCHIVE, "last played demo" );
 	Cvar_RegisterVariable( &ui_renderworld );

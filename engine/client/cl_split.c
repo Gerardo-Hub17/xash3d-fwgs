@@ -13,13 +13,20 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include "common.h"
+#include "client.h"
+#include "server.h"
+#include "platform/platform.h"
+
 /*
 Player 1 is the normal client. Player 2 is a fake client of the listen server
 (see sv_split.c) whose camera is rendered here, in the second half of the
 screen, from the server's own entity data.
 */
+
 CVAR_DEFINE_AUTO( wii_split, "0", 0, "split screen with a second local player (0 = off, 1 = side by side, 2 = top and bottom)" );
 static CVAR_DEFINE_AUTO( wii_split_name, "Jugador 2", FCVAR_ARCHIVE, "name of the split screen player 2" );
+
 static struct
 {
 	qboolean	active;
@@ -28,13 +35,18 @@ static struct
 	double		nexttry;	// do not retry a failed start every frame
 	int		drawn_mode;	// layout the HUD was last initialised for
 } split;
+
 void CL_SplitInit( void )
 {
 	Cvar_RegisterVariable( &wii_split );
 	Cvar_RegisterVariable( &wii_split_name );
+}
+
 qboolean CL_SplitActive( void )
 {
 	return split.active;
+}
+
 // framebuffer pixels per "square" pixel horizontally: a 16:9 TV stretches the framebuffer
 static float CL_SplitPixelAspect( void )
 {
@@ -43,6 +55,8 @@ static float CL_SplitPixelAspect( void )
 		return OGC_GetAspect() * refState.height / refState.width;
 #endif
 	return 1.0f;
+}
+
 /*
 =============
 CL_SplitRect
@@ -61,6 +75,7 @@ void CL_SplitRect( int player, int *x, int *y, int *w, int *h )
 		*h = H;
 		return;
 	}
+
 	if( split.mode == 2 ) // top and bottom
 	{
 		*x = 0;
@@ -77,6 +92,8 @@ void CL_SplitRect( int player, int *x, int *y, int *w, int *h )
 		*x = player ? *w : 0;
 		if( player ) *w = W - *x;
 	}
+}
+
 // view rectangle in the renderer's convention (origin at the bottom left)
 void CL_SplitViewport( int player, int *vp )
 {
@@ -88,6 +105,7 @@ void CL_SplitViewport( int player, int *vp )
 	vp[1] = refState.height - ( y + h );
 	vp[2] = w;
 	vp[3] = h;
+}
 
 /*
 =============
@@ -104,6 +122,7 @@ void CL_SplitHudSize( int *w, int *h )
 
 	*w = (int)( rw * CL_SplitPixelAspect( ) + 0.5f );
 	*h = rh;
+}
 
 /*
 =============
@@ -115,6 +134,7 @@ screen has. base is the horizontal FOV of a 4:3 picture (cl_fov).
 =============
 */
 void CL_SplitFov( int player, float base, float *fov_x, float *fov_y )
+{
 	int x, y, w, h;
 	float display, a, half, th, tv, tx;
 
@@ -131,6 +151,7 @@ void CL_SplitFov( int player, float base, float *fov_x, float *fov_y )
 
 	*fov_x = RAD2DEG( atan( tx )) * 2.0f;
 	*fov_y = RAD2DEG( atan( tx / a )) * 2.0f;
+}
 
 /*
 =============
@@ -198,13 +219,18 @@ void CL_SplitFrame( void )
 
 		SV_SplitSetInput( split.angles, fmove, smove, 0.0f, buttons );
 	}
+#endif
+}
+
 /*
 =============
 CL_SplitRenderView
+
 draws player 2's view; called after player 1's has been drawn
 =============
 */
 void CL_SplitRenderView( void )
+{
 	vec3_t origin, punch, oldorg, oldangles;
 	ref_viewpass_t rvp;
 	int index;
@@ -228,6 +254,7 @@ void CL_SplitRenderView( void )
 
 	VectorCopy( oldorg, refState.vieworg );
 	VectorCopy( oldangles, refState.viewangles );
+}
 
 /*
 =============
@@ -268,3 +295,4 @@ void CL_SplitDrawHUD( void )
 
 	Q_snprintf( text, sizeof( text ), "HP %d  AR %d  FR %d", (int)health, (int)armor, (int)frags );
 	Con_DrawString( x + 8, y + h - 22, text, white );
+}
