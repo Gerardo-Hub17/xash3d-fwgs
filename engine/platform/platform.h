@@ -121,6 +121,43 @@ extern volatile int g_ogc_mark;
 #define OGC_MARK( n )
 #endif
 
+#ifndef SPLIT_MAX_PLAYERS
+#define SPLIT_MAX_PLAYERS	4	// the local player and up to three more
+#endif
+
+// menu buttons, the same on every kind of controller
+#define OGC_UI_UP	(1<<0)
+#define OGC_UI_DOWN	(1<<1)
+#define OGC_UI_LEFT	(1<<2)
+#define OGC_UI_RIGHT	(1<<3)
+#define OGC_UI_ACCEPT	(1<<4)	// A
+#define OGC_UI_BACK	(1<<5)	// B
+#define OGC_UI_START	(1<<6)	// + / Start
+
+enum { OGC_KIND_NONE, OGC_KIND_GC, OGC_KIND_CLASSIC, OGC_KIND_NUNCHUK, OGC_KIND_WIIMOTE };
+
+// per player tuning (split screen menu)
+typedef struct
+{
+	float	ir_deadzone;	// fraction of the view where pointing doesn't turn
+	float	stick_deadzone;	// 0..0.5
+	float	stick_sens;	// multiplier of the stick look speed
+	float	ir_sens;	// multiplier of the pointer turn speed
+} ogc_psettings_t;
+
+typedef struct
+{
+	float		dyaw, dpitch;	// view change this frame, degrees
+	float		fmove, smove;	// movement
+	word		buttons;	// IN_*
+	int		weapon;		// -1 / +1 when the D-pad was pressed
+	unsigned	ui;		// OGC_UI_* held
+	int		kind;		// OGC_KIND_*
+	float		px, py;		// pointer inside the player's view, -1..1
+	qboolean	pointer;	// px, py are valid
+} ogc_pinput_t;
+
+
 #if XASH_OGC
 void OGC_EarlyInit( void );
 void OGC_Init( void );
@@ -145,7 +182,8 @@ void OGC_ButtonsFrame( void );
 void OGC_GetPointer( float *x, float *y );
 qboolean OGC_AimIsPointer( void );
 float OGC_GetAspect( void );
-qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, float *smove, word *buttons, int *weapon );
+qboolean OGC_PlayerInput( int port, int player, float dt, const ogc_psettings_t *cfg, ogc_pinput_t *out );
+unsigned OGC_PortUI( int port, int *kind );
 void OGC_ApplyPointerToViewModel( struct cl_entity_s *view );
 void OGC_GetAimDelta( float *dyaw, float *dpitch );
 void OGC_RestoreAim( vec3_t viewangles );

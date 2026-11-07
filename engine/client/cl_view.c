@@ -616,6 +616,7 @@ void V_PostRender( void )
 		ref.dllFuncs.R_ShowTextures();
 		VPR( "showtextures ok" );
 		R_ShowTree();
+		CL_SplitLobbyDraw();
 		VPR( "pre-console" );
 		PT_END( 39 );
 		Con_DrawConsole();

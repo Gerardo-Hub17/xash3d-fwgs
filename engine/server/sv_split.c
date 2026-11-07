@@ -1,5 +1,5 @@
 /*
-sv_split.c - local second player for split screen
+sv_split.c - split screen, server side (players 2 to 4)
 Copyright (C) 2026
 
 This program is free software: you can redistribute it and/or modify
@@ -17,11 +17,14 @@ GNU General Public License for more details.
 #include "server.h"
 
 /*
-The second local player is a fake client of the listen server (the same kind
-of client a bot is): it has an edict and runs usercmds, but nothing is sent to
-it over the network. Its input comes from the second controller through
-SV_SplitSetInput, and its camera is read straight from the edict, so it has no
-network or interpolation delay.
+The extra local players are fake clients of the listen server (the same kind
+of client a bot is): they have an edict and run usercmds, but nothing is sent
+to them over the network. Their input comes from the other controllers through
+SV_SplitSetInput, and their camera is read straight from the edict, so there is
+no network or interpolation delay.
+
+Players are numbered like the screen: 0 is the normal client, 1 to 3 are the
+fake ones handled here.
 */
 
 // HL weapon ids (dlls/weapons.h) in the order the D-pad cycles them
@@ -47,52 +50,105 @@ static const struct
 	{ 15, "weapon_snark" },
 };
 
-edict_t *sv_split_edict;
+#define SPLIT_EXTRA	( SPLIT_MAX_PLAYERS - 1 )
+#define SPLIT_WEAPONS	32
+#define SPLIT_AMMO	32
 
-static vec3_t	sv_split_angles;
-static float	sv_split_fmove, sv_split_smove, sv_split_upmove;
-static word	sv_split_buttons;
-static byte	sv_split_impulse;
-static int	sv_split_weapon; // index in sv_split_weapons of the last selection
+typedef struct
+{
+	edict_t		*edict;
 
-// diagnostics
-static unsigned	sv_split_frames;	// usercmds run for player 2
-static int	sv_split_lastmsec;
-static unsigned	sv_split_pushed;	// consecutive frames with move input
-static float	sv_split_moved;		// distance walked in those frames
-static double	sv_split_nextwarn;
+	vec3_t		angles;
+	float		fmove, smove, upmove;
+	word		buttons;
+	byte		impulse;
+	int		weapon;		// index in sv_split_weapons of the last selection
 
-// angles the game asked for (fixangle) that the controller has to adopt
-static vec3_t	sv_split_fixed;
-static qboolean	sv_split_newangles;
+	// diagnostics
+	unsigned	frames;		// usercmds run
+	int		lastmsec;
+	unsigned	pushed;		// consecutive frames with move input
+	float		moved;		// distance walked in those frames
+	double		nextwarn;
 
-// weapon animation player 2 is playing (svc_weaponanim is never delivered to a fake client)
-static int	sv_split_animseq;
-static int	sv_split_animbody;
-static unsigned	sv_split_animcount;	// changes with every animation, even a repeated one
+	// angles the game asked for (fixangle) that the controller has to adopt
+	vec3_t		fixed;
+	qboolean	newangles;
 
-// viewmodel name -> model index, cached
-static string_t	sv_split_vmname;
-static int	sv_split_vmindex;
-static int	sv_split_vmspawn;	// svs.spawncount the index belongs to
+	// weapon animation (svc_weaponanim is never delivered to a fake client)
+	int		animseq;
+	int		animbody;
+	unsigned	animcount;	// changes with every animation, even a repeated one
+
+	// viewmodel name -> model index, cached
+	string_t	vmname;
+	int		vmindex;
+	int		vmspawn;	// svs.spawncount the index belongs to
+
+	// what the HUD messages said (CurWeapon, AmmoX, WeaponList)
+	int		curweapon;
+	int		clip;
+	int		ammo[SPLIT_AMMO];
+	int		wammo1[SPLIT_WEAPONS];	// weapon id -> primary ammo type
+	int		wammo2[SPLIT_WEAPONS];	// weapon id -> secondary ammo type
+} sv_splitp_t;
+
+static sv_splitp_t sv_split[SPLIT_EXTRA];
+
+// autoaim strength in percent per player (0 to 100), < 0 = the server's sv_aim
+static float sv_split_aim[SPLIT_MAX_PLAYERS] = { -1.0f, -1.0f, -1.0f, -1.0f };
+
+static sv_splitp_t *SV_SplitSlot( int player )
+{
+	if( player < 1 || player >= SPLIT_MAX_PLAYERS )
+		return NULL;
+
+	return &sv_split[player - 1];
+}
 
 /*
 =============
 SV_SplitActive
 
-true while the second player exists and is in the game
+true while that player exists and is in the game
 =============
 */
-qboolean SV_SplitActive( void )
+qboolean SV_SplitActive( int player )
 {
+	sv_splitp_t *p = SV_SplitSlot( player );
 	sv_client_t *cl;
 
-	if( !sv_split_edict || sv.state != ss_active )
+	if( !p || !p->edict || sv.state != ss_active )
 		return false;
 
-	cl = SV_ClientFromEdict( sv_split_edict, true );
+	cl = SV_ClientFromEdict( p->edict, true );
 
 	return cl != NULL && FBitSet( cl->flags, FCL_FAKECLIENT );
+}
+
+edict_t *SV_SplitEdict( int player )
+{
+	return SV_SplitActive( player ) ? SV_SplitSlot( player )->edict : NULL;
+}
+
+// which player an edict is: 0 for the local client, 1-3 for the fake ones, -1 for anyone else
+int SV_SplitPlayerOf( const edict_t *ent )
+{
+	int i;
+
+	if( !ent )
+		return -1;
+
+	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+	{
+		if( SV_SplitSlot( i )->edict == ent )
+			return i;
+	}
+
+	if( NUM_FOR_EDICT( ent ) == 1 && !FBitSet( ent->v.flags, FL_FAKECLIENT ))
+		return 0;
+
+	return -1;
 }
 
 /*
@@ -100,29 +156,45 @@ qboolean SV_SplitActive( void )
 SV_SplitStart
 =============
 */
-qboolean SV_SplitStart( const char *name )
+qboolean SV_SplitStart( int player, const char *name, const char *model )
 {
-	if( SV_SplitActive( ))
+	sv_splitp_t *p = SV_SplitSlot( player );
+	int i;
+
+	if( !p )
+		return false;
+
+	if( SV_SplitActive( player ))
 		return true;
 
-	sv_split_edict = NULL;
+	p->edict = NULL;
 
 	if( sv.state != ss_active || svs.maxclients < 2 )
 		return false;
 
-	sv_split_edict = SV_AddLocalPlayer( name );
+	p->edict = SV_AddLocalPlayer( name, model, player );
 
-	if( !sv_split_edict )
+	if( !p->edict )
 		return false;
 
-	VectorClear( sv_split_angles );
-	sv_split_fmove = sv_split_smove = sv_split_upmove = 0.0f;
-	sv_split_buttons = 0;
-	sv_split_impulse = 0;
-	sv_split_weapon = 1;
-	sv_split_animseq = sv_split_animbody = 0;
-	sv_split_vmname = 0;
-	sv_split_vmindex = 0;
+	VectorClear( p->angles );
+	p->fmove = p->smove = p->upmove = 0.0f;
+	p->buttons = 0;
+	p->impulse = 0;
+	p->weapon = 1;
+	p->animseq = p->animbody = 0;
+	p->vmname = 0;
+	p->vmindex = 0;
+	p->curweapon = 0;
+	p->clip = -1;
+	p->newangles = false;
+	p->frames = 0;
+	p->pushed = 0;
+	p->moved = 0.0f;
+	memset( p->ammo, 0, sizeof( p->ammo ));
+
+	for( i = 0; i < SPLIT_WEAPONS; i++ )
+		p->wammo1[i] = p->wammo2[i] = -1;
 
 	return true;
 }
@@ -132,28 +204,46 @@ qboolean SV_SplitStart( const char *name )
 SV_SplitStop
 =============
 */
-void SV_SplitStop( void )
+void SV_SplitStop( int player )
 {
-	if( SV_SplitActive( ))
-		SV_DropClient( SV_ClientFromEdict( sv_split_edict, true ), false );
+	sv_splitp_t *p = SV_SplitSlot( player );
 
-	sv_split_edict = NULL;
+	if( !p )
+		return;
+
+	if( SV_SplitActive( player ))
+		SV_DropClient( SV_ClientFromEdict( p->edict, true ), false );
+
+	p->edict = NULL;
+}
+
+void SV_SplitStopAll( void )
+{
+	int i;
+
+	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+		SV_SplitStop( i );
 }
 
 /*
 =============
 SV_SplitSetInput
 
-the latest controller state of player 2
+the latest controller state of a player
 =============
 */
-void SV_SplitSetInput( const vec3_t angles, float fmove, float smove, float upmove, word buttons )
+void SV_SplitSetInput( int player, const vec3_t angles, float fmove, float smove, float upmove, word buttons )
 {
-	VectorCopy( angles, sv_split_angles );
-	sv_split_fmove = fmove;
-	sv_split_smove = smove;
-	sv_split_upmove = upmove;
-	sv_split_buttons = buttons;
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p )
+		return;
+
+	VectorCopy( angles, p->angles );
+	p->fmove = fmove;
+	p->smove = smove;
+	p->upmove = upmove;
+	p->buttons = buttons;
 }
 
 /*
@@ -163,25 +253,26 @@ SV_SplitCycleWeapon
 dir is +1 / -1; only weapons the player carries (pev->weapons) are used
 =============
 */
-void SV_SplitCycleWeapon( int dir )
+void SV_SplitCycleWeapon( int player, int dir )
 {
 	const int count = ARRAYSIZE( sv_split_weapons );
+	sv_splitp_t *p = SV_SplitSlot( player );
 	sv_client_t *cl;
 	char cmd[64];
 
-	if( !SV_SplitActive( ))
+	if( !p || !SV_SplitActive( player ))
 		return;
 
-	cl = SV_ClientFromEdict( sv_split_edict, true );
+	cl = SV_ClientFromEdict( p->edict, true );
 
 	for( int i = 1; i <= count; i++ )
 	{
-		int n = ( sv_split_weapon + dir * i + count * 2 ) % count;
+		int n = ( p->weapon + dir * i + count * 2 ) % count;
 
-		if( !FBitSet( sv_split_edict->v.weapons, 1 << sv_split_weapons[n].id ))
+		if( !FBitSet( p->edict->v.weapons, 1 << sv_split_weapons[n].id ))
 			continue;
 
-		sv_split_weapon = n;
+		p->weapon = n;
 		Q_snprintf( cmd, sizeof( cmd ), "%s\n", sv_split_weapons[n].name );
 		SV_ClientCommandFor( cl, cmd );
 		return;
@@ -190,22 +281,17 @@ void SV_SplitCycleWeapon( int dir )
 
 /*
 =============
-SV_SplitFrame
-
-called once per server frame, before the physics run: moves player 2
+SV_SplitOneFrame
 =============
 */
-void SV_SplitFrame( void )
+static void SV_SplitOneFrame( int player, sv_splitp_t *p )
 {
 	vec3_t before;
 	int msec;
 
-	if( !SV_SplitActive( ))
-		return;
-
 	msec = bound( 1, (int)( sv.frametime * 1000.0 + 0.5 ), 100 );
 
-	VectorCopy( sv_split_edict->v.origin, before );
+	VectorCopy( p->edict->v.origin, before );
 
 	// The game sets fixangle on spawn, teleports and so on. A real client
 	// acknowledges it (the server sends the angles and clears the flag); a fake
@@ -213,49 +299,66 @@ void SV_SplitFrame( void )
 	// ignores the angles of the usercmd: the player would keep looking the way it
 	// spawned, shots would fly along that direction and the model would not follow
 	// the aim. Take the angles the game asked for and clear the flag.
-	if( sv_split_edict->v.fixangle )
+	if( p->edict->v.fixangle )
 	{
-		VectorCopy( sv_split_edict->v.angles, sv_split_fixed );
-		VectorCopy( sv_split_fixed, sv_split_angles );
-		sv_split_newangles = true;
-		sv_split_edict->v.fixangle = 0;
+		VectorCopy( p->edict->v.angles, p->fixed );
+		VectorCopy( p->fixed, p->angles );
+		p->newangles = true;
+		p->edict->v.fixangle = 0;
 	}
 
-	SV_FakeClientMove( sv_split_edict, sv_split_angles, sv_split_fmove, sv_split_smove,
-		sv_split_upmove, sv_split_buttons, sv_split_impulse, msec );
+	SV_FakeClientMove( p->edict, p->angles, p->fmove, p->smove, p->upmove, p->buttons, p->impulse, msec );
 
-	sv_split_impulse = 0; // impulses are one shot
+	p->impulse = 0; // impulses are one shot
 
 	// diagnostics: wii_split_info, and a warning when the stick does nothing
-	sv_split_frames++;
-	sv_split_lastmsec = msec;
+	p->frames++;
+	p->lastmsec = msec;
 
-	if( sv_split_fmove != 0.0f || sv_split_smove != 0.0f )
+	if( p->fmove != 0.0f || p->smove != 0.0f )
 	{
 		vec3_t d;
 
-		VectorSubtract( sv_split_edict->v.origin, before, d );
+		VectorSubtract( p->edict->v.origin, before, d );
 		d[2] = 0.0f;
-		sv_split_moved += VectorLength( d );
-		sv_split_pushed++;
+		p->moved += VectorLength( d );
+		p->pushed++;
 
-		if( sv_split_pushed >= 120 )
+		if( p->pushed >= 120 )
 		{
-			if( sv_split_moved < 1.0f && host.realtime > sv_split_nextwarn )
+			if( p->moved < 1.0f && host.realtime > p->nextwarn )
 			{
-				sv_split_nextwarn = host.realtime + 10.0;
-				Con_Printf( S_WARN "wii_split: player 2 gets move input but does not move\n" );
-				SV_SplitInfo_f( );
+				p->nextwarn = host.realtime + 10.0;
+				Con_Printf( S_WARN "wii_split: player %d gets move input but does not move\n", player + 1 );
+				SV_SplitPrintInfo( player );
 			}
 
-			sv_split_pushed = 0;
-			sv_split_moved = 0.0f;
+			p->pushed = 0;
+			p->moved = 0.0f;
 		}
 	}
 	else
 	{
-		sv_split_pushed = 0;
-		sv_split_moved = 0.0f;
+		p->pushed = 0;
+		p->moved = 0.0f;
+	}
+}
+
+/*
+=============
+SV_SplitFrame
+
+called once per server frame, before the physics run: moves the extra players
+=============
+*/
+void SV_SplitFrame( void )
+{
+	int i;
+
+	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+	{
+		if( SV_SplitActive( i ))
+			SV_SplitOneFrame( i, SV_SplitSlot( i ));
 	}
 }
 
@@ -263,16 +366,18 @@ void SV_SplitFrame( void )
 =============
 SV_SplitTakeAngles
 
-view angles the game forced on player 2 (spawn, teleport); true once per change
+view angles the game forced on a player (spawn, teleport); true once per change
 =============
 */
-qboolean SV_SplitTakeAngles( vec3_t angles )
+qboolean SV_SplitTakeAngles( int player, vec3_t angles )
 {
-	if( !sv_split_newangles )
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p || !p->newangles )
 		return false;
 
-	sv_split_newangles = false;
-	VectorCopy( sv_split_fixed, angles );
+	p->newangles = false;
+	VectorCopy( p->fixed, angles );
 
 	return true;
 }
@@ -281,25 +386,120 @@ qboolean SV_SplitTakeAngles( vec3_t angles )
 =============
 SV_SplitSniffMessage
 
-called for every message sent to a single client; keeps the weapon animations
-the game sends to player 2
+called for every message sent to a single client; keeps what the game tells a
+player's HUD (weapon animations, ammo) because nobody reads the messages of a
+fake client
 =============
 */
 void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 {
-	if( !sv_split_edict || ent != sv_split_edict || !SV_SplitActive( ))
+	const int player = SV_SplitPlayerOf( ent );
+	sv_splitp_t *p;
+	int cmd;
+
+	if( player < 1 || !SV_SplitActive( player ))
 		return;
 
-	MSG_SeekToBit( msg, 0, SEEK_SET );
+	p = SV_SplitSlot( player );
 
-	if( MSG_ReadCmd( msg, NS_SERVER ) == svc_weaponanim )
+	MSG_SeekToBit( msg, 0, SEEK_SET );
+	cmd = MSG_ReadCmd( msg, NS_SERVER );
+
+	if( cmd == svc_weaponanim )
 	{
-		sv_split_animseq = MSG_ReadByte( msg );
-		sv_split_animbody = MSG_ReadByte( msg );
-		sv_split_animcount++;
+		p->animseq = MSG_ReadByte( msg );
+		p->animbody = MSG_ReadByte( msg );
+		p->animcount++;
+	}
+	else if( cmd > svc_lastmsg )
+	{
+		const char *name = NULL;
+		int i, size = 0;
+
+		for( i = 0; i < MAX_USER_MESSAGES; i++ )
+		{
+			if( svgame.msg[i].number == cmd )
+			{
+				name = svgame.msg[i].name;
+				size = svgame.msg[i].size;
+				break;
+			}
+		}
+
+		if( name && size == -1 )
+			MSG_ReadWord( msg ); // variable length messages carry their size
+
+		if( !name )
+		{
+		}
+		else if( !Q_strcmp( name, "CurWeapon" ))
+		{
+			MSG_ReadByte( msg ); // state
+			p->curweapon = MSG_ReadByte( msg );
+			p->clip = (signed char)MSG_ReadByte( msg );
+		}
+		else if( !Q_strcmp( name, "AmmoX" ))
+		{
+			const int idx = MSG_ReadByte( msg );
+			const int amount = MSG_ReadByte( msg );
+
+			if( idx >= 0 && idx < SPLIT_AMMO )
+				p->ammo[idx] = amount;
+		}
+		else if( !Q_strcmp( name, "WeaponList" ))
+		{
+			int a1, a2, id;
+
+			MSG_ReadString( msg );			// name
+			a1 = (signed char)MSG_ReadByte( msg );	// primary ammo type
+			MSG_ReadByte( msg );			// max
+			a2 = (signed char)MSG_ReadByte( msg );	// secondary ammo type
+			MSG_ReadByte( msg );			// max
+			MSG_ReadByte( msg );			// slot
+			MSG_ReadByte( msg );			// position
+			id = MSG_ReadByte( msg );
+
+			if( id > 0 && id < SPLIT_WEAPONS )
+			{
+				p->wammo1[id] = a1;
+				p->wammo2[id] = a2;
+			}
+		}
 	}
 
 	MSG_SeekToBit( msg, 0, SEEK_SET );
+}
+
+/*
+=============
+SV_SplitGetAmmo
+
+weapon the player holds, rounds in the clip (-1 = no clip) and the reserve of
+its primary and secondary ammo (-1 = none)
+=============
+*/
+qboolean SV_SplitGetAmmo( int player, int *weapon, int *clip, int *reserve1, int *reserve2 )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+	int a1 = -1, a2 = -1, id;
+
+	if( !p || !SV_SplitActive( player ))
+		return false;
+
+	id = p->curweapon;
+
+	if( id > 0 && id < SPLIT_WEAPONS )
+	{
+		a1 = p->wammo1[id];
+		a2 = p->wammo2[id];
+	}
+
+	if( weapon ) *weapon = id;
+	if( clip ) *clip = p->clip;
+	if( reserve1 ) *reserve1 = ( a1 >= 0 && a1 < SPLIT_AMMO ) ? p->ammo[a1] : -1;
+	if( reserve2 ) *reserve2 = ( a2 >= 0 && a2 < SPLIT_AMMO ) ? p->ammo[a2] : -1;
+
+	return id > 0;
 }
 
 /*
@@ -336,100 +536,173 @@ static int SV_SplitFindModel( const char *filename )
 =============
 SV_SplitGetViewModel
 
-first person weapon of player 2: model index, sequence, body, and a counter that
+first person weapon of a player: model index, sequence, body, and a counter that
 changes every time the game restarts the animation
 =============
 */
-qboolean SV_SplitGetViewModel( int *modelindex, int *sequence, int *body, unsigned *animcount )
+qboolean SV_SplitGetViewModel( int player, int *modelindex, int *sequence, int *body, unsigned *animcount )
 {
+	sv_splitp_t *p = SV_SplitSlot( player );
 	string_t name;
 
-	if( !SV_SplitActive( ))
+	if( !p || !SV_SplitActive( player ))
 		return false;
 
-	name = sv_split_edict->v.viewmodel;
+	name = p->edict->v.viewmodel;
 
 	if( !name )
 	{
-		sv_split_vmname = 0;
-		sv_split_vmindex = 0;
+		p->vmname = 0;
+		p->vmindex = 0;
 		return false;
 	}
 
-	if( name != sv_split_vmname || sv_split_vmspawn != svs.spawncount )
+	if( name != p->vmname || p->vmspawn != svs.spawncount )
 	{
-		sv_split_vmname = name;
-		sv_split_vmspawn = svs.spawncount;
-		sv_split_vmindex = SV_SplitFindModel( svgame.globals->pStringBase + name );
+		p->vmname = name;
+		p->vmspawn = svs.spawncount;
+		p->vmindex = SV_SplitFindModel( svgame.globals->pStringBase + name );
 	}
 
-	if( sv_split_vmindex <= 0 )
+	if( p->vmindex <= 0 )
 		return false;
 
-	if( modelindex ) *modelindex = sv_split_vmindex;
-	if( sequence ) *sequence = sv_split_animseq;
-	if( body ) *body = sv_split_animbody;
-	if( animcount ) *animcount = sv_split_animcount;
+	if( modelindex ) *modelindex = p->vmindex;
+	if( sequence ) *sequence = p->animseq;
+	if( body ) *body = p->animbody;
+	if( animcount ) *animcount = p->animcount;
 
 	return true;
-}
-
-/*
-=============
-SV_SplitInfo_f
-
-wii_split_info: what the server knows about player 2 (for chasing bugs)
-=============
-*/
-void SV_SplitInfo_f( void )
-{
-	edict_t *e = sv_split_edict;
-	sv_client_t *cl;
-
-	if( !SV_SplitActive( ))
-	{
-		Con_Printf( "wii_split_info: player 2 is not active\n" );
-		return;
-	}
-
-	cl = SV_ClientFromEdict( e, true );
-
-	Con_Printf( "P2: edict %d state %d health %.0f deadflag %d movetype %d solid %d\n",
-		NUM_FOR_EDICT( e ), cl ? (int)cl->state : -1, e->v.health, e->v.deadflag, e->v.movetype, e->v.solid );
-	Con_Printf( "P2: origin %.1f %.1f %.1f velocity %.1f %.1f %.1f\n",
-		e->v.origin[0], e->v.origin[1], e->v.origin[2], e->v.velocity[0], e->v.velocity[1], e->v.velocity[2] );
-	Con_Printf( "P2: v_angle %.1f %.1f flags 0x%x maxspeed %.1f gravity %.2f friction %.2f iuser1 %d\n",
-		e->v.v_angle[0], e->v.v_angle[1], (unsigned)e->v.flags, e->v.maxspeed, e->v.gravity, e->v.friction, e->v.iuser1 );
-	Con_Printf( "P2: button 0x%x oldbuttons 0x%x impulse %d weapons 0x%x\n",
-		(unsigned)e->v.button, (unsigned)e->v.oldbuttons, e->v.impulse, e->v.weapons );
-	Con_Printf( "P2: input fmove %.0f smove %.0f buttons 0x%x, %u frames run (last %d ms), moved %.1f of %u pushed frames\n",
-		sv_split_fmove, sv_split_smove, (unsigned)sv_split_buttons, sv_split_frames, sv_split_lastmsec,
-		sv_split_moved, sv_split_pushed );
 }
 
 /*
 =============
 SV_SplitGetView
 
-what the renderer needs to draw player 2's view; false while not available
+what a player's camera and HUD need
 =============
 */
-qboolean SV_SplitGetView( vec3_t origin, vec3_t punch, int *index, float *health, float *armor, float *frags )
+qboolean SV_SplitGetView( int player, vec3_t origin, vec3_t punch, int *index, float *health, float *armor, float *frags )
 {
+	sv_splitp_t *p = SV_SplitSlot( player );
 	const entvars_t *v;
 
-	if( !SV_SplitActive( ))
+	if( !p || !SV_SplitActive( player ))
 		return false;
 
-	v = &sv_split_edict->v;
+	v = &p->edict->v;
 
 	if( origin ) VectorAdd( v->origin, v->view_ofs, origin );
 	if( punch ) VectorCopy( v->punchangle, punch );
 
-	if( index ) *index = NUM_FOR_EDICT( sv_split_edict );
+	if( index ) *index = NUM_FOR_EDICT( p->edict );
 	if( health ) *health = v->health;
 	if( armor ) *armor = v->armorvalue;
 	if( frags ) *frags = v->frags;
 
 	return true;
+}
+
+/*
+=============
+SV_SplitGetVelocity
+
+horizontal speed, for the bob of the weapon
+=============
+*/
+float SV_SplitGetSpeed( int player, qboolean *onground )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p || !SV_SplitActive( player ))
+		return 0.0f;
+
+	if( onground )
+		*onground = FBitSet( p->edict->v.flags, FL_ONGROUND ) != 0;
+
+	return sqrtf( p->edict->v.velocity[0] * p->edict->v.velocity[0] + p->edict->v.velocity[1] * p->edict->v.velocity[1] );
+}
+
+/*
+=============
+SV_SplitSetAutoaim
+
+autoaim strength of a player in percent (0 = off), < 0 = the server default
+=============
+*/
+void SV_SplitSetAutoaim( int player, float percent )
+{
+	if( player >= 0 && player < SPLIT_MAX_PLAYERS )
+		sv_split_aim[player] = percent;
+}
+
+/*
+=============
+SV_SplitAimThreshold
+
+the cosine the best autoaim target has to beat (1 = never): the default of the
+server unless the player picked its own strength
+=============
+*/
+float SV_SplitAimThreshold( const edict_t *ent, float def )
+{
+	const int player = SV_SplitPlayerOf( ent );
+
+	if( player < 0 || sv_split_aim[player] < 0.0f )
+		return def;
+
+	return 1.0f - 0.2f * bound( 0.0f, sv_split_aim[player], 100.0f ) / 100.0f;
+}
+
+/*
+=============
+SV_SplitPrintInfo
+=============
+*/
+void SV_SplitPrintInfo( int player )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+	const edict_t *e;
+	sv_client_t *cl;
+	int w;
+
+	if( !p || !SV_SplitActive( player ))
+	{
+		Con_Printf( "wii_split_info: player %d is not active\n", player + 1 );
+		return;
+	}
+
+	e = p->edict;
+	cl = SV_ClientFromEdict( (edict_t *)e, true );
+	w = player + 1;
+
+	Con_Printf( "P%d: edict %d state %d health %.0f deadflag %d movetype %d solid %d\n",
+		w, NUM_FOR_EDICT( e ), cl ? (int)cl->state : -1, e->v.health, e->v.deadflag, e->v.movetype, e->v.solid );
+	Con_Printf( "P%d: origin %.1f %.1f %.1f velocity %.1f %.1f %.1f\n",
+		w, e->v.origin[0], e->v.origin[1], e->v.origin[2], e->v.velocity[0], e->v.velocity[1], e->v.velocity[2] );
+	Con_Printf( "P%d: v_angle %.1f %.1f flags 0x%x maxspeed %.1f gravity %.2f friction %.2f iuser1 %d\n",
+		w, e->v.v_angle[0], e->v.v_angle[1], (unsigned)e->v.flags, e->v.maxspeed, e->v.gravity, e->v.friction, e->v.iuser1 );
+	Con_Printf( "P%d: button 0x%x oldbuttons 0x%x impulse %d weapons 0x%x\n",
+		w, (unsigned)e->v.button, (unsigned)e->v.oldbuttons, e->v.impulse, e->v.weapons );
+	Con_Printf( "P%d: input fmove %.0f smove %.0f buttons 0x%x, %u frames run (last %d ms), moved %.1f of %u pushed frames\n",
+		w, p->fmove, p->smove, (unsigned)p->buttons, p->frames, p->lastmsec, p->moved, p->pushed );
+	Con_Printf( "P%d: weapon id %d clip %d\n", w, p->curweapon, p->clip );
+}
+
+// wii_split_info [player]
+void SV_SplitInfo_f( void )
+{
+	int i;
+
+	if( Cmd_Argc() > 1 )
+	{
+		SV_SplitPrintInfo( bound( 1, Q_atoi( Cmd_Argv( 1 )) - 1, SPLIT_MAX_PLAYERS - 1 ));
+		return;
+	}
+
+	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+	{
+		if( SV_SplitActive( i ))
+			SV_SplitPrintInfo( i );
+	}
 }

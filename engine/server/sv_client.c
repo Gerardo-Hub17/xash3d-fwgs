@@ -553,11 +553,13 @@ edict_t *GAME_EXPORT SV_FakeConnect( const char *netname )
 SV_AddLocalPlayer
 
 A fake client that goes through the same steps a real one does (the game
-dll accepts it and puts it in the server), for the split screen player 2
+dll accepts it and puts it in the server), for the split screen players 2-4
 ==================
 */
-edict_t *SV_AddLocalPlayer( const char *netname )
+edict_t *SV_AddLocalPlayer( const char *netname, const char *model, int player )
 {
+	// shirt and pants colours so the players can be told apart
+	static const char *colors[SPLIT_MAX_PLAYERS][2] = { { "1", "1" }, { "30", "10" }, { "100", "90" }, { "160", "150" } };
 	char reason[MAX_INFO_STRING];
 	sv_client_t *cl;
 	edict_t *ent;
@@ -574,6 +576,17 @@ edict_t *SV_AddLocalPlayer( const char *netname )
 
 	if( !cl )
 		return NULL;
+
+	if( !COM_StringEmptyOrNULL( model ))
+		Info_SetValueForKey( cl->userinfo, "model", model, sizeof( cl->userinfo ));
+
+	if( player > 0 && player < SPLIT_MAX_PLAYERS )
+	{
+		Info_SetValueForKey( cl->userinfo, "topcolor", colors[player][0], sizeof( cl->userinfo ));
+		Info_SetValueForKey( cl->userinfo, "bottomcolor", colors[player][1], sizeof( cl->userinfo ));
+	}
+
+	SV_UserinfoChanged( cl );
 
 	Q_strncpy( reason, "Connection rejected by game\n", sizeof( reason ));
 

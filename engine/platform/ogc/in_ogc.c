@@ -40,6 +40,10 @@ edge of the screen and stop by coming back to the middle.
 
 static CVAR_DEFINE_AUTO( wii_ir, "1", FCVAR_ARCHIVE, "aim with the Wii remote pointer" );
 static CVAR_DEFINE_AUTO( wii_ir_deadzone, "0.35", FCVAR_ARCHIVE, "fraction of the screen where pointing does not turn the view" );
+static CVAR_DEFINE_AUTO( wii_ir_sens, "1", FCVAR_ARCHIVE, "multiplier of the pointer turn speed" );
+static CVAR_DEFINE_AUTO( wii_ir_edgehold, "3", FCVAR_ARCHIVE, "seconds the view keeps turning after the pointer leaves the screen through an edge (0 = stop at once)" );
+static CVAR_DEFINE_AUTO( wii_stick_deadzone, "0.16", FCVAR_ARCHIVE, "dead zone of the Classic/GameCube/Nunchuk sticks (0..0.5)" );
+static CVAR_DEFINE_AUTO( wii_stick_sens, "1", FCVAR_ARCHIVE, "multiplier of the Classic/GameCube look speed" );
 static CVAR_DEFINE_AUTO( wii_ir_yawspeed, "220", FCVAR_ARCHIVE, "degrees per second of turn at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per second of pitch at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon rolls towards the pointer at the screen edge (0 = off, negative = inverted)" );
@@ -789,6 +793,10 @@ void OGC_InputInit( void )
 
 	Cvar_RegisterVariable( &wii_ir );
 	Cvar_RegisterVariable( &wii_ir_deadzone );
+	Cvar_RegisterVariable( &wii_ir_sens );
+	Cvar_RegisterVariable( &wii_ir_edgehold );
+	Cvar_RegisterVariable( &wii_stick_deadzone );
+	Cvar_RegisterVariable( &wii_stick_sens );
 	Cvar_RegisterVariable( &wii_ir_yawspeed );
 	Cvar_RegisterVariable( &wii_ir_pitchspeed );
 	Cvar_RegisterVariable( &wii_ir_gunsway );
@@ -891,11 +899,27 @@ static void OGC_SendAction( int act, qboolean down )
 		break;
 
 	case OGC_ACT_QUICKSAVE:
+		// pantalla dividida: el autoguardado no pinta nada, B del GameCube abre el menu del jugador
+		if( CL_SplitActive( ))
+		{
+			if( down && ogc_src == OGC_SRC_GC )
+				CL_SplitMenuToggle( 0 );
+			break;
+		}
+
 		if( down && cls.key_dest == key_game && Cmd_Exists( "savequick" ))
 		Cbuf_AddText( "savequick\n" );
 		break;
 
 	case OGC_ACT_CHAT:
+		// pantalla dividida: el boton del chat abre el menu propio del jugador 1
+		if( CL_SplitActive( ))
+		{
+			if( down )
+				CL_SplitMenuToggle( 0 );
+			break;
+		}
+
 		if( down && cls.key_dest == key_game && Cmd_Exists( "messagemode" ))
 		Cbuf_AddText( "messagemode\n" );
 		break;
@@ -928,6 +952,13 @@ static void OGC_SendAction( int act, qboolean down )
 
 static void OGC_SendKey( int key, qboolean down )
 {
+	// el lobby de pantalla dividida y el menu propio del jugador 1 leen el mando
+	// ellos mismos: las pulsaciones no llegan al juego (las soltadas si, para que
+	// no quede nada apretado)
+	if( down && CL_SplitGrab( 0 ) && ( CL_SplitLobbyActive( ) ||
+		( key != OGC_ACT_CHAT && key != OGC_ACT_QUICKSAVE && key != OGC_ACT_HOME )))
+		return;
+
 	if( key >= OGC_ACT_BASE )
 	{
 		OGC_SendAction( key, down );
@@ -1088,8 +1119,8 @@ void OGC_StickLookMove( float *pitch, float *yaw )
 		return;
 	}
 
-	// en los menus las palancas no giran la camara
-	if( cls.key_dest != key_game )
+	// en los menus (y con el menu propio del jugador 1) las palancas no giran la camara
+	if( cls.key_dest != key_game || CL_SplitGrab( 0 ))
 	{
 		ogc_look_filt[0] = ogc_look_filt[1] = 0.0f;
 		return;
@@ -1126,8 +1157,8 @@ void OGC_StickLookMove( float *pitch, float *yaw )
 		}
 	}
 
-	*yaw   += -ogc_look_filt[0] * wii_stick_yawspeed.value * dt * speed + dy;
-	*pitch += -ogc_look_filt[1] * wii_stick_pitchspeed.value * dt * speed + dp;
+	*yaw   += -ogc_look_filt[0] * wii_stick_yawspeed.value * wii_stick_sens.value * dt * speed + dy;
+	*pitch += -ogc_look_filt[1] * wii_stick_pitchspeed.value * wii_stick_sens.value * dt * speed + dp;
 }
 
 /*
@@ -1135,9 +1166,9 @@ Zona muerta radial (no por eje, para que apuntar en diagonal no se vuelva
 escalonado) y curva de respuesta: el principio del recorrido es fino, el final
 rapido.
 */
-static void OGC_ShapeLook( float x, float y, float *ox, float *oy )
+static void OGC_ShapeLookEx( float x, float y, float dz, float *ox, float *oy )
 {
-        const float dz = 0.16f;
+        dz = bound( 0.0f, dz, 0.5f );
         float m = sqrtf( x * x + y * y );
         float k;
 
@@ -1156,6 +1187,11 @@ static void OGC_ShapeLook( float x, float y, float *ox, float *oy )
                 *ox = x / len * k;
                 *oy = y / len * k;
         }
+}
+
+static void OGC_ShapeLook( float x, float y, float *ox, float *oy )
+{
+        OGC_ShapeLookEx( x, y, wii_stick_deadzone.value, ox, oy );
 }
 
 static void OGC_PollSticks( u32 wpad_type );
@@ -1781,6 +1817,40 @@ OGC_PointerMove
 Adds the pointer's contribution to the view angles.
 ============
 */
+/*
+Que hacer cuando el IR se pierde: si el ultimo punto valido estaba cerca de un
+borde de la vista (|valor| >= 0.6) se sigue girando hacia ese lado a velocidad
+maxima. El eje que no estaba en un borde no gira.
+*/
+static float ogc_ir_edge[2];
+static double ogc_ir_edge_time;
+static qboolean ogc_ir_edge_have;
+
+static qboolean OGC_IrEdgeHold( const float *edge, double since, qboolean have, float *nx, float *ny, qboolean *hx, qboolean *hy )
+{
+	const float hold = wii_ir_edgehold.value;
+
+	*nx = *ny = 0.0f;
+	*hx = *hy = false;
+
+	if( !have || hold <= 0.0f || host.realtime - since > hold )
+		return false;
+
+	if( fabsf( edge[0] ) >= 0.6f )
+	{
+		*nx = ( edge[0] < 0.0f ) ? -1.0f : 1.0f;
+		*hx = true;
+	}
+
+	if( fabsf( edge[1] ) >= 0.6f )
+	{
+		*ny = ( edge[1] < 0.0f ) ? -1.0f : 1.0f;
+		*hy = true;
+	}
+
+	return *hx || *hy;
+}
+
 void OGC_PointerMove( float *pitch, float *yaw )
 {
     WPADData *data;
@@ -1805,51 +1875,67 @@ void OGC_PointerMove( float *pitch, float *yaw )
 
     data = WPAD_Data( WPAD_CHAN_0 );
 
-    // Si se pierde el IR, contar frames antes de congelar
-    if( !data || !data->ir.valid )
+    // menu propio del jugador 1 (o lobby): el puntero no gira la camara
+    if( CL_SplitGrab( 0 ))
+        return;
+
+    if( data && data->ir.valid )
     {
+        ir_lost_frames = 0;
+
+        // Log de datos crudos del IR (cada ~1 segundo)
+        if( wii_showinput.value )
+        {
+            static int log_tick = 0;
+            if( ( log_tick % 60 ) == 0 )
+                Con_Printf( "[IR] valid=%d x=%d y=%d sx=%d sy=%d",
+                    (int)data->ir.valid, (int)data->ir.x, (int)data->ir.y,
+                    (int)data->ir.sx, (int)data->ir.sy );
+            log_tick++;
+        }
+
+        nx = ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f;
+        ny = ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f;
+
+        if( CL_SplitActive( ))
+        {
+            // pantalla dividida: el puntero se mide dentro de la vista del jugador 1
+            // (-1..1 desde el centro de SU mitad); fuera de ella queda en el borde
+            int rx, ry, rw, rh;
+
+            CL_SplitRect( 0, &rx, &ry, &rw, &rh );
+            nx = ( data->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f );
+            ny = ( data->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f );
+        }
+
+        nx = bound( -1.0f, nx, 1.0f );
+        ny = bound( -1.0f, ny, 1.0f );
+
+        ogc_pointer[0] = nx;
+        ogc_pointer[1] = ny;
+
+        ogc_ir_edge[0] = nx;
+        ogc_ir_edge[1] = ny;
+        ogc_ir_edge_time = host.realtime;
+        ogc_ir_edge_have = true;
+    }
+    else
+    {
+        // El puntero salio de la pantalla. Si salio por un borde la vista sigue
+        // girando hacia ese lado (hasta wii_ir_edgehold segundos) en vez de
+        // pararse justo cuando mas se queria girar.
+        qboolean hx, hy;
+
         ir_lost_frames++;
         if( wii_showinput.value && ( ir_lost_frames % 30 ) == 1 )
             Con_Printf( "^1[IR]^7 PERDIDO frame=%d\n", ir_lost_frames );
-        if( ir_lost_frames > IR_TOLERANCE_FRAMES )
+
+        if( !OGC_IrEdgeHold( ogc_ir_edge, ogc_ir_edge_time, ogc_ir_edge_have, &nx, &ny, &hx, &hy ))
             return;
-        // Dentro de tolerancia: no actualizar pero no congelar
-        return;
+
+        if( hx ) ogc_pointer[0] = nx;
+        if( hy ) ogc_pointer[1] = ny;
     }
-
-    ir_lost_frames = 0;
-
-    // Log de datos crudos del IR (cada ~1 segundo)
-    if( wii_showinput.value )
-    {
-        static int log_tick = 0;
-        if( ( log_tick % 60 ) == 0 )
-            Con_Printf( "[IR] valid=%d x=%d y=%d sx=%d sy=%d", 
-                (int)data->ir.valid, (int)data->ir.x, (int)data->ir.y, 
-                (int)data->ir.sx, (int)data->ir.sy );
-        log_tick++;
-    }
-
-
-    nx = ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f;
-    ny = ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f;
-
-    if( CL_SplitActive( ))
-    {
-        // pantalla dividida: el puntero se mide dentro de la vista del jugador 1
-        // (-1..1 desde el centro de SU mitad); fuera de ella queda en el borde
-        int rx, ry, rw, rh;
-
-        CL_SplitRect( 0, &rx, &ry, &rw, &rh );
-        nx = ( data->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f );
-        ny = ( data->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f );
-    }
-
-    nx = bound( -1.0f, nx, 1.0f );
-    ny = bound( -1.0f, ny, 1.0f );
-
-    ogc_pointer[0] = nx;
-    ogc_pointer[1] = ny;
 
     // ayuda de punteria con el puntero: gira la CAMARA hacia el enemigo (el disparo
     // sigue saliendo exactamente donde apunta el puntero)
@@ -1889,7 +1975,7 @@ void OGC_PointerMove( float *pitch, float *yaw )
             float over = ( fabs( nx ) - dzx ) / scx;
             if( nx < 0.0f ) over = -over;
 
-            *yaw -= over * wii_ir_yawspeed.value * k * (float)host.realframetime;
+            *yaw -= over * wii_ir_yawspeed.value * wii_ir_sens.value * k * (float)host.realframetime;
 
             if( isnan( *yaw ) || isinf( *yaw ) ) *yaw = 0.0f;
         }
@@ -1904,7 +1990,7 @@ void OGC_PointerMove( float *pitch, float *yaw )
         float over = ( fabs( ny ) - deadzone ) / scale;
         if( ny < 0.0f ) over = -over;
 
-        *pitch += over * wii_ir_pitchspeed.value * (float)host.realframetime;
+        *pitch += over * wii_ir_pitchspeed.value * wii_ir_sens.value * (float)host.realframetime;
 
         if( isnan( *pitch ) || isinf( *pitch ) ) *pitch = 0.0f;
     }
@@ -2480,6 +2566,10 @@ static void OGC_PollSticks( u32 wpad_type )
                 if( fabsf( cx ) > 0.18f || fabsf( cy ) > 0.18f ) { rx = cx; ry = cy; gc_moved = true; }
         }
 
+        // menu propio del jugador 1 (o lobby): las palancas no mueven al personaje
+        if( CL_SplitGrab( 0 ))
+                lx = ly = rx = ry = 0.0f;
+
         // convencion de SDL que usa el motor: arriba es negativo en Y
         out[0] = OGC_StickToAxis( lx, false );
         out[1] = OGC_StickToAxis( -ly, false );
@@ -2548,6 +2638,10 @@ static void OGC_PollNunchuk(void)
 
     if (nx > -8000 && nx < 8000) nx = 0;
     if (ny > -8000 && ny < 8000) ny = 0;
+
+    // menu propio del jugador 1 (o lobby): el Nunchuk no mueve al personaje
+    if (CL_SplitGrab( 0 ))
+        nx = ny = 0;
     // ny = -ny; (movido arriba para evitar overflow s16)
 
     if (nx != last_x)
@@ -2575,133 +2669,288 @@ static void OGC_PollNunchuk(void)
 
 /*
 ============
-OGC_Player2Input
+Players 2 to 4
 
-Controls of the split screen player 2, read straight from the second
-controller: a GameCube pad in port 2, or a remote in slot 2 with a Classic
-Controller or a Nunchuk (the Nunchuk turns by pointing at the screen, like
-player 1). Returns false while no such controller is in use.
+Each extra player owns the controller plugged into the same port number as its
+place in the split screen (GameCube pad N+1 or Wii remote N+1; the LED of the
+remote shows the same number). Player 1 keeps the normal input path above.
 ============
 */
-qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, float *smove, word *buttons, int *weapon )
+typedef struct
 {
-	static qboolean gc_seen;
-	static int last_dir;
-	float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f;
-	int dir = 0;
-	qboolean have = false, ir_turn = false;
+	int		kind;		// OGC_KIND_*
+	u32		held;		// buttons held, in that controller's own bits
+	float		lx, ly, rx, ry;	// sticks, -1..1, up is +y
+	WPADData	*wd;
+} ogc_port_t;
+
+static qboolean ogc_gc_seen[SPLIT_MAX_PLAYERS];
+
+static void OGC_ReadPort( int port, ogc_port_t *ps )
+{
 	u32 type = WPAD_EXP_NONE;
+	u16 gh;
+	float gx, gy, cx, cy;
+	qboolean wpad_ok;
 
-	*dyaw = *dpitch = *fmove = *smove = 0.0f;
-	*buttons = 0;
-	*weapon = 0;
+	memset( ps, 0, sizeof( *ps ));
 
-	// GameCube pad 2 (SDL already scans the pads every frame)
+	if( port < 0 || port >= SPLIT_MAX_PLAYERS )
+		return;
+
+	// GameCube pad (SDL already scans the pads every frame)
+	gh = PAD_ButtonsHeld( port );
+	gx = bound( -1.0f, PAD_StickX( port ) / 80.0f, 1.0f );
+	gy = bound( -1.0f, PAD_StickY( port ) / 80.0f, 1.0f );
+	cx = bound( -1.0f, PAD_SubStickX( port ) / 80.0f, 1.0f );
+	cy = bound( -1.0f, PAD_SubStickY( port ) / 80.0f, 1.0f );
+
+	// there is no cheap "connected" query that doesn't race SDL's scan:
+	// the pad counts once it has reported any input
+	if( gh || fabsf( gx ) > 0.3f || fabsf( gy ) > 0.3f || fabsf( cx ) > 0.3f || fabsf( cy ) > 0.3f )
+		ogc_gc_seen[port] = true;
+
+	wpad_ok = ( WPAD_Probe( port, &type ) == WPAD_ERR_NONE );
+
+	// player 1 uses whichever device it touched last
+	if( ogc_gc_seen[port] && ( port > 0 || ogc_src == OGC_SRC_GC || !wpad_ok ))
 	{
-		u16 held = PAD_ButtonsHeld( PAD_CHAN1 );
-		float gx = bound( -1.0f, PAD_StickX( PAD_CHAN1 ) / 80.0f, 1.0f );
-		float gy = bound( -1.0f, PAD_StickY( PAD_CHAN1 ) / 80.0f, 1.0f );
-		float cx = bound( -1.0f, PAD_SubStickX( PAD_CHAN1 ) / 80.0f, 1.0f );
-		float cy = bound( -1.0f, PAD_SubStickY( PAD_CHAN1 ) / 80.0f, 1.0f );
-
-		// there is no cheap "connected" query that doesn't race SDL's scan:
-		// the pad counts once it has reported any input
-		if( held || fabsf( gx ) > 0.3f || fabsf( gy ) > 0.3f || fabsf( cx ) > 0.3f || fabsf( cy ) > 0.3f )
-			gc_seen = true;
-
-		if( gc_seen )
-		{
-			have = true;
-			lx = gx; ly = gy; rx = cx; ry = cy;
-
-			if( held & PAD_TRIGGER_R ) *buttons |= IN_ATTACK;
-			if( held & PAD_TRIGGER_L ) *buttons |= IN_ATTACK2;
-			if( held & PAD_TRIGGER_Z ) *buttons |= IN_DUCK;
-			if( held & PAD_BUTTON_A )  *buttons |= IN_JUMP;
-			if( held & PAD_BUTTON_X )  *buttons |= IN_USE;
-			if( held & PAD_BUTTON_Y )  *buttons |= IN_RELOAD;
-			if( held & PAD_BUTTON_LEFT )  dir = -1;
-			if( held & PAD_BUTTON_RIGHT ) dir = 1;
-		}
+		ps->kind = OGC_KIND_GC;
+		ps->held = gh;
+		ps->lx = gx; ps->ly = gy; ps->rx = cx; ps->ry = cy;
+		return;
 	}
 
-	if( !have && WPAD_Probe( WPAD_CHAN_1, &type ) == WPAD_ERR_NONE )
+	if( !wpad_ok )
+		return;
+
+	ps->wd = WPAD_Data( port );
+	ps->held = WPAD_ButtonsHeld( port );
+
+	if( type == WPAD_EXP_CLASSIC && ps->wd )
 	{
-		WPADData *data = WPAD_Data( WPAD_CHAN_1 );
-		u32 held = WPAD_ButtonsHeld( WPAD_CHAN_1 );
+		const joystick_t *l = &ps->wd->exp.classic.ljs;
+		const joystick_t *r = &ps->wd->exp.classic.rjs;
 
-		if( data && type == WPAD_EXP_CLASSIC )
+		ps->kind = OGC_KIND_CLASSIC;
+		ps->lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
+		ps->ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
+		ps->rx = OGC_WpadAxis( r->pos.x, r->center.x, r->min.x, r->max.x );
+		ps->ry = OGC_WpadAxis( r->pos.y, r->center.y, r->min.y, r->max.y );
+	}
+	else if( type == WPAD_EXP_NUNCHUK && ps->wd )
+	{
+		const joystick_t *l = &ps->wd->exp.nunchuk.js;
+
+		ps->kind = OGC_KIND_NUNCHUK;
+		ps->lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
+		ps->ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
+	}
+	else ps->kind = OGC_KIND_WIIMOTE;
+}
+
+static unsigned OGC_PortUIBits( const ogc_port_t *ps )
+{
+	const u32 h = ps->held;
+	unsigned ui = 0;
+
+	switch( ps->kind )
+	{
+	case OGC_KIND_GC:
+		if( h & PAD_BUTTON_UP )    ui |= OGC_UI_UP;
+		if( h & PAD_BUTTON_DOWN )  ui |= OGC_UI_DOWN;
+		if( h & PAD_BUTTON_LEFT )  ui |= OGC_UI_LEFT;
+		if( h & PAD_BUTTON_RIGHT ) ui |= OGC_UI_RIGHT;
+		if( h & PAD_BUTTON_A )     ui |= OGC_UI_ACCEPT;
+		if( h & PAD_BUTTON_B )     ui |= OGC_UI_BACK;
+		if( h & PAD_BUTTON_START ) ui |= OGC_UI_START;
+		break;
+
+	case OGC_KIND_CLASSIC:
+		if( h & WPAD_CLASSIC_BUTTON_UP )    ui |= OGC_UI_UP;
+		if( h & WPAD_CLASSIC_BUTTON_DOWN )  ui |= OGC_UI_DOWN;
+		if( h & WPAD_CLASSIC_BUTTON_LEFT )  ui |= OGC_UI_LEFT;
+		if( h & WPAD_CLASSIC_BUTTON_RIGHT ) ui |= OGC_UI_RIGHT;
+		if( h & WPAD_CLASSIC_BUTTON_A )     ui |= OGC_UI_ACCEPT;
+		if( h & WPAD_CLASSIC_BUTTON_B )     ui |= OGC_UI_BACK;
+		if( h & WPAD_CLASSIC_BUTTON_PLUS )  ui |= OGC_UI_START;
+		break;
+
+	case OGC_KIND_NUNCHUK:
+	case OGC_KIND_WIIMOTE:
+		if( h & WPAD_BUTTON_UP )    ui |= OGC_UI_UP;
+		if( h & WPAD_BUTTON_DOWN )  ui |= OGC_UI_DOWN;
+		if( h & WPAD_BUTTON_LEFT )  ui |= OGC_UI_LEFT;
+		if( h & WPAD_BUTTON_RIGHT ) ui |= OGC_UI_RIGHT;
+		if( h & WPAD_BUTTON_A )     ui |= OGC_UI_ACCEPT;
+		if( h & WPAD_BUTTON_B )     ui |= OGC_UI_BACK;
+		if( h & WPAD_BUTTON_PLUS )  ui |= OGC_UI_START;
+		break;
+	}
+
+	return ui;
+}
+
+/*
+============
+OGC_PortUI
+
+what the controller of a port is and which menu buttons are down, for the lobby
+and the players' own menus
+============
+*/
+unsigned OGC_PortUI( int port, int *kind )
+{
+	ogc_port_t ps;
+
+	OGC_ReadPort( port, &ps );
+
+	if( kind )
+		*kind = ps.kind;
+
+	return OGC_PortUIBits( &ps );
+}
+
+/*
+============
+OGC_PlayerInput
+
+reads the controller of a player (2 to 4) and turns it into view changes,
+movement and buttons. Returns false while there is no usable controller.
+============
+*/
+static float ogc_pir_edge[SPLIT_MAX_PLAYERS][2];
+static double ogc_pir_time[SPLIT_MAX_PLAYERS];
+static qboolean ogc_pir_have[SPLIT_MAX_PLAYERS];
+static int ogc_last_dir[SPLIT_MAX_PLAYERS];
+
+qboolean OGC_PlayerInput( int port, int player, float dt, const ogc_psettings_t *cfg, ogc_pinput_t *out )
+{
+	static const ogc_psettings_t defaults = { 0.35f, 0.16f, 1.0f, 1.0f };
+	ogc_port_t ps;
+	u32 h;
+	float irdz, stdz, stsens, irsens;
+	qboolean ir_turn = false;
+	int dir = 0;
+
+	memset( out, 0, sizeof( *out ));
+
+	if( port < 0 || port >= SPLIT_MAX_PLAYERS || player < 1 || player >= SPLIT_MAX_PLAYERS )
+		return false;
+
+	if( !cfg )
+		cfg = &defaults;
+
+	OGC_ReadPort( port, &ps );
+	out->kind = ps.kind;
+	out->ui = OGC_PortUIBits( &ps );
+
+	irdz = bound( 0.0f, cfg->ir_deadzone, 0.95f );
+	stdz = bound( 0.0f, cfg->stick_deadzone, 0.5f );
+	stsens = bound( 0.1f, cfg->stick_sens, 4.0f );
+	irsens = bound( 0.1f, cfg->ir_sens, 4.0f );
+
+	h = ps.held;
+
+	switch( ps.kind )
+	{
+	case OGC_KIND_GC:
+		if( h & PAD_TRIGGER_R ) out->buttons |= IN_ATTACK;
+		if( h & PAD_TRIGGER_L ) out->buttons |= IN_ATTACK2;
+		if( h & PAD_TRIGGER_Z ) out->buttons |= IN_DUCK;
+		if( h & PAD_BUTTON_A )  out->buttons |= IN_JUMP;
+		if( h & PAD_BUTTON_X )  out->buttons |= IN_USE;
+		if( h & PAD_BUTTON_Y )  out->buttons |= IN_RELOAD;
+		if( h & PAD_BUTTON_LEFT )  dir = -1;
+		if( h & PAD_BUTTON_RIGHT ) dir = 1;
+		break;
+
+	case OGC_KIND_CLASSIC:
+		if( h & WPAD_CLASSIC_BUTTON_FULL_R ) out->buttons |= IN_ATTACK;
+		if( h & WPAD_CLASSIC_BUTTON_FULL_L ) out->buttons |= IN_ATTACK2;
+		if( h & WPAD_CLASSIC_BUTTON_ZL )     out->buttons |= IN_DUCK;
+		if( h & WPAD_CLASSIC_BUTTON_A )      out->buttons |= IN_JUMP;
+		if( h & WPAD_CLASSIC_BUTTON_X )      out->buttons |= IN_USE;
+		if( h & WPAD_CLASSIC_BUTTON_Y )      out->buttons |= IN_RELOAD;
+		if( h & WPAD_CLASSIC_BUTTON_LEFT )   dir = -1;
+		if( h & WPAD_CLASSIC_BUTTON_RIGHT )  dir = 1;
+		break;
+
+	case OGC_KIND_NUNCHUK:
+		// same layout as player 1's remote
+		ir_turn = true;
+		if( h & WPAD_NUNCHUK_BUTTON_Z ) out->buttons |= IN_ATTACK;
+		if( h & WPAD_BUTTON_DOWN )      out->buttons |= IN_ATTACK2;
+		if( h & WPAD_BUTTON_B )         out->buttons |= IN_DUCK;
+		if( h & WPAD_BUTTON_A )         out->buttons |= IN_JUMP;
+		if( h & WPAD_NUNCHUK_BUTTON_C ) out->buttons |= IN_USE;
+		if( h & WPAD_BUTTON_MINUS )     out->buttons |= IN_RELOAD;
+		if( h & WPAD_BUTTON_LEFT )      dir = -1;
+		if( h & WPAD_BUTTON_RIGHT )     dir = 1;
+		break;
+
+	default:
+		// no controller, or a bare remote (it can only navigate menus)
+		ogc_last_dir[port] = 0;
+		return false;
+	}
+
+	// IR pointer of the Nunchuk player, measured inside its own view
+	if( ir_turn && ps.wd && refState.width > 0 && refState.height > 0 )
+	{
+		float nx = 0.0f, ny = 0.0f;
+		qboolean doturn = false;
+
+		if( ps.wd->ir.valid )
 		{
-			const joystick_t *l = &data->exp.classic.ljs;
-			const joystick_t *r = &data->exp.classic.rjs;
+			int rx, ry, rw, rh;
 
-			have = true;
-			lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
-			ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
-			rx = OGC_WpadAxis( r->pos.x, r->center.x, r->min.x, r->max.x );
-			ry = OGC_WpadAxis( r->pos.y, r->center.y, r->min.y, r->max.y );
-
-			if( held & WPAD_CLASSIC_BUTTON_FULL_R ) *buttons |= IN_ATTACK;
-			if( held & WPAD_CLASSIC_BUTTON_FULL_L ) *buttons |= IN_ATTACK2;
-			if( held & WPAD_CLASSIC_BUTTON_ZL )     *buttons |= IN_DUCK;
-			if( held & WPAD_CLASSIC_BUTTON_A )      *buttons |= IN_JUMP;
-			if( held & WPAD_CLASSIC_BUTTON_X )      *buttons |= IN_USE;
-			if( held & WPAD_CLASSIC_BUTTON_Y )      *buttons |= IN_RELOAD;
-			if( held & WPAD_CLASSIC_BUTTON_LEFT )   dir = -1;
-			if( held & WPAD_CLASSIC_BUTTON_RIGHT )  dir = 1;
+			CL_SplitRect( player, &rx, &ry, &rw, &rh );
+			nx = bound( -1.0f, ( ps.wd->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f ), 1.0f );
+			ny = bound( -1.0f, ( ps.wd->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f ), 1.0f );
+			ogc_pir_edge[port][0] = nx;
+			ogc_pir_edge[port][1] = ny;
+			ogc_pir_time[port] = host.realtime;
+			ogc_pir_have[port] = true;
+			doturn = true;
+			out->px = nx;
+			out->py = ny;
+			out->pointer = true;
 		}
-		else if( data && type == WPAD_EXP_NUNCHUK )
+		else
 		{
-			const joystick_t *l = &data->exp.nunchuk.js;
+			// the pointer left the screen through an edge: keep turning that way
+			qboolean hx, hy;
 
-			have = true;
-			ir_turn = true;
-			lx = OGC_WpadAxis( l->pos.x, l->center.x, l->min.x, l->max.x );
-			ly = OGC_WpadAxis( l->pos.y, l->center.y, l->min.y, l->max.y );
+			doturn = OGC_IrEdgeHold( ogc_pir_edge[port], ogc_pir_time[port], ogc_pir_have[port], &nx, &ny, &hx, &hy );
 
-			// same layout as player 1's remote
-			if( held & WPAD_NUNCHUK_BUTTON_Z ) *buttons |= IN_ATTACK;
-			if( held & WPAD_BUTTON_DOWN )      *buttons |= IN_ATTACK2;
-			if( held & WPAD_BUTTON_B )         *buttons |= IN_DUCK;
-			if( held & WPAD_BUTTON_A )         *buttons |= IN_JUMP;
-			if( held & WPAD_NUNCHUK_BUTTON_C ) *buttons |= IN_USE;
-			if( held & WPAD_BUTTON_MINUS )     *buttons |= IN_RELOAD;
-			if( held & WPAD_BUTTON_LEFT )      dir = -1;
-			if( held & WPAD_BUTTON_RIGHT )     dir = 1;
-
-			if( data->ir.valid && refState.width > 0 && refState.height > 0 )
+			if( doturn )
 			{
-				// the pointer is measured inside player 2's own view
-				int rx, ry, rw, rh;
-				CL_SplitRect( 1, &rx, &ry, &rw, &rh );
-
-				const float nx = bound( -1.0f, ( data->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f ), 1.0f );
-				const float ny = bound( -1.0f, ( data->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f ), 1.0f );
-				const float dz = bound( 0.0f, wii_ir_deadzone.value, 0.95f );
-				const float k = CL_SplitViewAspect( 1 ) * 0.75f;
-				const float dzx = bound( 0.0f, dz / k, 0.95f );
-
-				if( fabsf( nx ) > dzx )
-					*dyaw -= (( nx < 0.0f ? -1.0f : 1.0f ) * ( fabsf( nx ) - dzx ) / ( 1.0f - dzx )) * wii_ir_yawspeed.value * k * dt;
-				if( fabsf( ny ) > dz )
-					*dpitch += (( ny < 0.0f ? -1.0f : 1.0f ) * ( fabsf( ny ) - dz ) / ( 1.0f - dz )) * wii_ir_pitchspeed.value * dt;
+				out->px = hx ? nx : ogc_pir_edge[port][0];
+				out->py = hy ? ny : ogc_pir_edge[port][1];
+				out->pointer = true;
 			}
 		}
-	}
 
-	if( !have )
-	{
-		last_dir = 0;
-		return false;
+		if( doturn )
+		{
+			const float k = CL_SplitViewAspect( player ) * 0.75f;
+			const float dzx = bound( 0.0f, irdz / k, 0.95f );
+
+			if( fabsf( nx ) > dzx )
+				out->dyaw -= (( nx < 0.0f ? -1.0f : 1.0f ) * ( fabsf( nx ) - dzx ) / ( 1.0f - dzx )) * wii_ir_yawspeed.value * irsens * k * dt;
+			if( fabsf( ny ) > irdz )
+				out->dpitch += (( ny < 0.0f ? -1.0f : 1.0f ) * ( fabsf( ny ) - irdz ) / ( 1.0f - irdz )) * wii_ir_pitchspeed.value * irsens * dt;
+		}
 	}
 
 	// movement
 	{
 		float mx, my;
 
-		OGC_ShapeLook( lx, ly, &mx, &my ); // same dead zone and curve as the look sticks
-		*smove = mx * 400.0f;
-		*fmove = my * 400.0f;
+		OGC_ShapeLookEx( ps.lx, ps.ly, stdz, &mx, &my ); // same curve as the look sticks
+		out->smove = mx * 400.0f;
+		out->fmove = my * 400.0f;
 	}
 
 	// look with a stick (not for the Nunchuk, it points)
@@ -2709,15 +2958,15 @@ qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, f
 	{
 		float tx, ty;
 
-		OGC_ShapeLook( rx, ry, &tx, &ty );
-		*dyaw   -= tx * wii_ir_yawspeed.value * dt;
-		*dpitch -= ty * wii_ir_pitchspeed.value * dt;
+		OGC_ShapeLookEx( ps.rx, ps.ry, stdz, &tx, &ty );
+		out->dyaw   -= tx * wii_ir_yawspeed.value * stsens * dt;
+		out->dpitch -= ty * wii_ir_pitchspeed.value * stsens * dt;
 	}
 
 	// weapon cycling on the press, not while held
-	if( dir != last_dir )
-		*weapon = dir;
-	last_dir = dir;
+	if( dir != ogc_last_dir[port] )
+		out->weapon = dir;
+	ogc_last_dir[port] = dir;
 
 	return true;
 }

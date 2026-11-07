@@ -1231,6 +1231,24 @@ float CL_SplitViewAspect( int player );
 void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
 void CL_SplitRenderView( void );
 void CL_SplitDrawHUD( void );
+qboolean CL_SplitGrab( int player );
+void CL_SplitMenuToggle( int player );
+qboolean CL_SplitLobbyActive( void );
+void CL_SplitLobbyDraw( void );
+void CL_SplitUIInit( void );
+void CL_SplitUIFrame( void );
+qboolean CL_SplitMenuOpen( int player );
+qboolean CL_SplitUIInput( int player, unsigned ui );
+void CL_SplitUIConfig( int player, float *ir_dz, float *stick_dz, float *stick_sens, float *ir_sens, float *autoaim );
+void CL_SplitUIPlayerStarted( int player );
+int CL_SplitPortOf( int player );
+void CL_SplitUIDrawHUD( int player, int x, int y, int w, int h );
+int CL_SplitCount( void );
+float CL_SplitPixelAspectValue( void );
+void CL_SplitDrawText( int x, int y, const char *text, int r, int g, int b, int a );
+int CL_SplitTextWidth( const char *text );
+int CL_SplitTextHeight( void );
+void CL_SplitFill( int x, int y, int w, int h, int r, int g, int b, int a );
 
 //
 // cl_mobile.c
