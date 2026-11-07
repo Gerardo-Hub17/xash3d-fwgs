@@ -406,6 +406,10 @@ static int SV_Multicast( int dest, const vec3_t origin, const edict_t *ent, qboo
 		if( j < 1 || j > numclients ) return 0;
 		current = svs.clients + (j - 1);
 		numclients = 1; // send to one
+
+		// player 2 of the split screen is a fake client: nobody reads its messages,
+		// but its weapon animations are needed to draw its viewmodel
+		SV_SplitSniffMessage( ent, &sv.multicast );
 		break;
 	case MSG_SPEC:
 		specproxy = reliable = true;

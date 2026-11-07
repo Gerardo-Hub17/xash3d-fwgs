@@ -277,9 +277,32 @@ float OGC_GetAspect( void )
 	return sys_wide ? ( 16.0f / 9.0f ) : ( 4.0f / 3.0f );
 }
 
+// aspect (shape on the TV) of the view the pointer works in: the whole screen,
+// or player 1's half in split screen
+static float OGC_ViewAspect( void )
+{
+	if( CL_SplitActive( ))
+		return CL_SplitViewAspect( 0 );
+
+	return OGC_GetAspect( );
+}
+
 static void OGC_PointerTans( float *tx, float *ty )
 {
-	float half = tan( DEG2RAD( bound( 10.0f, cl.local.scr_fov, 150.0f ) * 0.5f ));
+	float half;
+
+	if( CL_SplitActive( ))
+	{
+		// player 1's view is a half of the screen with its own field of view
+		float fx, fy;
+
+		CL_SplitFov( 0, cl.local.scr_fov, &fx, &fy );
+		*tx = tan( DEG2RAD( fx * 0.5f ));
+		*ty = tan( DEG2RAD( fy * 0.5f ));
+		return;
+	}
+
+	half = tan( DEG2RAD( bound( 10.0f, cl.local.scr_fov, 150.0f ) * 0.5f ));
 
 	*ty = half * 0.75f; // vertical FOV is defined against a 4:3 picture
 	*tx = *ty * OGC_GetAspect( );
@@ -1256,11 +1279,6 @@ crosshair sigue al IR. Con Classic/GameCube/raton se queda en el centro.
 */
 qboolean OGC_AimIsPointer( void )
 {
-	// con la pantalla dividida la vista del jugador 1 es una mitad: el puntero
-	// ya no corresponde al centro de su vista
-	if( CL_SplitActive( ))
-		return false;
-
 	return ogc_src == OGC_SRC_WII;
 }
 
@@ -1314,7 +1332,7 @@ static qboolean OGC_GetPointerAngles( float *dyaw, float *dpitch )
 	float tx, ty;
 
 	// con el raton USB en uso el puntero IR no apunta (el mando suele estar en la mesa)
-	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 || CL_SplitActive( ))
+	if( !wii_ir.value || ogc_src != OGC_SRC_WII || refState.width <= 0 || refState.height <= 0 )
 		return false;
 
 	OGC_PointerTans( &tx, &ty );
@@ -1816,6 +1834,17 @@ void OGC_PointerMove( float *pitch, float *yaw )
     nx = ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f;
     ny = ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f;
 
+    if( CL_SplitActive( ))
+    {
+        // pantalla dividida: el puntero se mide dentro de la vista del jugador 1
+        // (-1..1 desde el centro de SU mitad); fuera de ella queda en el borde
+        int rx, ry, rw, rh;
+
+        CL_SplitRect( 0, &rx, &ry, &rw, &rh );
+        nx = ( data->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f );
+        ny = ( data->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f );
+    }
+
     nx = bound( -1.0f, nx, 1.0f );
     ny = bound( -1.0f, ny, 1.0f );
 
@@ -1849,7 +1878,7 @@ void OGC_PointerMove( float *pitch, float *yaw )
     // el giro avanzaba menos pantalla por segundo. Se compensa con la relacion
     // 16:9 / 4:3 (1.0 en 4:3).
     {
-        const float k = OGC_GetAspect() * 0.75f;
+        const float k = OGC_ViewAspect() * 0.75f;
         const float dzx = bound( 0.0f, deadzone / k, 0.95f );
         const float scx = 1.0f - dzx;
 
@@ -2642,10 +2671,14 @@ qboolean OGC_Player2Input( float dt, float *dyaw, float *dpitch, float *fmove, f
 
 			if( data->ir.valid && refState.width > 0 && refState.height > 0 )
 			{
-				const float nx = bound( -1.0f, ( data->ir.x / (float)refState.width ) * 2.0f - 1.0f, 1.0f );
-				const float ny = bound( -1.0f, ( data->ir.y / (float)refState.height ) * 2.0f - 1.0f, 1.0f );
+				// the pointer is measured inside player 2's own view
+				int rx, ry, rw, rh;
+				CL_SplitRect( 1, &rx, &ry, &rw, &rh );
+
+				const float nx = bound( -1.0f, ( data->ir.x - ( rx + rw * 0.5f )) / ( rw * 0.5f ), 1.0f );
+				const float ny = bound( -1.0f, ( data->ir.y - ( ry + rh * 0.5f )) / ( rh * 0.5f ), 1.0f );
 				const float dz = bound( 0.0f, wii_ir_deadzone.value, 0.95f );
-				const float k = OGC_GetAspect() * 0.75f;
+				const float k = CL_SplitViewAspect( 1 ) * 0.75f;
 				const float dzx = bound( 0.0f, dz / k, 0.95f );
 
 				if( fabsf( nx ) > dzx )

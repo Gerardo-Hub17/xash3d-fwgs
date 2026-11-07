@@ -1227,6 +1227,7 @@ void CL_SplitFrame( void );
 void CL_SplitRect( int player, int *x, int *y, int *w, int *h );
 void CL_SplitViewport( int player, int *vp );
 void CL_SplitHudSize( int *w, int *h );
+float CL_SplitViewAspect( int player );
 void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
 void CL_SplitRenderView( void );
 void CL_SplitDrawHUD( void );

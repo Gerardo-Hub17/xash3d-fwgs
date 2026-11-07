@@ -2683,6 +2683,10 @@ void R_RunViewmodelEvents( void )
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
+	// split screen player 2's weapon has no events to run (no muzzle flash)
+	if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL ))
+		return;
+
 	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
 
@@ -2704,8 +2708,12 @@ void R_RunViewmodelEvents( void )
 static void R_DrawViewModelImpl( void )
 {
 	cl_entity_t	*view = tr.viewent;
+	// split screen: the viewent holds player 2's weapon, the local player's health
+	// and light level are not its business
+	qboolean	own = FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL );
 
-	R_GatherPlayerLight( view );
+	if( !own )
+		R_GatherPlayerLight( view );
 
 	if( r_drawviewmodel->value == 0 )
 		return;
@@ -2713,7 +2721,10 @@ static void R_DrawViewModelImpl( void )
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
-	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		return;
+
+	if( !own && ( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer()))
 		return;
 
 	tr.blend = CL_FxBlend( view ) / 255.0f;

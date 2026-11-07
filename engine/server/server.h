@@ -692,6 +692,10 @@ void SV_SplitStop( void );
 void SV_SplitSetInput( const vec3_t angles, float fmove, float smove, float upmove, word buttons );
 void SV_SplitCycleWeapon( int dir );
 void SV_SplitFrame( void );
+void SV_SplitInfo_f( void );
+qboolean SV_SplitTakeAngles( vec3_t angles );
+void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg );
+qboolean SV_SplitGetViewModel( int *modelindex, int *sequence, int *body, unsigned *animcount );
 qboolean SV_SplitGetView( vec3_t origin, vec3_t punch, int *index, float *health, float *armor, float *frags );
 void SV_FakeClientMove( edict_t *ent, const vec3_t viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec );
 

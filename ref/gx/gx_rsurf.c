@@ -2608,7 +2608,7 @@ void R_DrawWorld( void )
 			glState.currentTexturesIndex[u] = 0;
 			glState.currentTextures[u] = NULL;
 		}
-		GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
+		GX_RestoreViewScissor(); // en pantalla dividida el scissor es el de la vista
 		GX_SetClipMode( GX_CLIP_ENABLE );
 		GX_SetCoPlanar( GX_DISABLE );
 		GX_SetColorUpdate( GX_TRUE );

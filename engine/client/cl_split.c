@@ -34,12 +34,16 @@ static struct
 	vec3_t		angles;		// where player 2 looks
 	double		nexttry;	// do not retry a failed start every frame
 	int		drawn_mode;	// layout the HUD was last initialised for
+	unsigned	animcount;	// weapon animation counter last seen
+	int		vmmodel;	// weapon model last seen
+	double		animstart;	// cl.time the current weapon animation started
 } split;
 
 void CL_SplitInit( void )
 {
 	Cvar_RegisterVariable( &wii_split );
 	Cvar_RegisterVariable( &wii_split_name );
+	Cmd_AddCommand( "wii_split_info", SV_SplitInfo_f, "show the server side state of the split screen player 2" );
 }
 
 qboolean CL_SplitActive( void )
@@ -126,6 +130,22 @@ void CL_SplitHudSize( int *w, int *h )
 
 /*
 =============
+CL_SplitViewAspect
+
+shape of a player's view as it looks on the TV (width / height)
+=============
+*/
+float CL_SplitViewAspect( int player )
+{
+	int x, y, w, h;
+
+	CL_SplitRect( player, &x, &y, &w, &h );
+
+	return (float)w / (float)h * CL_SplitPixelAspect( );
+}
+
+/*
+=============
 CL_SplitFov
 
 Each view keeps as much of the normal field of view as its shape allows: the
@@ -203,6 +223,12 @@ void CL_SplitFrame( void )
 		word buttons;
 		int weapon;
 
+		vec3_t forced;
+
+		// the game turned the player (spawn, teleport): start from those angles
+		if( SV_SplitTakeAngles( forced ))
+			VectorCopy( forced, split.angles );
+
 		if( OGC_Player2Input( bound( 0.001f, (float)host.realframetime, 0.1f ), &dyaw, &dpitch, &fmove, &smove, &buttons, &weapon ))
 		{
 			split.angles[YAW] = anglemod( split.angles[YAW] + dyaw );
@@ -224,6 +250,61 @@ void CL_SplitFrame( void )
 
 /*
 =============
+CL_SplitSetupViewModel
+
+fills clgame.viewent with player 2's first person weapon (what V_SetupViewModel
+and the game's view code do for player 1); false when there is nothing to draw
+=============
+*/
+static qboolean CL_SplitSetupViewModel( const vec3_t origin, const vec3_t viewangles )
+{
+	cl_entity_t *view = &clgame.viewent;
+	int modelindex, sequence, body;
+	unsigned animcount;
+	model_t *mod;
+
+	if( !SV_SplitGetViewModel( &modelindex, &sequence, &body, &animcount ))
+		return false;
+
+	mod = CL_ModelHandle( modelindex );
+
+	if( !mod || mod->type != mod_studio )
+		return false;
+
+	// a new animation (or another weapon) starts now
+	if( animcount != split.animcount || modelindex != split.vmmodel || split.animstart <= 0.0 )
+	{
+		split.animcount = animcount;
+		split.vmmodel = modelindex;
+		split.animstart = cl.time;
+	}
+
+	memset( view, 0, sizeof( *view ));
+	view->index = view->curstate.number = cl.playernum + 1;
+	view->model = mod;
+	view->curstate.modelindex = modelindex;
+	view->curstate.sequence = sequence;
+	view->curstate.body = body;
+	view->curstate.framerate = 1.0f;
+	view->curstate.animtime = split.animstart;
+	view->curstate.rendermode = kRenderNormal;
+	view->curstate.renderamt = 255;
+	view->latched.prevsequence = sequence;
+	view->latched.prevanimtime = split.animstart;
+	view->latched.sequencetime = split.animstart - 1.0;
+
+	// the same placement the game's view code gives player 1's weapon
+	VectorCopy( origin, view->origin );
+	view->origin[2] -= 1.0f;
+	view->angles[YAW] = viewangles[YAW];
+	view->angles[PITCH] = -viewangles[PITCH];
+	view->angles[ROLL] = 0.0f;
+
+	return true;
+}
+
+/*
+=============
 CL_SplitRenderView
 
 draws player 2's view; called after player 1's has been drawn
@@ -233,9 +314,11 @@ void CL_SplitRenderView( void )
 {
 	vec3_t origin, punch, oldorg, oldangles;
 	ref_viewpass_t rvp;
+	cl_entity_t savedview;
+	float health = 0.0f;
 	int index;
 
-	if( !split.active || !SV_SplitGetView( origin, punch, &index, NULL, NULL, NULL ))
+	if( !split.active || !SV_SplitGetView( origin, punch, &index, &health, NULL, NULL ))
 		return;
 
 	memset( &rvp, 0, sizeof( rvp ));
@@ -250,7 +333,18 @@ void CL_SplitRenderView( void )
 	VectorCopy( refState.vieworg, oldorg );
 	VectorCopy( refState.viewangles, oldangles );
 
+	// The renderer draws the first person weapon from the engine's viewent, which
+	// holds player 1's. Lend it player 2's weapon for the length of this view.
+	savedview = clgame.viewent;
+
+	if( health > 0.0f && CL_SplitSetupViewModel( origin, rvp.viewangles ))
+	{
+		rvp.flags = ( rvp.flags & ~RF_NO_VIEWMODEL ) | RF_SPLIT_VIEWMODEL;
+	}
+
 	GL_RenderFrame( &rvp );
+
+	clgame.viewent = savedview;
 
 	VectorCopy( oldorg, refState.vieworg );
 	VectorCopy( oldangles, refState.viewangles );

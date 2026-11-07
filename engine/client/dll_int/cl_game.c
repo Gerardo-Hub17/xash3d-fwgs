@@ -860,6 +860,7 @@ static void CL_DrawCrosshair( void )
 	int	x, y, width, height;
 	float xscale, yscale;
 	float rx = 0.0f, rw = refState.width, rh = refState.height;
+	float vw = clgame.viewport[2], vh = clgame.viewport[3]; // size of the view the crosshair lives in
 
 	if( !clgame.ds.pCrosshair || !cl_crosshair.value )
 		return;
@@ -879,8 +880,8 @@ static void CL_DrawCrosshair( void )
 
 		CL_SplitRect( 0, &sx, &sy, &sw, &sh );
 		rx = sx;
-		rw = sw;
-		rh = sh;
+		rw = vw = sw;
+		rh = vh = sh;
 		x = sx + ( sw >> 1 );
 		y = sy + ( sh >> 1 );
 	}
@@ -900,8 +901,8 @@ static void CL_DrawCrosshair( void )
 		if( px >  1.0f ) px =  1.0f;
 		if( py < -1.0f ) py = -1.0f;
 		if( py >  1.0f ) py =  1.0f;
-		x += (int)( px * ( clgame.viewport[2] * 0.5f ));
-		y += (int)( py * ( clgame.viewport[3] * 0.5f ));
+		x += (int)( px * ( vw * 0.5f ));
+		y += (int)( py * ( vh * 0.5f ));
 	}
 #endif
 

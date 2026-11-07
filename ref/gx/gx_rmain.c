@@ -524,6 +524,16 @@ static void R_SetupFrame( void )
 // ultimo viewport aplicado (x, y, ancho, alto), para poder cambiar solo el rango Z
 static f32 gx_vp[4];
 
+// deja el scissor como lo pide la vista actual: pantalla completa, o su mitad en
+// pantalla dividida. Quien lo restablezca a mitad de una vista debe usar esto
+void GX_RestoreViewScissor( void )
+{
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && gx_vp[2] > 0.0f && gx_vp[3] > 0.0f )
+        GX_SetScissor( (u32)gx_vp[0], (u32)gx_vp[1], (u32)gx_vp[2], (u32)gx_vp[3] );
+    else
+        GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
+}
+
 void GX_SetDepthRange( float zmin, float zmax )
 {
     if( gx_vp[2] <= 0.0f || gx_vp[3] <= 0.0f )
