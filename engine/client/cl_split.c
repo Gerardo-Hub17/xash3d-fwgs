@@ -36,20 +36,28 @@ static CVAR_DEFINE_AUTO( wii_split_model3, "scientist", 0, "model of split scree
 
 typedef struct
 {
-	vec3_t		angles;		// where the player looks (players 2-4)
+	vec3_t		angles;		// where the camera looks (players 2-4)
 	double		nexttry;	// do not retry a failed start every frame
 	qboolean	warned;
 
 	// first person weapon
 	unsigned	animcount;	// weapon animation counter last seen
+	unsigned	firecount;	// shots last seen
 	int		vmmodel;	// weapon model last seen
 	double		animstart;	// cl.time the current weapon animation started
-	float		bobphase;
-	float		lag[2];		// the weapon trails behind the camera: yaw, pitch
+	qboolean	firing;		// the sequence is a firing animation chosen here, not the game's
+	int		fireseq;
+	float		bobtime;
+	float		bob;
 	float		fpx, fpy;	// filtered pointer, for the lean
-	float		px, py;		// pointer inside the view (Nunchuk players)
-	qboolean	pointer;
-	float		dyaw, dpitch;	// camera change of this frame
+
+	// controller
+	float		px, py;		// pointer inside the view, -1..1 (the last one seen while it points)
+	qboolean	pointer;	// the controller has a pointer
+	float		roll, tilt;	// twist of the remote
+	int		kind;		// OGC_KIND_*
+	qboolean	irvalid;
+	vec3_t		aim;		// direction of the shots: the camera bent towards the pointer
 } splitp_t;
 
 static struct
@@ -61,6 +69,28 @@ static struct
 	splitp_t	p[SPLIT_MAX_PLAYERS];
 } split;
 
+static void CL_SplitInput_f( void )
+{
+	int i;
+
+	if( !split.active )
+	{
+		Con_Printf( "split screen is not active\n" );
+		return;
+	}
+
+	for( i = 1; i < split.count; i++ )
+	{
+		const splitp_t *p = &split.p[i];
+		float h = 0.0f, a = 0.0f;
+
+		SV_SplitGetView( i, NULL, NULL, NULL, &h, &a, NULL );
+		Con_Printf( "player %d: port %d kind %d pointer %d (ir %d) at %.2f %.2f, roll %.1f tilt %.1f, aim %.1f %.1f, camera %.1f %.1f, shots %u\n",
+			i + 1, CL_SplitPortOf( i ), p->kind, p->pointer, p->irvalid, p->px, p->py, p->roll, p->tilt,
+			p->aim[PITCH], p->aim[YAW], p->angles[PITCH], p->angles[YAW], SV_SplitGetFire( i, NULL ));
+	}
+}
+
 void CL_SplitInit( void )
 {
 	Cvar_RegisterVariable( &wii_split );
@@ -68,6 +98,7 @@ void CL_SplitInit( void )
 	Cvar_RegisterVariable( &wii_split_model1 );
 	Cvar_RegisterVariable( &wii_split_model2 );
 	Cvar_RegisterVariable( &wii_split_model3 );
+	Cmd_AddCommand( "wii_split_input", CL_SplitInput_f, "show what the controllers of the extra split screen players report" );
 	Cmd_AddCommand( "wii_split_info", SV_SplitInfo_f, "show the server side state of the split screen players (optional player number)" );
 	CL_SplitUIInit();
 }
@@ -251,6 +282,8 @@ once per rendered frame: starts and stops the extra players and reads their
 controllers
 =============
 */
+static void CL_SplitAimAngles( int player, const vec3_t camera, float px, float py, vec3_t aim, float *moveyaw );
+
 void CL_SplitFrame( void )
 {
 	const int mode = (int)wii_split.value;
@@ -299,7 +332,10 @@ void CL_SplitFrame( void )
 					VectorClear( p->angles );
 					p->warned = false;
 					p->animstart = 0.0;
-					p->lag[0] = p->lag[1] = 0.0f;
+					p->firing = false;
+					p->firecount = SV_SplitGetFire( i, NULL );
+					p->bobtime = p->bob = 0.0f;
+					p->px = p->py = p->fpx = p->fpy = 0.0f;
 					CL_SplitUIPlayerStarted( i );
 				}
 			}
@@ -341,42 +377,94 @@ void CL_SplitFrame( void )
 			ogc_psettings_t cfg;
 			ogc_pinput_t in;
 			vec3_t forced;
-			float fmove = 0.0f, smove = 0.0f;
+			float fmove = 0.0f, smove = 0.0f, autoaim = 0.0f;
 			word buttons = 0;
 
-			CL_SplitUIConfig( i, &cfg.ir_deadzone, &cfg.stick_deadzone, &cfg.stick_sens, &cfg.ir_sens, NULL );
+			CL_SplitUIConfig( i, &cfg.ir_deadzone, &cfg.stick_deadzone, &cfg.stick_sens, &cfg.ir_sens, &autoaim );
 
 			// the game turned the player (spawn, teleport): start from those angles
 			if( SV_SplitTakeAngles( i, forced ))
 				VectorCopy( forced, p->angles );
 
-			p->dyaw = p->dpitch = 0.0f;
-			p->pointer = false;
+			p->roll = p->tilt = 0.0f;
 
 			if( OGC_PlayerInput( CL_SplitPortOf( i ), i, dt, &cfg, &in ))
 			{
 				const qboolean menu = CL_SplitUIInput( i, in.ui );
 
+				p->kind = in.kind;
+				p->pointer = ( in.kind == OGC_KIND_NUNCHUK );
+				p->irvalid = in.pointer;
+
+				// like player 1's pointer, the last position stays while the sensor loses the bar
+				if( in.pointer )
+				{
+					p->px = in.px;
+					p->py = in.py;
+				}
+
+				if( !p->pointer )
+					p->px = p->py = 0.0f;
+
 				if( !menu )
 				{
-					p->dyaw = in.dyaw;
-					p->dpitch = in.dpitch;
-					p->angles[YAW] = anglemod( p->angles[YAW] + in.dyaw );
-					p->angles[PITCH] = bound( -89.0f, p->angles[PITCH] + in.dpitch, 89.0f );
+					vec3_t eye, aim;
+					float dyaw, dpitch, ay = 0.0f, ap = 0.0f, speed = 1.0f, health = 0.0f;
+					float moveyaw = 0.0f;
+					int self = 0;
+
+					// aim assist: the same as player 1's, with the player's own strength
+					if( autoaim > 0.0f && SV_SplitGetView( i, eye, NULL, &self, &health, NULL, NULL ) && health > 0.0f )
+					{
+						if( p->pointer )
+							CL_SplitAimAngles( i, p->angles, p->px, p->py, aim, NULL );
+						else VectorCopy( p->angles, aim );
+
+						OGC_PlayerAssist( i, eye, self, aim, autoaim, dt, p->pointer,
+							in.dyaw != 0.0f || in.dpitch != 0.0f, &ay, &ap, &speed );
+					}
+
+					dyaw = in.dyaw * speed + ay;
+					dpitch = in.dpitch * speed + ap;
+
+					p->angles[YAW] = anglemod( p->angles[YAW] + dyaw );
+					p->angles[PITCH] = bound( -89.0f, p->angles[PITCH] + dpitch, 89.0f );
+
 					fmove = in.fmove;
 					smove = in.smove;
 					buttons = in.buttons;
-					p->px = in.px;
-					p->py = in.py;
-					p->pointer = in.pointer;
+					p->roll = in.roll;
+					p->tilt = in.tilt;
+
+					// the shots go where the pointer is, the camera stays put (as for player 1)
+					if( p->pointer )
+						CL_SplitAimAngles( i, p->angles, p->px, p->py, p->aim, &moveyaw );
+					else VectorCopy( p->angles, p->aim );
+
+					// movement is relative to the camera, not to the pointer
+					if( moveyaw != 0.0f )
+					{
+						const float c = cosf( DEG2RAD( moveyaw )), sn = sinf( DEG2RAD( moveyaw ));
+						const float fm = fmove, sm = smove;
+
+						fmove = fm * c - sm * sn;
+						smove = fm * sn + sm * c;
+					}
 
 					if( in.weapon )
 						SV_SplitCycleWeapon( i, in.weapon );
 				}
+				else VectorCopy( p->angles, p->aim );
 			}
-			else CL_SplitUIInput( i, in.ui ); // a bare remote can still open its menu
+			else
+			{
+				CL_SplitUIInput( i, in.ui ); // a bare remote can still open its menu
+				p->pointer = false;
+				p->px = p->py = 0.0f;
+				VectorCopy( p->angles, p->aim );
+			}
 
-			SV_SplitSetInput( i, p->angles, fmove, smove, 0.0f, buttons );
+			SV_SplitSetInput( i, p->aim, fmove, smove, 0.0f, buttons );
 		}
 	}
 #endif
@@ -384,22 +472,231 @@ void CL_SplitFrame( void )
 
 /*
 =============
-CL_SplitSetupViewModel
+CL_SplitAimAngles
 
-fills clgame.viewent with a player's first person weapon (what V_SetupViewModel
-and the game's view code do for player 1); false when there is nothing to draw
+The direction the shots of a pointer player take: the camera angles bent towards
+the pointer (px, py inside the view, -1..1), what OGC_ApplyPointerToAim does for
+player 1. The projection is the one of the player's own view, so the shot lands
+under the crosshair. moveyaw gets how far the yaw was turned.
 =============
 */
-static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const vec3_t viewangles )
+static void CL_SplitAimAngles( int player, const vec3_t camera, float px, float py, vec3_t aim, float *moveyaw )
+{
+	float fx, fy, tx, ty, flat, dyaw, dpitch;
+	vec3_t fwd, right, up, dir;
+
+	VectorCopy( camera, aim );
+	aim[ROLL] = 0.0f;
+
+	if( moveyaw )
+		*moveyaw = 0.0f;
+
+	CL_SplitFov( player, cl.local.scr_fov, &fx, &fy );
+	tx = tanf( DEG2RAD( fx ) * 0.5f ) * bound( -1.0f, px, 1.0f );
+	ty = tanf( DEG2RAD( fy ) * 0.5f ) * bound( -1.0f, py, 1.0f );
+
+	AngleVectors( camera, fwd, right, up );
+	VectorMA( fwd, tx, right, dir );
+	VectorMA( dir, -ty, up, dir );
+	VectorNormalize( dir );
+
+	flat = sqrtf( dir[0] * dir[0] + dir[1] * dir[1] );
+
+	// near the poles yaw is ill-defined
+	if( flat < 0.02f )
+		return;
+
+	dyaw = RAD2DEG( atan2f( dir[1], dir[0] )) - camera[YAW];
+	while( dyaw > 180.0f ) dyaw -= 360.0f;
+	while( dyaw < -180.0f ) dyaw += 360.0f;
+	dpitch = -RAD2DEG( atan2f( dir[2], flat )) - camera[PITCH];
+
+	aim[YAW] = camera[YAW] + dyaw;
+	aim[PITCH] = bound( -89.0f, camera[PITCH] + dpitch, 89.0f );
+
+	if( moveyaw )
+		*moveyaw = dyaw;
+}
+
+// where a player's pointer is inside its view; false for a controller that has none
+qboolean CL_SplitPointer( int player, float *px, float *py )
+{
+	if( !split.active || player < 0 || player >= split.count )
+		return false;
+
+	if( player == 0 )
+	{
+#if XASH_OGC
+		if( OGC_AimIsPointer( ))
+		{
+			float x = 0.0f, y = 0.0f;
+
+			OGC_GetPointer( &x, &y );
+			*px = bound( -1.0f, x, 1.0f );
+			*py = bound( -1.0f, y, 1.0f );
+			return true;
+		}
+#endif
+		return false;
+	}
+
+	if( !split.p[player].pointer )
+		return false;
+
+	*px = split.p[player].px;
+	*py = split.p[player].py;
+
+	return true;
+}
+
+static float CL_SplitCvar( const char *name, float def )
+{
+	const convar_t *var = Cvar_FindVar( name );
+
+	return var ? var->value : def;
+}
+
+/*
+=============
+CL_SplitPickFireSeq
+
+The game plays the firing animation of a weapon from a client event, which a fake
+client never receives. Pick the sequence by its name instead ("fire", "shoot",
+"launch", "throw"; "alt..." for the secondary attack); -1 when there is none.
+=============
+*/
+static int CL_SplitPickFireSeq( model_t *mod, qboolean alt )
+{
+	static const char *skip[] = { "reload", "idle", "draw", "holster", "deploy", "fidget", "spin", "charge",
+		"pin", "pull", "empty", "cycle", "stop", "off", "down", "up", "hide" };
+	const studiohdr_t *hdr;
+	const mstudioseqdesc_t *seq;
+	int i, j, first[64], nfirst = 0, any[64], nany = 0, altlist[64], nalt = 0;
+
+	if( !mod || mod->type != mod_studio )
+		return -1;
+
+	hdr = (const studiohdr_t *)Mod_StudioExtradata( mod );
+
+	if( !hdr || hdr->numseq <= 0 )
+		return -1;
+
+	seq = (const mstudioseqdesc_t *)((const byte *)hdr + hdr->seqindex );
+
+	for( i = 0; i < hdr->numseq; i++ )
+	{
+		const char *label = seq[i].label;
+		const size_t len = Q_strlen( label );
+		qboolean bad = false, isalt;
+
+		if( !Q_stristr( label, "fire" ) && !Q_stristr( label, "shoot" ) && !Q_stristr( label, "launch" )
+			&& !Q_stristr( label, "throw" ) && !Q_stristr( label, "attack" ))
+			continue;
+
+		for( j = 0; j < (int)ARRAYSIZE( skip ); j++ )
+		{
+			if( Q_stristr( label, skip[j] ))
+			{
+				bad = true;
+				break;
+			}
+		}
+
+		isalt = Q_stristr( label, "alt" ) || Q_stristr( label, "launch" ) || Q_stristr( label, "secondary" );
+
+		// "altfireon" starts the secondary beam, it contains "on"/"off" only as part of the name
+		if( bad && Q_stristr( label, "altfireon" ))
+			bad = false;
+
+		if( bad )
+			continue;
+
+		if( isalt )
+		{
+			if( nalt < (int)ARRAYSIZE( altlist ))
+				altlist[nalt++] = i;
+			continue;
+		}
+
+		if( nany < (int)ARRAYSIZE( any ))
+			any[nany++] = i;
+
+		// "fire", "fire1", "shoot": the plain one; "fire2", "fire3" are the variants
+		if( len == 0 || label[len - 1] < '2' || label[len - 1] > '9' )
+		{
+			if( nfirst < (int)ARRAYSIZE( first ))
+				first[nfirst++] = i;
+		}
+	}
+
+	if( alt && nalt )
+		return altlist[COM_RandomLong( 0, nalt - 1 )];
+
+	if( nfirst )
+		return first[COM_RandomLong( 0, nfirst - 1 )];
+
+	if( nany )
+		return any[COM_RandomLong( 0, nany - 1 )];
+
+	return nalt ? altlist[0] : -1;
+}
+
+/*
+=============
+CL_SplitBob
+
+the weapon bob of the game's view code (V_CalcBob of the client dll), from the
+player's speed on the ground
+=============
+*/
+static float CL_SplitBob( splitp_t *p, float speed, qboolean ground, float dt )
+{
+	const float bobcycle = Q_max( 0.05f, CL_SplitCvar( "cl_bobcycle", 0.8f ));
+	const float bobup = bound( 0.05f, CL_SplitCvar( "cl_bobup", 0.5f ), 0.95f );
+	const float clbob = CL_SplitCvar( "cl_bob", 0.01f );
+	float cycle, bob;
+
+	// in the air the last value stays
+	if( !ground || dt <= 0.0f )
+		return p->bob;
+
+	p->bobtime += dt;
+	cycle = p->bobtime - (int)( p->bobtime / bobcycle ) * bobcycle;
+	cycle /= bobcycle;
+
+	if( cycle < bobup )
+		cycle = M_PI_F * cycle / bobup;
+	else cycle = M_PI_F + M_PI_F * ( cycle - bobup ) / ( 1.0f - bobup );
+
+	bob = speed * clbob;
+	bob = bob * 0.3f + bob * 0.7f * sinf( cycle );
+	bob = Q_min( bob, 4.0f );
+	bob = Q_max( bob, -7.0f );
+
+	p->bob = bob;
+
+	return bob;
+}
+
+/*
+=============
+CL_SplitSetupViewModel
+
+fills clgame.viewent with a player's first person weapon the way the game's view
+code does for player 1 (V_CalcNormalRefdef of the client dll); false when there
+is nothing to draw. angles are the camera's, without the punch of the recoil
+=============
+*/
+static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const vec3_t angles )
 {
 	splitp_t *p = &split.p[player];
 	cl_entity_t *view = &clgame.viewent;
 	const float dt = bound( 0.0f, (float)host.realframetime, 0.1f );
 	int modelindex, sequence, body;
-	unsigned animcount;
-	qboolean ground = true;
+	unsigned animcount, firecount;
+	qboolean ground = true, alt = false;
 	vec3_t forward, right, up;
-	float speed, s, tx, ty;
+	float speed, bob;
 	model_t *mod;
 
 	if( !SV_SplitGetViewModel( player, &modelindex, &sequence, &body, &animcount ))
@@ -410,13 +707,34 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 	if( !mod || mod->type != mod_studio )
 		return false;
 
-	// a new animation (or another weapon) starts now
+	// a new animation from the game (or another weapon) starts now
 	if( animcount != p->animcount || modelindex != p->vmmodel || p->animstart <= 0.0 )
 	{
 		p->animcount = animcount;
 		p->vmmodel = modelindex;
 		p->animstart = cl.time;
+		p->firing = false;
 	}
+
+	// a shot: the game's own animation for it comes from a client event
+	firecount = SV_SplitGetFire( player, &alt );
+
+	if( firecount != p->firecount )
+	{
+		const int seq = CL_SplitPickFireSeq( mod, alt );
+
+		p->firecount = firecount;
+
+		if( seq >= 0 )
+		{
+			p->firing = true;
+			p->fireseq = seq;
+			p->animstart = cl.time;
+		}
+	}
+
+	if( p->firing )
+		sequence = p->fireseq;
 
 	memset( view, 0, sizeof( *view ));
 	view->index = view->curstate.number = cl.playernum + 1;
@@ -432,46 +750,36 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 	view->latched.prevanimtime = p->animstart;
 	view->latched.sequencetime = p->animstart - 1.0;
 
-	// the same placement the game's view code gives player 1's weapon
-	VectorCopy( origin, view->origin );
-	view->origin[2] -= 1.0f;
-	view->angles[YAW] = viewangles[YAW];
-	view->angles[PITCH] = -viewangles[PITCH];
+	// the weapon takes the camera's angles (pitch is inverted for models), no turning lag
+	// and no punch: the camera kicks, the weapon does not
+	view->angles[YAW] = angles[YAW];
+	view->angles[PITCH] = -angles[PITCH];
 	view->angles[ROLL] = 0.0f;
 
-	AngleVectors( viewangles, forward, right, up );
+	AngleVectors( angles, forward, right, up );
 
-	// walking: the weapon bobs
+	// walking: the weapon bob of the game
 	speed = SV_SplitGetSpeed( player, &ground );
-	s = ground ? bound( 0.0f, speed / 320.0f, 1.0f ) : 0.0f;
-	p->bobphase += dt * ( 6.0f + 6.0f * s );
+	bob = CL_SplitBob( p, speed, ground, dt );
 
-	if( s > 0.01f )
-	{
-		VectorMA( view->origin, sinf( p->bobphase ) * 0.8f * s, right, view->origin );
-		VectorMA( view->origin, fabsf( sinf( p->bobphase )) * 0.9f * s - 0.4f * s, up, view->origin );
-		VectorMA( view->origin, 0.8f * s, forward, view->origin );
-	}
+	VectorCopy( origin, view->origin );
+	VectorMA( view->origin, bob * 0.4f, forward, view->origin );
+	view->origin[2] += bob;
 
-	// turning: the weapon trails a little behind the camera and then catches up
-	if( dt > 0.0f )
-	{
-		const float k = bound( 0.0f, dt * 10.0f, 1.0f );
-		const float lag_y = bound( -4.0f, p->dyaw * 0.9f, 4.0f );	// camera turned left (+) -> weapon lags right (-)
-		const float lag_p = bound( -4.0f, p->dpitch * 0.9f, 4.0f );
+	// throw in a little tilt
+	view->angles[YAW] -= bob * 0.5f;
+	view->angles[ROLL] -= bob * 1.0f;
+	view->angles[PITCH] -= bob * 0.3f;
 
-		p->lag[0] += ( -lag_y - p->lag[0] ) * k;
-		p->lag[1] += ( -lag_p - p->lag[1] ) * k;
-	}
+	view->origin[2] -= 1.0f;
 
-	view->angles[YAW] += p->lag[0];
-	view->angles[PITCH] += -p->lag[1];
-
-	// a pointer (Nunchuk) aims the weapon the way player 1's remote does
+	// the weapon aims where the pointer is, and turns with the remote, like player 1's
 	if( p->pointer )
 	{
-		float fx, fy, kk = 1.0f, smooth = Cvar_VariableValue( "wii_gun_smooth" );
-		const float sway = Cvar_VariableValue( "wii_ir_gunsway" ), shift = Cvar_VariableValue( "wii_gun_shift" );
+		float fx, fy, tx, ty, kk = 1.0f;
+		const float smooth = CL_SplitCvar( "wii_gun_smooth", 0.0f );
+		const float sway = CL_SplitCvar( "wii_ir_gunsway", 0.0f );
+		const float shift = CL_SplitCvar( "wii_gun_shift", 0.0f );
 
 		CL_SplitFov( player, cl.local.scr_fov, &fx, &fy );
 		tx = tanf( DEG2RAD( fx ) * 0.5f );
@@ -483,9 +791,14 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		p->fpx += ( bound( -1.0f, p->px, 1.0f ) - p->fpx ) * kk;
 		p->fpy += ( bound( -1.0f, p->py, 1.0f ) - p->fpy ) * kk;
 
+		if( fabsf( p->fpx ) < 0.001f ) p->fpx = 0.0f;
+		if( fabsf( p->fpy ) < 0.001f ) p->fpy = 0.0f;
+
 		view->angles[YAW]   += -RAD2DEG( atanf( p->fpx * tx ));
 		view->angles[PITCH] -= RAD2DEG( atanf( p->fpy * ty ));
-		view->angles[ROLL]  += -p->fpx * sway;
+		view->angles[PITCH] += p->tilt;
+		view->angles[ROLL]  += p->roll - p->fpx * sway;
+		view->angles[ROLL]   = bound( -90.0f, view->angles[ROLL], 90.0f );
 
 		if( shift != 0.0f )
 		{
@@ -494,6 +807,8 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		}
 	}
 	else p->fpx = p->fpy = 0.0f;
+
+	view->angles[PITCH] = bound( -89.0f, view->angles[PITCH], 89.0f );
 
 	VectorCopy( view->angles, view->curstate.angles );
 	VectorCopy( view->angles, view->latched.prevangles );
@@ -542,7 +857,7 @@ void CL_SplitRenderView( void )
 		// holds player 1's. Lend it this player's weapon for the length of its view.
 		savedview = clgame.viewent;
 
-		if( health > 0.0f && CL_SplitSetupViewModel( player, origin, rvp.viewangles ))
+		if( health > 0.0f && CL_SplitSetupViewModel( player, origin, split.p[player].angles ))
 			rvp.flags = ( rvp.flags & ~RF_NO_VIEWMODEL ) | RF_SPLIT_VIEWMODEL;
 
 		GL_RenderFrame( &rvp );

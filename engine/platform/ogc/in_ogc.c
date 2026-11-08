@@ -1443,25 +1443,29 @@ static qboolean OGC_IsFriendlyModel( const model_t *mod )
 Finds the best target within the capture cone around aim_angles.
 Returns the angular offset to it (dyaw, dpitch) and how far off centre it is.
 */
-static qboolean OGC_FindAssistTarget( const vec3_t aim_angles, float *dyaw, float *dpitch, float *angle )
+static qboolean OGC_FindAssistTargetEx( int slot, const vec3_t eye, int self, const vec3_t aim_angles, float *dyaw, float *dpitch, float *angle )
 {
-	static int los_ent = -1;
-	static double los_time = 0.0;
-	static qboolean los_ok = false;
+	// one line of sight cache per player: the players take turns in the same frame
+	static int los_ent_a[SPLIT_MAX_PLAYERS] = { -1, -1, -1, -1 };
+	static double los_time_a[SPLIT_MAX_PLAYERS];
+	static qboolean los_ok_a[SPLIT_MAX_PLAYERS];
+	int los_ent = los_ent_a[bound( 0, slot, SPLIT_MAX_PLAYERS - 1 )];
+	double los_time = los_time_a[bound( 0, slot, SPLIT_MAX_PLAYERS - 1 )];
+	qboolean los_ok = los_ok_a[bound( 0, slot, SPLIT_MAX_PLAYERS - 1 )];
+	const int cache = bound( 0, slot, SPLIT_MAX_PLAYERS - 1 );
 
     const float cone = bound( 0.5f, wii_aimassist_cone.value, 30.0f );
 	const float range = bound( 100.0f, wii_aimassist_range.value, 8192.0f );
 	cl_entity_t *local;
-	vec3_t eye, fwd, best_pt, to;
+	vec3_t fwd, best_pt, to;
     float best_eff = cone, best_ang = 0.0f;
 	int best = -1, i;
 
 	if( !clgame.entities || !clgame.pmove || clgame.pmove->numphysent <= 0 )
 		return false;
 
-	local = CL_GetEntityByIndex( cl.playernum + 1 );
+	local = CL_GetEntityByIndex( self );
 
-	VectorAdd( cl.simorg, cl.viewheight, eye );
 	AngleVectors( aim_angles, fwd, NULL, NULL );
 
 	for( i = 1; i < clgame.maxEntities; i++ )
@@ -1552,17 +1556,20 @@ static qboolean OGC_FindAssistTarget( const vec3_t aim_angles, float *dyaw, floa
 
 	if( best < 0 )
 	{
-		los_ent = -1;
+		los_ent_a[cache] = -1;
 		return false;
 	}
 
 	if( best != los_ent || host.realtime - los_time > 0.1 )
 	{
-		pmtrace_t tr = CL_TraceLine( eye, best_pt, PM_WORLD_ONLY );
+		pmtrace_t tr = CL_TraceLine( (float *)eye, best_pt, PM_WORLD_ONLY );
 
 		los_ok = !tr.allsolid && tr.fraction >= 0.99f;
 		los_ent = best;
 		los_time = host.realtime;
+		los_ent_a[cache] = los_ent;
+		los_time_a[cache] = los_time;
+		los_ok_a[cache] = los_ok;
 	}
 
 	if( !los_ok )
@@ -1584,6 +1591,15 @@ static qboolean OGC_FindAssistTarget( const vec3_t aim_angles, float *dyaw, floa
 	return true;
 }
 
+static qboolean OGC_FindAssistTarget( const vec3_t aim_angles, float *dyaw, float *dpitch, float *angle )
+{
+	vec3_t eye;
+
+	VectorAdd( cl.simorg, cl.viewheight, eye );
+
+	return OGC_FindAssistTargetEx( 0, eye, cl.playernum + 1, aim_angles, dyaw, dpitch, angle );
+}
+
 /*
 Acercamiento suave hacia el objetivo: cada cuadro cubre una fraccion del error
 (aproximacion exponencial), asi corrige poco si ya casi apunta y mucho si esta
@@ -1595,6 +1611,50 @@ static float OGC_AssistBlend( float offset, float dt )
     float f = bound( 0.0f, 1.0f - offset / bound( 0.5f, wii_aimassist_cone.value, 30.0f ), 1.0f );
 
     return bound( 0.0f, str * f * 8.0f * dt, 0.25f );
+}
+
+/*
+============
+OGC_PlayerAssist
+
+The aim assist of players 2-4, the same as player 1's: the camera is nudged towards
+the enemy closest to where the player aims. aim is the direction the shots take
+(the camera, or camera plus pointer offset); percent is the player's own strength
+setting (100 = wii_aimassist_strength). With a stick the speed also drops near
+the target (speed), with a pointer the camera is only pulled.
+============
+*/
+void OGC_PlayerAssist( int player, const vec3_t eye, int self, const vec3_t aim, float percent, float dt, qboolean pointer, qboolean moving, float *dyaw, float *dpitch, float *speed )
+{
+	vec3_t angles = { aim[PITCH], aim[YAW], 0.0f };
+	float ay, ap, ang, str, f, blend;
+
+	*dyaw = *dpitch = 0.0f;
+	*speed = 1.0f;
+
+	if( wii_aimassist.value <= 0.0f || percent <= 0.0f )
+		return;
+
+	if( cls.state != ca_active || cls.signon != SIGNONS || cls.key_dest != key_game || cl.paused )
+		return;
+
+	if( !OGC_FindAssistTargetEx( player, eye, self, angles, &ay, &ap, &ang ))
+		return;
+
+	str = bound( 0.0f, percent * 0.01f, 1.0f );
+	f = bound( 0.0f, 1.0f - ang / bound( 0.5f, wii_aimassist_cone.value, 20.0f ), 1.0f );
+	blend = bound( 0.0f, str * f * 8.0f * dt, 0.25f );
+
+	if( !pointer )
+	{
+		if( moving )
+			*speed = 1.0f - str * 0.5f * f;
+		else
+			blend *= bound( 0.0f, wii_aimassist_idle.value, 1.0f );
+	}
+
+	*dyaw = ay * blend;
+	*dpitch = ap * blend;
 }
 
 static float ogc_aim_delta[2];
@@ -2007,16 +2067,16 @@ does not shake with every wrist tremor. The pitch is only used when the IR
 sensor has lost the bar - otherwise the pointer already leans the weapon.
 ============
 */
-static void OGC_GetRemoteTilt( float *roll, float *pitch )
+static void OGC_RemoteTiltEx( int chan, qboolean usable, float *f_roll_p, float *f_pitch_p, float *roll, float *pitch )
 {
-	static float f_roll, f_pitch;
+	float f_roll = *f_roll_p, f_pitch = *f_pitch_p;
 	float t_roll = 0.0f, t_pitch = 0.0f, k;
 	u32 type = WPAD_EXP_NONE;
 
-	if( wii_gun_tilt.value != 0.0f && ogc_src == OGC_SRC_WII
-		&& WPAD_Probe( WPAD_CHAN_0, &type ) == WPAD_ERR_NONE && type != WPAD_EXP_CLASSIC )
+	if( wii_gun_tilt.value != 0.0f && usable
+		&& WPAD_Probe( chan, &type ) == WPAD_ERR_NONE && type != WPAD_EXP_CLASSIC )
 	{
-		WPADData *data = WPAD_Data( WPAD_CHAN_0 );
+		WPADData *data = WPAD_Data( chan );
 
 		if( data )
 		{
@@ -2055,8 +2115,17 @@ static void OGC_GetRemoteTilt( float *roll, float *pitch )
 	if( fabsf( f_roll )  < 0.05f ) f_roll  = 0.0f;
 	if( fabsf( f_pitch ) < 0.05f ) f_pitch = 0.0f;
 
+	*f_roll_p = f_roll;
+	*f_pitch_p = f_pitch;
 	*roll  = f_roll;
 	*pitch = f_pitch;
+}
+
+static void OGC_GetRemoteTilt( float *roll, float *pitch )
+{
+	static float f_roll, f_pitch;
+
+	OGC_RemoteTiltEx( WPAD_CHAN_0, ogc_src == OGC_SRC_WII, &f_roll, &f_pitch, roll, pitch );
 }
 
 /*
@@ -2893,6 +2962,14 @@ qboolean OGC_PlayerInput( int port, int player, float dt, const ogc_psettings_t 
 		// no controller, or a bare remote (it can only navigate menus)
 		ogc_last_dir[port] = 0;
 		return false;
+	}
+
+	// the twist of the remote turns the weapon like it does for player 1
+	if( ir_turn )
+	{
+		static float f_roll[SPLIT_MAX_PLAYERS], f_tilt[SPLIT_MAX_PLAYERS];
+
+		OGC_RemoteTiltEx( port, true, &f_roll[port], &f_tilt[port], &out->roll, &out->tilt );
 	}
 
 	// IR pointer of the Nunchuk player, measured inside its own view

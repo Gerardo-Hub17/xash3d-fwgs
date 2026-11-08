@@ -2018,7 +2018,8 @@ void Con_DrawConsole( void )
 	switch( cls.state )
 	{
 	case ca_disconnected:
-		if( cls.key_dest != key_menu )
+		// the split screen lobby is drawn over an empty screen, not over the console
+		if( cls.key_dest != key_menu && !CL_SplitLobbyActive( ))
 		{
 			Con_DrawSolidConsole( refState.height );
 			Key_SetKeyDest( key_console );

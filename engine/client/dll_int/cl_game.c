@@ -1703,6 +1703,77 @@ static client_sprite_t *SPR_GetList( char *psz, int *piCount )
 
 /*
 =============
+Split screen HUD sprites
+
+The HUD of players 2-4 is drawn by the engine with the same sprites the game's
+client uses for player 1 (hud.txt and the weapon lists), in framebuffer pixels.
+=============
+*/
+HSPRITE CL_SplitLoadSprite( const char *name )
+{
+	return pfnSPR_Load( name );
+}
+
+const client_sprite_t *CL_SplitSpriteList( const char *file, int *count )
+{
+	char name[MAX_QPATH];
+
+	Q_strncpy( name, file, sizeof( name ));
+
+	return SPR_GetList( name, count );
+}
+
+// draws the rectangle prc of a sprite at x, y (framebuffer pixels) scaled by sx, sy
+void CL_SplitDrawSprite( HSPRITE hspr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode )
+{
+	const model_t *spr = CL_GetSpritePointer( hspr );
+	const model_t *saved = clgame.ds.pSprite;
+	float s1, t1, s2, t2, w, h;
+	int iw = 0, ih = 0, texnum;
+	wrect_t rc;
+
+	if( !spr )
+		return;
+
+	R_GetSpriteParms( &iw, &ih, NULL, 0, spr );
+	texnum = R_GetSpriteTexture( spr, 0 );
+
+	if( iw <= 0 || ih <= 0 || texnum <= 0 )
+		return;
+
+	if( prc )
+		rc = *prc;
+	else
+	{
+		rc.left = rc.top = 0;
+		rc.right = iw;
+		rc.bottom = ih;
+	}
+
+	if( rc.left < 0 || rc.left >= iw ) rc.left = 0;
+	if( rc.top < 0 || rc.top >= ih ) rc.top = 0;
+	if( rc.right <= 0 || rc.right > iw ) rc.right = iw;
+	if( rc.bottom <= 0 || rc.bottom > ih ) rc.bottom = ih;
+
+	s1 = rc.left;
+	t1 = rc.top;
+	s2 = rc.right;
+	t2 = rc.bottom;
+	SPR_AdjustTexCoords( texnum, iw, ih, &s1, &t1, &s2, &t2 );
+
+	w = ( rc.right - rc.left ) * sx;
+	h = ( rc.bottom - rc.top ) * sy;
+
+	ref.dllFuncs.GL_SetRenderMode( rendermode );
+	ref.dllFuncs.Color4ub( bound( 0, r, 255 ), bound( 0, g, 255 ), bound( 0, b, 255 ), bound( 0, a, 255 ));
+	ref.dllFuncs.R_DrawStretchPic( x, y, w, h, s1, t1, s2, t2, texnum );
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+
+	clgame.ds.pSprite = saved;
+}
+
+/*
+=============
 CL_FillRGBA
 
 =============

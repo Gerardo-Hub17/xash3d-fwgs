@@ -155,6 +155,7 @@ typedef struct
 	int		kind;		// OGC_KIND_*
 	float		px, py;		// pointer inside the player's view, -1..1
 	qboolean	pointer;	// px, py are valid
+	float		roll, tilt;	// how far the remote is twisted (roll) and tipped (pitch, without IR), degrees
 } ogc_pinput_t;
 
 
@@ -184,6 +185,7 @@ qboolean OGC_AimIsPointer( void );
 float OGC_GetAspect( void );
 qboolean OGC_PlayerInput( int port, int player, float dt, const ogc_psettings_t *cfg, ogc_pinput_t *out );
 unsigned OGC_PortUI( int port, int *kind );
+void OGC_PlayerAssist( int player, const vec3_t eye, int self, const vec3_t aim, float percent, float dt, qboolean pointer, qboolean moving, float *dyaw, float *dpitch, float *speed );
 void OGC_ApplyPointerToViewModel( struct cl_entity_s *view );
 void OGC_GetAimDelta( float *dyaw, float *dpitch );
 void OGC_RestoreAim( vec3_t viewangles );

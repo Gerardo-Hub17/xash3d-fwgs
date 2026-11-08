@@ -4077,6 +4077,9 @@ void GAME_EXPORT SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word 
 		VectorAdd( pInvoker->v.origin, pInvoker->v.view_ofs, pvspoint );
 		args.entindex = invokerIndex = NUM_FOR_EDICT( pInvoker );
 
+		// split screen players have no client to play the event for their own view model
+		SV_SplitNoteEvent( pInvoker, sv.event_precache[eventindex] );
+
 		// g-cont. allow 'ducking' param for all entities
 		args.ducking = FBitSet( pInvoker->v.flags, FL_DUCKING ) ? true : false;
 

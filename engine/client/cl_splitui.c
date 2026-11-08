@@ -118,17 +118,17 @@ static const struct
 };
 
 // players 2-4 keep their settings in a saved cvar: "ir_dz stick_dz stick_sens ir_sens autoaim" in percent
-static CVAR_DEFINE_AUTO( wii_split_cfg1, "35 16 100 100 0", FCVAR_ARCHIVE, "split screen player 2 settings (internal)" );
-static CVAR_DEFINE_AUTO( wii_split_cfg2, "35 16 100 100 0", FCVAR_ARCHIVE, "split screen player 3 settings (internal)" );
-static CVAR_DEFINE_AUTO( wii_split_cfg3, "35 16 100 100 0", FCVAR_ARCHIVE, "split screen player 4 settings (internal)" );
+static CVAR_DEFINE_AUTO( wii_split_set1, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 2 settings (internal)" );
+static CVAR_DEFINE_AUTO( wii_split_set2, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 3 settings (internal)" );
+static CVAR_DEFINE_AUTO( wii_split_set3, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 4 settings (internal)" );
 
-static convar_t *const ui_cfgvars[] = { NULL, &wii_split_cfg1, &wii_split_cfg2, &wii_split_cfg3 };
+static convar_t *const ui_cfgvars[] = { NULL, &wii_split_set1, &wii_split_set2, &wii_split_set3 };
 
 static int ui_cfg[SPLIT_MAX_PLAYERS][ROW_COUNT]; // percent, for players 2-4
 
 static void UI_LoadCfg( int player )
 {
-	int v[5] = { 35, 16, 100, 100, 0 };
+	int v[5] = { 35, 16, 100, 100, 35 };
 	int i;
 
 	if( player > 0 && player < SPLIT_MAX_PLAYERS )
@@ -391,7 +391,7 @@ static const char *UI_WeaponName( int id )
 	return "";
 }
 
-static void UI_DrawHUD( int player, int x, int y, int w, int h )
+static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 {
 	const float k = CL_SplitPixelAspectValue();
 	const int th = CL_SplitTextHeight();
@@ -483,6 +483,414 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 			UI_TextRight( x + w - mx, ay - th - 2, UI_WeaponName( weapon ), 200, 200, 200 );
 		}
 		else UI_TextRight( x + w - mx, ay, UI_WeaponName( weapon ), 200, 200, 200 );
+	}
+}
+
+/*
+=============
+HUD of the extra players, drawn like the game's own (health, armour, ammo,
+flashlight, crosshair) with the sprites of sprites/hud.txt and the weapon lists
+=============
+*/
+typedef struct
+{
+	HSPRITE		spr;
+	wrect_t		rc;
+	qboolean	ok;
+} hudspr_t;
+
+static struct
+{
+	int		res;		// 320 or 640: the sprites are laid out for that screen width
+	int		servercount;	// sprite handles are only good for the map they were loaded in
+	qboolean	ok;
+	hudspr_t	number[10], cross, suit_empty, suit_full, flash_empty, flash_full, flash_beam;
+} hud;
+
+#define HUD_WEAPONS	32
+
+typedef struct
+{
+	char		name[32];
+	int		res;
+	int		servercount;
+	hudspr_t	ammo, ammo2, crosshair;
+} hudweapon_t;
+
+static hudweapon_t hud_weapon[HUD_WEAPONS];
+
+static void HUD_Find( const client_sprite_t *list, int count, const char *name, int res, hudspr_t *out )
+{
+	int i, pass;
+
+	memset( out, 0, sizeof( *out ));
+
+	// the entry for this width, else the one for the other
+	for( pass = 0; pass < 2 && !out->ok; pass++ )
+	{
+		const int want = pass ? ( res == 640 ? 320 : 640 ) : res;
+
+		for( i = 0; i < count; i++ )
+		{
+			char path[MAX_QPATH];
+
+			if( list[i].iRes != want || Q_stricmp( list[i].szName, name ))
+				continue;
+
+			Q_snprintf( path, sizeof( path ), "sprites/%s.spr", list[i].szSprite );
+			out->spr = CL_SplitLoadSprite( path );
+			out->rc = list[i].rc;
+			out->ok = out->spr != 0;
+			break;
+		}
+	}
+}
+
+static void HUD_Load( int res )
+{
+	const client_sprite_t *list;
+	int count = 0, i;
+
+	if( hud.res == res && hud.servercount == cl.servercount )
+		return;
+
+	memset( &hud, 0, sizeof( hud ));
+	hud.res = res;
+	hud.servercount = cl.servercount;
+
+	list = CL_SplitSpriteList( "sprites/hud.txt", &count );
+
+	if( !list || count <= 0 )
+		return;
+
+	for( i = 0; i < 10; i++ )
+		HUD_Find( list, count, va( "number_%d", i ), res, &hud.number[i] );
+
+	HUD_Find( list, count, "cross", res, &hud.cross );
+	HUD_Find( list, count, "suit_empty", res, &hud.suit_empty );
+	HUD_Find( list, count, "suit_full", res, &hud.suit_full );
+	HUD_Find( list, count, "flash_empty", res, &hud.flash_empty );
+	HUD_Find( list, count, "flash_full", res, &hud.flash_full );
+	HUD_Find( list, count, "flash_beam", res, &hud.flash_beam );
+
+	hud.ok = hud.number[0].ok && hud.cross.ok;
+}
+
+// the sprites of a weapon (its txt in sprites/): ammo icons and crosshair
+static const hudweapon_t *HUD_WeaponSprites( const char *name, int res )
+{
+	int i, free = -1;
+
+	for( i = 0; i < HUD_WEAPONS; i++ )
+	{
+		if( !hud_weapon[i].name[0] )
+		{
+			if( free < 0 )
+				free = i;
+			continue;
+		}
+
+		if( !Q_stricmp( hud_weapon[i].name, name ))
+		{
+			if( hud_weapon[i].res == res && hud_weapon[i].servercount == cl.servercount )
+				return &hud_weapon[i];
+
+			free = i;
+			break;
+		}
+	}
+
+	if( free < 0 )
+		free = 0;
+
+	{
+		const client_sprite_t *list;
+		int count = 0;
+		char path[MAX_QPATH];
+
+		memset( &hud_weapon[free], 0, sizeof( hud_weapon[free] ));
+		Q_strncpy( hud_weapon[free].name, name, sizeof( hud_weapon[free].name ));
+		hud_weapon[free].res = res;
+		hud_weapon[free].servercount = cl.servercount;
+
+		Q_snprintf( path, sizeof( path ), "sprites/%s.txt", name );
+		list = CL_SplitSpriteList( path, &count );
+
+		if( list && count > 0 )
+		{
+			HUD_Find( list, count, "ammo", res, &hud_weapon[free].ammo );
+			HUD_Find( list, count, "ammo2", res, &hud_weapon[free].ammo2 );
+			HUD_Find( list, count, "crosshair", res, &hud_weapon[free].crosshair );
+		}
+	}
+
+	return &hud_weapon[free];
+}
+
+// framebuffer position and scale of a pane's HUD: the HUD is laid out in "square" pixels
+typedef struct
+{
+	float	x, y;		// top left of the pane
+	float	sx, sy;		// framebuffer pixels per HUD pixel
+	int	w, h;		// size of the pane in HUD pixels
+} hudview_t;
+
+static void HUD_Sprite( const hudview_t *v, const hudspr_t *s, float x, float y, const wrect_t *rc, int r, int g, int b )
+{
+	if( !s->ok )
+		return;
+
+	CL_SplitDrawSprite( s->spr, rc ? rc : &s->rc, v->x + x * v->sx, v->y + y * v->sy, v->sx, v->sy, r, g, b, 255, kRenderTransAdd );
+}
+
+// CHud::DrawHudNumber
+#define DHN_DRAWZERO	1
+#define DHN_2DIGITS	2
+#define DHN_3DIGITS	4
+
+static int HUD_Number( const hudview_t *v, int x, int y, int flags, int number, int r, int g, int b )
+{
+	const int width = hud.number[0].rc.right - hud.number[0].rc.left;
+	int k;
+
+	if( number > 0 )
+	{
+		number = Q_min( number, 999 );
+
+		if( number >= 100 )
+		{
+			k = number / 100;
+			HUD_Sprite( v, &hud.number[k], x, y, NULL, r, g, b );
+			x += width;
+		}
+		else if( flags & DHN_3DIGITS )
+			x += width;
+
+		if( number >= 10 )
+		{
+			k = ( number % 100 ) / 10;
+			HUD_Sprite( v, &hud.number[k], x, y, NULL, r, g, b );
+			x += width;
+		}
+		else if( flags & ( DHN_3DIGITS | DHN_2DIGITS ))
+			x += width;
+
+		k = number % 10;
+		HUD_Sprite( v, &hud.number[k], x, y, NULL, r, g, b );
+		x += width;
+	}
+	else if( flags & DHN_DRAWZERO )
+	{
+		if( flags & DHN_3DIGITS )
+			x += width;
+
+		if( flags & ( DHN_3DIGITS | DHN_2DIGITS ))
+			x += width;
+
+		HUD_Sprite( v, &hud.number[0], x, y, NULL, r, g, b );
+		x += width;
+	}
+
+	return x;
+}
+
+static void HUD_Scale( int *r, int *g, int *b, int a )
+{
+	*r = *r * a / 255;
+	*g = *g * a / 255;
+	*b = *b * a / 255;
+}
+
+// outlined plus, for when the weapon has no crosshair sprite of its own
+static void HUD_PlainCrosshair( int cx, int cy, int h, float k )
+{
+	const int len = Q_max( 4, h / 40 ), gap = 3;
+	const int lx = Q_max( 1, (int)( len / k ));
+	const int gx = Q_max( 1, (int)( gap / k ));
+
+	CL_SplitFill( cx - gx - lx - 1, cy - 2, lx + 2, 4, 0, 0, 0, 160 );
+	CL_SplitFill( cx + gx - 1, cy - 2, lx + 2, 4, 0, 0, 0, 160 );
+	CL_SplitFill( cx - 2, cy - gap - len - 1, 4, len + 2, 0, 0, 0, 160 );
+	CL_SplitFill( cx - 2, cy + gap - 1, 4, len + 2, 0, 0, 0, 160 );
+
+	CL_SplitFill( cx - gx - lx, cy - 1, lx, 2, 255, 255, 255, 255 );
+	CL_SplitFill( cx + gx, cy - 1, lx, 2, 255, 255, 255, 255 );
+	CL_SplitFill( cx - 1, cy - gap - len, 2, len, 255, 255, 255, 255 );
+	CL_SplitFill( cx - 1, cy + gap, 2, len, 255, 255, 255, 255 );
+}
+
+static void UI_DrawHUD( int player, int x, int y, int w, int h )
+{
+	const float k = CL_SplitPixelAspectValue();
+	const int th = CL_SplitTextHeight();
+	float health, armor, frags, px = 0.0f, py = 0.0f;
+	int weapon = 0, clip = -1, res1 = -1, res2 = -1, charge = 100;
+	qboolean ammo1 = false, ammo2 = false, flashon = false, haveweapon;
+	char wname[32];
+	hudview_t v;
+	int r, g, b, a, fh, y0, bx, cx, cy;
+	const hudweapon_t *ws = NULL;
+
+	if( !SV_SplitGetView( player, NULL, NULL, NULL, &health, &armor, &frags ))
+		return;
+
+	v.x = x;
+	v.y = y;
+	v.sx = 1.0f / k;
+	v.sy = 1.0f;
+	v.w = (int)( w * k );
+	v.h = h;
+
+	HUD_Load( v.w >= 640 ? 640 : 320 );
+
+	if( !hud.ok )
+	{
+		UI_DrawHUDText( player, x, y, w, h );
+		return;
+	}
+
+	if( health <= 0.0f )
+	{
+		UI_TextCenter( x + w / 2, y + h / 2 - th, "ELIMINADO", 255, 60, 60 );
+		UI_TextCenter( x + w / 2, y + h / 2 + 2, "Dispara para reaparecer", 220, 220, 220 );
+		return;
+	}
+
+	wname[0] = 0;
+	haveweapon = SV_SplitGetWeaponInfo( player, wname, sizeof( wname ), &ammo1, &ammo2 ) && wname[0];
+	SV_SplitGetAmmo( player, &weapon, &clip, &res1, &res2 );
+	SV_SplitGetFlashlight( player, &flashon, &charge );
+
+	if( haveweapon )
+		ws = HUD_WeaponSprites( wname, hud.res );
+
+	// crosshair
+	CL_SplitPointer( player, &px, &py );
+	cx = x + (int)( w * 0.5f * ( 1.0f + px ));
+	cy = y + (int)( h * 0.5f * ( 1.0f + py ));
+
+	if( ws && ws->crosshair.ok )
+	{
+		const wrect_t *rc = &ws->crosshair.rc;
+		const float cw = ( rc->right - rc->left ) * v.sx, ch = ( rc->bottom - rc->top ) * v.sy;
+
+		CL_SplitDrawSprite( ws->crosshair.spr, rc, cx - cw * 0.5f, cy - ch * 0.5f, v.sx, v.sy, 255, 255, 255, 255, kRenderTransColor );
+	}
+	else if( !haveweapon )
+		HUD_PlainCrosshair( cx, cy, h, k );
+
+	fh = hud.number[0].rc.bottom - hud.number[0].rc.top;
+	y0 = v.h - fh - fh / 2;
+
+	// health: a cross and three digits, red when it is low
+	{
+		const int cw = hud.cross.rc.right - hud.cross.rc.left;
+
+		if( health > 25.0f ) { r = 255; g = 160; b = 0; } else { r = 255; g = 16; b = 16; }
+		a = health <= 15.0f ? 255 : 100;
+		HUD_Scale( &r, &g, &b, a );
+
+		HUD_Sprite( &v, &hud.cross, cw / 2, y0, NULL, r, g, b );
+		HUD_Number( &v, cw + fh / 2, y0, DHN_3DIGITS | DHN_DRAWZERO, (int)health, r, g, b );
+	}
+
+	// armour: the suit fills up from the bottom
+	if( hud.suit_empty.ok && hud.suit_full.ok )
+	{
+		const wrect_t *e = &hud.suit_empty.rc, *f = &hud.suit_full.rc;
+		const int height = f->bottom - e->top;
+		const int offset = ( e->bottom - e->top ) / 6;
+		const int bat = bound( 0, (int)armor, 100 );
+		wrect_t rc = *f;
+
+		r = 255; g = 160; b = 0;
+		HUD_Scale( &r, &g, &b, 100 );
+		rc.top += (int)( height * (float)( 100 - bat ) * 0.01f );
+
+		bx = v.w / 5;
+		HUD_Sprite( &v, &hud.suit_empty, bx, y0 - offset, NULL, r, g, b );
+
+		if( rc.bottom > rc.top )
+			HUD_Sprite( &v, &hud.suit_full, bx, y0 - offset + ( rc.top - f->top ), &rc, r, g, b );
+
+		bx += e->right - e->left;
+		HUD_Number( &v, bx, y0, DHN_3DIGITS | DHN_DRAWZERO, bat, r, g, b );
+	}
+
+	// ammo: clip | reserve and the icon of the ammunition
+	if( ws && ( ammo1 || ammo2 ))
+	{
+		const int aw = hud.number[0].rc.right - hud.number[0].rc.left;
+		int ax, ay = y0;
+
+		r = 255; g = 160; b = 0;
+		HUD_Scale( &r, &g, &b, 100 );
+
+		if( ammo1 )
+		{
+			const int iw = ws->ammo.rc.right - ws->ammo.rc.left;
+
+			if( clip >= 0 )
+			{
+				const int bw = Q_max( 1, aw / 10 );
+				int rr = 255, gg = 160, bb = 0;
+
+				ax = v.w - 8 * aw - iw;
+				ax = HUD_Number( &v, ax, ay, DHN_DRAWZERO | DHN_3DIGITS, clip, r, g, b );
+				ax += aw / 2;
+
+				// the bar between both numbers
+				CL_SplitFill( (int)( v.x + ax * v.sx ), (int)( v.y + ay * v.sy ), Q_max( 1, (int)( bw * v.sx )), fh, rr, gg, bb, 100 );
+				ax += bw + aw / 2;
+				ax = HUD_Number( &v, ax, ay, DHN_DRAWZERO | DHN_3DIGITS, Q_max( res1, 0 ), r, g, b );
+			}
+			else
+			{
+				ax = v.w - 4 * aw - iw;
+				ax = HUD_Number( &v, ax, ay, DHN_DRAWZERO | DHN_3DIGITS, Q_max( res1, 0 ), r, g, b );
+			}
+
+			if( ws->ammo.ok )
+				HUD_Sprite( &v, &ws->ammo, ax, ay - ( ws->ammo.rc.bottom - ws->ammo.rc.top ) / 8, NULL, r, g, b );
+		}
+
+		if( ammo2 && res2 > 0 && ws->ammo2.ok )
+		{
+			const int iw = ws->ammo2.rc.right - ws->ammo2.rc.left;
+
+			ay -= fh + fh / 4;
+			ax = v.w - 4 * aw - iw;
+			ax = HUD_Number( &v, ax, ay, DHN_DRAWZERO | DHN_3DIGITS, res2, r, g, b );
+			HUD_Sprite( &v, &ws->ammo2, ax, ay - ( ws->ammo2.rc.bottom - ws->ammo2.rc.top ) / 8, NULL, r, g, b );
+		}
+	}
+
+	// flashlight, top right
+	if( hud.flash_empty.ok && hud.flash_full.ok )
+	{
+		const int fw = hud.flash_full.rc.right - hud.flash_full.rc.left;
+		const float bat = bound( 0.0f, charge * 0.01f, 1.0f );
+		const int offset = (int)( fw * ( 1.0f - bat ));
+		int fx, fy;
+
+		if( bat < 0.20f ) { r = 255; g = 16; b = 16; } else { r = 255; g = 160; b = 0; }
+		HUD_Scale( &r, &g, &b, flashon ? 225 : 100 );
+
+		fy = ( hud.flash_empty.rc.bottom - hud.flash_full.rc.top ) / 2;
+		fx = v.w - fw - fw / 2;
+
+		HUD_Sprite( &v, &hud.flash_empty, fx, fy, NULL, r, g, b );
+
+		if( flashon && hud.flash_beam.ok )
+			HUD_Sprite( &v, &hud.flash_beam, v.w - fw / 2, fy, NULL, r, g, b );
+
+		if( offset < fw )
+		{
+			wrect_t rc = hud.flash_full.rc;
+
+			rc.left += offset;
+			HUD_Sprite( &v, &hud.flash_full, fx + offset, fy, &rc, r, g, b );
+		}
 	}
 }
 
@@ -993,9 +1401,9 @@ void CL_SplitLobbyDraw( void )
 
 void CL_SplitUIInit( void )
 {
-	Cvar_RegisterVariable( &wii_split_cfg1 );
-	Cvar_RegisterVariable( &wii_split_cfg2 );
-	Cvar_RegisterVariable( &wii_split_cfg3 );
+	Cvar_RegisterVariable( &wii_split_set1 );
+	Cvar_RegisterVariable( &wii_split_set2 );
+	Cvar_RegisterVariable( &wii_split_set3 );
 	Cvar_Get( "wii_split_lastmap", "", FCVAR_ARCHIVE, "map picked last time in the split screen lobby" );
 
 	Cmd_AddCommand( "wii_splitlobby", Lobby_Start_f, "open the split screen lobby (controllers, characters, map)" );

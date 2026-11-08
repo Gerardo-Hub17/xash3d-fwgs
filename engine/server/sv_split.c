@@ -91,6 +91,14 @@ typedef struct
 	int		ammo[SPLIT_AMMO];
 	int		wammo1[SPLIT_WEAPONS];	// weapon id -> primary ammo type
 	int		wammo2[SPLIT_WEAPONS];	// weapon id -> secondary ammo type
+	char		wname[SPLIT_WEAPONS][32];	// weapon id -> "weapon_9mmhandgun"
+	qboolean	flashon;	// flashlight
+	int		flashbat;	// 0 to 100
+
+	// the game plays the firing animation of a weapon from a client event, which nobody
+	// receives for a fake client: count the events the player causes instead
+	unsigned	firecount;
+	qboolean	firealt;	// the shot came with the secondary attack button
 } sv_splitp_t;
 
 static sv_splitp_t sv_split[SPLIT_EXTRA];
@@ -183,6 +191,9 @@ qboolean SV_SplitStart( int player, const char *name, const char *model )
 	p->impulse = 0;
 	p->weapon = 1;
 	p->animseq = p->animbody = 0;
+	p->firecount = 0;
+	p->flashon = false;
+	p->flashbat = 100;
 	p->vmname = 0;
 	p->vmindex = 0;
 	p->curweapon = 0;
@@ -434,9 +445,16 @@ void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 		}
 		else if( !Q_strcmp( name, "CurWeapon" ))
 		{
-			MSG_ReadByte( msg ); // state
-			p->curweapon = MSG_ReadByte( msg );
-			p->clip = (signed char)MSG_ReadByte( msg );
+			const int state = MSG_ReadByte( msg );
+			const int id = MSG_ReadByte( msg );
+			const int clip = (signed char)MSG_ReadByte( msg );
+
+			// state 0 is the report of a weapon that is not in the hand
+			if( state != 0 )
+			{
+				p->curweapon = id;
+				p->clip = clip;
+			}
 		}
 		else if( !Q_strcmp( name, "AmmoX" ))
 		{
@@ -448,9 +466,10 @@ void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 		}
 		else if( !Q_strcmp( name, "WeaponList" ))
 		{
+			char wname[32];
 			int a1, a2, id;
 
-			MSG_ReadString( msg );			// name
+			Q_strncpy( wname, MSG_ReadString( msg ), sizeof( wname )); // name
 			a1 = (signed char)MSG_ReadByte( msg );	// primary ammo type
 			MSG_ReadByte( msg );			// max
 			a2 = (signed char)MSG_ReadByte( msg );	// secondary ammo type
@@ -463,8 +482,16 @@ void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 			{
 				p->wammo1[id] = a1;
 				p->wammo2[id] = a2;
+				Q_strncpy( p->wname[id], wname, sizeof( p->wname[0] ));
 			}
 		}
+		else if( !Q_strcmp( name, "Flashlight" ))
+		{
+			p->flashon = MSG_ReadByte( msg ) != 0;
+			p->flashbat = MSG_ReadByte( msg ) * 100 / 255;
+		}
+		else if( !Q_strcmp( name, "FlashBat" ))
+			p->flashbat = MSG_ReadByte( msg ) * 100 / 255;
 	}
 
 	MSG_SeekToBit( msg, 0, SEEK_SET );
@@ -500,6 +527,98 @@ qboolean SV_SplitGetAmmo( int player, int *weapon, int *clip, int *reserve1, int
 	if( reserve2 ) *reserve2 = ( a2 >= 0 && a2 < SPLIT_AMMO ) ? p->ammo[a2] : -1;
 
 	return id > 0;
+}
+
+/*
+=============
+SV_SplitGetWeaponInfo
+
+name of the weapon the player holds ("weapon_9mmhandgun"), and whether it uses
+primary / secondary ammo
+=============
+*/
+qboolean SV_SplitGetWeaponInfo( int player, char *name, size_t size, qboolean *ammo1, qboolean *ammo2 )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+	int id;
+
+	if( !p || !SV_SplitActive( player ))
+		return false;
+
+	id = p->curweapon;
+
+	if( id <= 0 || id >= SPLIT_WEAPONS )
+		return false;
+
+	if( name ) Q_strncpy( name, p->wname[id], size );
+	if( ammo1 ) *ammo1 = p->wammo1[id] > 0;
+	if( ammo2 ) *ammo2 = p->wammo2[id] > 0;
+
+	return true;
+}
+
+/*
+=============
+SV_SplitGetFlashlight
+
+flashlight state of a player: on / off and the charge in percent
+=============
+*/
+void SV_SplitGetFlashlight( int player, qboolean *on, int *charge )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( on ) *on = ( p && p->flashon );
+	if( charge ) *charge = p ? p->flashbat : 100;
+}
+
+/*
+=============
+SV_SplitNoteEvent
+
+called for every event the game plays: remembers the ones a split screen
+player's weapon causes, so its view model can play the firing animation
+=============
+*/
+void SV_SplitNoteEvent( const edict_t *invoker, const char *eventname )
+{
+	const int player = SV_SplitPlayerOf( invoker );
+	sv_splitp_t *p;
+
+	if( player < 1 || !SV_SplitActive( player ) || COM_StringEmptyOrNULL( eventname ))
+		return;
+
+	p = SV_SplitSlot( player );
+
+	// only the events of a weapon being fired (not the ones that stop a beam, spin a cannon, ...)
+	if( !FBitSet( p->buttons, IN_ATTACK|IN_ATTACK2 ))
+		return;
+
+	if( Q_stristr( eventname, "stop" ) || Q_stristr( eventname, "spin" ) || Q_stristr( eventname, "decal" ))
+		return;
+
+	p->firealt = FBitSet( p->buttons, IN_ATTACK2 ) && !FBitSet( p->buttons, IN_ATTACK );
+	p->firecount++;
+}
+
+/*
+=============
+SV_SplitGetFire
+
+how many shots the player has fired so far, and whether the last one was a
+secondary attack
+=============
+*/
+unsigned SV_SplitGetFire( int player, qboolean *alt )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p )
+		return 0;
+
+	if( alt ) *alt = p->firealt;
+
+	return p->firecount;
 }
 
 /*
