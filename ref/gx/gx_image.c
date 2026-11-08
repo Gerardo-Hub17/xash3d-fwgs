@@ -566,6 +566,8 @@ static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt
 
 
 
+static void GX_ConvertCMPR( byte *dst, const byte *src, int width, int height, const gx_srcfmt_t *s );
+
 static void GX_ConvertToNative( byte *dst, const byte *src, int width, int height, pixformat_t fmt, u8 gxFmt )
 {
 	gx_srcfmt_t s;
