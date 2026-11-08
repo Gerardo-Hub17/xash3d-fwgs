@@ -30,6 +30,9 @@ bottom, four get a corner each.
 
 CVAR_DEFINE_AUTO( wii_split, "0", 0, "split screen with other local players (0 = off, 1 = side by side, 2 = top and bottom; only matters for two players)" );
 CVAR_DEFINE_AUTO( wii_split_players, "2", 0, "number of players in the split screen (2 to 4)" );
+static CVAR_DEFINE_AUTO( wii_split_stats, "0", 0, "show how long each view of the split screen takes to draw, in ms (to see what is slow)" );
+static float split_view_ms[SPLIT_MAX_PLAYERS]; // average time of each view
+static float split_frame_ms;
 static CVAR_DEFINE_AUTO( wii_split_model1, "gordon", 0, "model of split screen player 2" );
 static CVAR_DEFINE_AUTO( wii_split_model2, "barney", 0, "model of split screen player 3" );
 static CVAR_DEFINE_AUTO( wii_split_model3, "scientist", 0, "model of split screen player 4" );
@@ -49,6 +52,8 @@ typedef struct
 	int		fireseq;
 	float		bobtime;
 	float		bob;
+	qboolean	fresh;		// the animation started on this frame (its first events run)
+	float		punch;		// pitch kick of the last shot, decays (the game's V_PunchAxis)
 	float		fpx, fpy;	// filtered pointer, for the lean
 
 	// controller
@@ -95,6 +100,7 @@ void CL_SplitInit( void )
 {
 	Cvar_RegisterVariable( &wii_split );
 	Cvar_RegisterVariable( &wii_split_players );
+	Cvar_RegisterVariable( &wii_split_stats );
 	Cvar_RegisterVariable( &wii_split_model1 );
 	Cvar_RegisterVariable( &wii_split_model2 );
 	Cvar_RegisterVariable( &wii_split_model3 );
@@ -338,7 +344,8 @@ void CL_SplitFrame( void )
 					p->animstart = 0.0;
 					p->firing = false;
 					p->firecount = SV_SplitGetFire( i, NULL );
-					p->bobtime = p->bob = 0.0f;
+					p->bobtime = p->bob = p->punch = 0.0f;
+					p->fresh = false;
 					p->px = p->py = p->fpx = p->fpy = 0.0f;
 					CL_SplitUIPlayerStarted( i );
 				}
@@ -647,6 +654,35 @@ static int CL_SplitPickFireSeq( model_t *mod, qboolean alt )
 
 /*
 =============
+CL_SplitKick
+
+the pitch kick the game gives the camera of the player who fires (V_PunchAxis in the
+events of the client dll, which a fake client never gets). Negative is up.
+=============
+*/
+static float CL_SplitKick( const char *weapon, qboolean alt )
+{
+	if( COM_StringEmptyOrNULL( weapon ))
+		return -1.0f;
+
+	if( Q_stristr( weapon, "357" ) || Q_stristr( weapon, "python" ))
+		return -10.0f;
+	if( Q_stristr( weapon, "shotgun" ))
+		return alt ? -10.0f : -5.0f;
+	if( Q_stristr( weapon, "9mmar" ) || Q_stristr( weapon, "mp5" ))
+		return COM_RandomFloat( -2.0f, 2.0f );
+	if( Q_stristr( weapon, "hornet" ))
+		return COM_RandomFloat( 0.0f, 2.0f );
+	if( Q_stristr( weapon, "rpg" ) || Q_stristr( weapon, "egon" ) || Q_stristr( weapon, "crowbar" ) ||
+		Q_stristr( weapon, "grenade" ) || Q_stristr( weapon, "satchel" ) || Q_stristr( weapon, "tripmine" ) ||
+		Q_stristr( weapon, "snark" ))
+		return 0.0f;
+
+	return -2.0f; // 9mm handgun, crossbow, gauss
+}
+
+/*
+=============
 CL_SplitBob
 
 the weapon bob of the game's view code (V_CalcBob of the client dll), from the
@@ -717,6 +753,7 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		p->animcount = animcount;
 		p->vmmodel = modelindex;
 		p->animstart = cl.time;
+		p->fresh = true;
 		p->firing = false;
 	}
 
@@ -726,6 +763,8 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 	if( firecount != p->firecount )
 	{
 		const int seq = CL_SplitPickFireSeq( mod, alt );
+		char wname[32];
+		qboolean a1, a2;
 
 		p->firecount = firecount;
 
@@ -734,7 +773,22 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 			p->firing = true;
 			p->fireseq = seq;
 			p->animstart = cl.time;
+			p->fresh = true;
 		}
+
+		// the camera kicks like player 1's does
+		wname[0] = 0;
+		SV_SplitGetWeaponInfo( player, wname, sizeof( wname ), &a1, &a2 );
+		p->punch = CL_SplitKick( wname, alt );
+	}
+
+	// the kick wears off the way the game's view code does it
+	if( p->punch != 0.0f )
+	{
+		float len = fabsf( p->punch );
+
+		len -= ( 10.0f + len * 0.5f ) * dt;
+		p->punch = len > 0.0f ? ( p->punch < 0.0f ? -len : len ) : 0.0f;
 	}
 
 	if( p->firing )
@@ -752,7 +806,8 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 	view->curstate.renderamt = 255;
 	view->latched.prevsequence = sequence;
 	view->latched.prevanimtime = p->animstart;
-	view->latched.sequencetime = p->animstart - 1.0;
+	view->latched.sequencetime = p->fresh ? p->animstart : p->animstart - 1.0; // the events of a new animation
+	p->fresh = false;
 
 	// the weapon takes the camera's angles (pitch is inverted for models), no turning lag
 	// and no punch: the camera kicks, the weapon does not
@@ -822,6 +877,18 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 
 /*
 =============
+CL_SplitNoteMainTime
+
+how long player 1's view took (told by V_RenderView), for wii_split_stats
+=============
+*/
+void CL_SplitNoteMainTime( double ms )
+{
+	split_view_ms[0] += ( (float)ms - split_view_ms[0] ) * 0.1f;
+}
+
+/*
+=============
 CL_SplitRenderView
 
 draws the views of the extra players; called after player 1's has been drawn
@@ -862,9 +929,21 @@ void CL_SplitRenderView( void )
 		savedview = clgame.viewent;
 
 		if( health > 0.0f && CL_SplitSetupViewModel( player, origin, split.p[player].angles ))
+		{
 			rvp.flags = ( rvp.flags & ~RF_NO_VIEWMODEL ) | RF_SPLIT_VIEWMODEL;
 
-		GL_RenderFrame( &rvp );
+			// like the game's view code: the camera bobs with the weapon, so on screen the
+			// weapon only comes and goes instead of moving up and down against a still view
+			rvp.vieworigin[2] += split.p[player].bob;
+			rvp.viewangles[PITCH] += split.p[player].punch;
+		}
+
+		{
+			const double t0 = Platform_DoubleTime();
+
+			GL_RenderFrame( &rvp );
+			split_view_ms[player] += ( (float)(( Platform_DoubleTime() - t0 ) * 1000.0 ) - split_view_ms[player] ) * 0.1f;
+		}
 
 		clgame.viewent = savedview;
 
@@ -890,6 +969,22 @@ void CL_SplitDrawHUD( void )
 
 	// the extra views leave the renderer in 3D state: go back to 2D
 	ref.dllFuncs.R_Set2DMode( true );
+
+	if( wii_split_stats.value != 0.0f )
+	{
+		char line[96];
+		int n = 0;
+
+		split_frame_ms += ( (float)( host.realframetime * 1000.0 ) - split_frame_ms ) * 0.1f;
+
+		for( i = 0; i < split.count; i++ )
+			n += Q_snprintf( line + n, sizeof( line ) - n, "%sJ%d %.1f", i ? "  " : "", i + 1, split_view_ms[i] );
+
+		Q_snprintf( line + n, sizeof( line ) - n, "  |  cuadro %.1f ms", split_frame_ms );
+
+		CL_SplitFill( 4, 4, CL_SplitTextWidth( line ) + 8, CL_SplitTextHeight() + 4, 0, 0, 0, 170 );
+		CL_SplitDrawText( 8, 6, line, 255, 255, 120, 255 );
+	}
 
 	// dividing lines
 	switch( split.count )

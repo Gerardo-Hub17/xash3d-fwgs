@@ -46,6 +46,7 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 
 void GX_BackendStartFrame( void )
 {
+	tr.split_newframe = true;
 	r_speeds_msg[0] = '\0';
 }
 

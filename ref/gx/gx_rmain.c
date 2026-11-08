@@ -1159,6 +1159,18 @@ void R_SetupRefParams( const ref_viewpass_t *rvp )
     RI.farClip = 0;
 }
 
+// The views of a split screen are drawn in the same engine frame: they share the frame
+// counter, otherwise the walk cycle of the models, their events and the entities seen
+// are worked out again for each view as if a new frame had passed.
+static void R_NextRealFrame( void )
+{
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && !tr.split_newframe )
+        return;
+
+    tr.split_newframe = false;
+    tr.realframecount++;
+}
+
 void R_RenderFrame( const ref_viewpass_t *rvp )
 {
     if( r_norefresh->value )
@@ -1177,7 +1189,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
         if( gEngfuncs.drawFuncs->GL_RenderFrame( rvp ))
         {
             R_GatherPlayerLight( tr.viewent );
-            tr.realframecount++;
+            R_NextRealFrame();
             tr.fResetVis = true;
             return;
         }
@@ -1188,7 +1200,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         R_RunViewmodelEvents();
 
-    tr.realframecount++;
+    R_NextRealFrame();
     R_RenderScene();
 }
 

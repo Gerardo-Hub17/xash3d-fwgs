@@ -621,7 +621,25 @@ static void LM_UploadDynamicBlock( void )
 {
 	/* la GPU lee la textura dinamica de forma asincrona: esperar a que termine los dibujos */
 	/* ya encolados que la usan (mundo) antes de reescribirla (entidades brush, 2do bloque) */
-	GX_DrawDone();
+	if( gx_split_lod.value >= 2.0f && GX_DlightRingTexture( 1 ))
+	{
+		/* pantalla dividida: cada escritura va a otra textura del turno; solo si se acaban */
+		/* (mas escrituras que texturas en un cuadro) hay que esperar a la GPU como antes */
+		static int frame = -1, used;
+
+		if( frame != tr.realframecount )
+		{
+			frame = tr.realframecount;
+			used = 0;
+		}
+
+		if( used >= GX_DLIGHT_RING )
+			GX_DrawDone();
+
+		tr.dlightTexture = GX_DlightRingTexture( used % GX_DLIGHT_RING );
+		used++;
+	}
+	else GX_DrawDone();
 	/* siempre la pagina completa: si se subiera solo max_height, la textura se achicaria y las UV quedarian mal */
 	GX_UpdateTexture( tr.dlightTexture,
 		BLOCK_SIZE, BLOCK_SIZE,

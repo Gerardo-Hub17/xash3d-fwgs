@@ -404,6 +404,15 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 	if( !SV_SplitGetView( player, NULL, NULL, NULL, &health, &armor, &frags ))
 		return;
 
+	// the safe zone of the screen
+	{
+		const int ix = (int)( w * bound( 0.0f, hud_margin_x.value, 20.0f ) * 0.01f );
+		const int iy = (int)( h * bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f );
+
+		x += ix; w -= 2 * ix;
+		y += iy; h -= 2 * iy;
+	}
+
 	// the view of a player with a small pane gets smaller bars
 	bw = Q_min( (int)( 90.0f / k ), w / 4 );
 	bh = Q_max( 5, th * 2 / 3 );
@@ -734,10 +743,18 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	if( !SV_SplitGetView( player, NULL, NULL, NULL, &health, &armor, &frags ))
 		return;
 
-	v.x = x;
-	v.y = y;
-	v.sx = 1.0f / k;
-	v.sy = 1.0f;
+	// the safe zone of the screen (hud_margin_x / hud_margin_y), applied to the view like it is to
+	// player 1's HUD: the HUD shrinks towards the middle of the view
+	{
+		const float mx = bound( 0.0f, hud_margin_x.value, 20.0f ) * 0.01f;
+		const float my = bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f;
+
+		v.x = x + (int)( w * mx );
+		v.y = y + (int)( h * my );
+		v.sx = ( 1.0f / k ) * ( 1.0f - 2.0f * mx );
+		v.sy = 1.0f - 2.0f * my;
+	}
+
 	v.w = (int)( w * k );
 	v.h = h;
 
@@ -840,7 +857,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 				ax += aw / 2;
 
 				// the bar between both numbers
-				CL_SplitFill( (int)( v.x + ax * v.sx ), (int)( v.y + ay * v.sy ), Q_max( 1, (int)( bw * v.sx )), fh, rr, gg, bb, 100 );
+				CL_SplitFill( (int)( v.x + ax * v.sx ), (int)( v.y + ay * v.sy ), Q_max( 1, (int)( bw * v.sx )), Q_max( 1, (int)( fh * v.sy )), rr, gg, bb, 100 );
 				ax += bw + aw / 2;
 				ax = HUD_Number( &v, ax, ay, DHN_DRAWZERO | DHN_3DIGITS, Q_max( res1, 0 ), r, g, b );
 			}
@@ -941,7 +958,9 @@ static struct
 	qboolean	counting;
 	double		end;
 	char		models[LOBBY_MAX_LIST][32];
+	int		thumb[LOBBY_MAX_LIST];	// picture of each character: 0 = not looked for, -1 = none
 	int		nmodels;
+	int		winner;		// map the votes chose (set when the countdown starts)
 	char		maps[LOBBY_MAX_LIST][48];
 	int		nmaps;
 } lobby;
@@ -956,11 +975,12 @@ static int Lobby_Cmp( const void *a, const void *b )
 	return Q_stricmp((const char *)a, (const char *)b );
 }
 
-// models/player/<name>/<name>.mdl
+// every character in the files: models/player/<name>/<name>.mdl, in the game folder, in the
+// base folder and inside the paks (the same way the player setup menu finds them)
 static void Lobby_ListModels( void )
 {
-	search_t *t = FS_Search( "models/player/*/*.mdl", true, false );
-	int i;
+	search_t *t = FS_Search( "models/player/*", true, false );
+	int i, j;
 
 	lobby.nmodels = 0;
 
@@ -968,22 +988,27 @@ static void Lobby_ListModels( void )
 	{
 		for( i = 0; i < t->numfilenames && lobby.nmodels < LOBBY_MAX_LIST; i++ )
 		{
-			char dir[32], file[32], *slash;
-			const char *name = t->filenames[i] + Q_strlen( "models/player/" );
+			char name[32], path[128];
 
-			Q_strncpy( dir, name, sizeof( dir ));
-			slash = Q_strchr( dir, '/' );
+			COM_FileBase( t->filenames[i], name, sizeof( name ));
 
-			if( !slash )
+			if( !name[0] )
 				continue;
 
-			*slash = 0;
-			COM_FileBase( slash + 1, file, sizeof( file ));
+			for( j = 0; j < lobby.nmodels; j++ )
+				if( !Q_stricmp( lobby.models[j], name ))
+					break;
 
-			if( Q_stricmp( dir, file ))
-				continue; // "gordon/gordon.mdl" only, not the extra files next to it
+			if( j < lobby.nmodels )
+				continue;
 
-			Q_strncpy( lobby.models[lobby.nmodels++], dir, sizeof( lobby.models[0] ));
+			// only the folders that hold a model of their own name
+			Q_snprintf( path, sizeof( path ), "models/player/%s/%s.mdl", name, name );
+
+			if( !FS_FileExists( path, false ))
+				continue;
+
+			Q_strncpy( lobby.models[lobby.nmodels++], name, sizeof( lobby.models[0] ));
 		}
 
 		Mem_Free( t );
@@ -993,6 +1018,80 @@ static void Lobby_ListModels( void )
 		Q_strncpy( lobby.models[lobby.nmodels++], "gordon", sizeof( lobby.models[0] ));
 
 	qsort( lobby.models, lobby.nmodels, sizeof( lobby.models[0] ), Lobby_Cmp );
+}
+
+// the picture of a character: models/player/<name>/<name>.bmp (or .png, .tga); 0 when it has none
+static int Lobby_Thumb( int model )
+{
+	static const char *ext[] = { "bmp", "png", "tga" };
+	int i;
+
+	if( model < 0 || model >= lobby.nmodels )
+		return 0;
+
+	if( lobby.thumb[model] )
+		return lobby.thumb[model] > 0 ? lobby.thumb[model] : 0;
+
+	lobby.thumb[model] = -1;
+
+	for( i = 0; i < (int)ARRAYSIZE( ext ); i++ )
+	{
+		char path[128];
+		int tex;
+
+		Q_snprintf( path, sizeof( path ), "models/player/%s/%s.%s", lobby.models[model], lobby.models[model], ext[i] );
+
+		if( !FS_FileExists( path, false ))
+			continue;
+
+		tex = ref.dllFuncs.GL_LoadTexture( path, NULL, 0, TF_IMAGE );
+
+		if( tex > 0 )
+		{
+			lobby.thumb[model] = tex;
+			return tex;
+		}
+	}
+
+	return 0;
+}
+
+// draws the picture in a box of w x h (fitted, in the aspect of the picture)
+static void Lobby_DrawThumb( int model, int x, int y, int w, int h, float k )
+{
+	const int tex = Lobby_Thumb( model );
+	int pw = 0, ph = 0, dw, dh;
+
+	CL_SplitFill( x - 1, y - 1, w + 2, h + 2, 90, 90, 110, 255 );
+	CL_SplitFill( x, y, w, h, 0, 0, 0, 255 );
+
+	if( tex <= 0 )
+	{
+		UI_TextCenter( x + w / 2, y + ( h - CL_SplitTextHeight( )) / 2, "sin foto", 120, 120, 120 );
+		return;
+	}
+
+	R_GetTextureParms( &pw, &ph, tex );
+
+	if( pw <= 0 || ph <= 0 )
+	{
+		pw = 4;
+		ph = 3;
+	}
+
+	// the framebuffer is stretched on a wide screen: the width is divided by k to keep the shape
+	dh = h;
+	dw = (int)( dh * (float)pw / (float)ph / k );
+
+	if( dw > w )
+	{
+		dw = w;
+		dh = (int)( dw * k * (float)ph / (float)pw );
+	}
+
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
+	ref.dllFuncs.R_DrawStretchPic( x + ( w - dw ) / 2, y + ( h - dh ) / 2, dw, dh, 0, 0, 1, 1, tex );
 }
 
 static qboolean Lobby_IsCampaignMap( const char *name )
@@ -1116,24 +1215,53 @@ static int Lobby_Joined( void )
 	return n;
 }
 
-static void Lobby_Launch( void )
+// the map with the most votes; a tie (everyone chose a different one, two against two, ...)
+// is drawn between the maps that tie
+static int Lobby_Tally( void )
 {
-	int i, n = Lobby_Joined(), nplayers = 0;
-	int picks[SPLIT_MAX_PLAYERS], npicks = 0;
-	const char *map;
-	char cmd[256];
+	int votes[SPLIT_MAX_PLAYERS], maps[SPLIT_MAX_PLAYERS], n = 0, i, j, best = 0;
+	int tied[SPLIT_MAX_PLAYERS], ntied = 0;
 
 	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
 	{
 		if( !lobby.p[i].joined )
 			continue;
 
-		nplayers++;
-		picks[npicks++] = lobby.p[i].map;
+		for( j = 0; j < n; j++ )
+			if( maps[j] == lobby.p[i].map )
+				break;
+
+		if( j == n )
+		{
+			maps[n] = lobby.p[i].map;
+			votes[n++] = 0;
+		}
+
+		votes[j]++;
 	}
 
-	// everyone picked the same map: that one; otherwise the game draws one of the picks
-	map = lobby.maps[picks[npicks > 1 ? COM_RandomLong( 0, npicks - 1 ) : 0]];
+	for( j = 0; j < n; j++ )
+		best = Q_max( best, votes[j] );
+
+	for( j = 0; j < n; j++ )
+		if( votes[j] == best )
+			tied[ntied++] = maps[j];
+
+	return ntied ? tied[COM_RandomLong( 0, ntied - 1 )] : 0;
+}
+
+static void Lobby_Launch( void )
+{
+	int i, n = Lobby_Joined(), nplayers = 0;
+	const char *map;
+	char cmd[256];
+
+	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
+		if( lobby.p[i].joined )
+			nplayers++;
+
+	// the map the votes chose when the countdown started
+	map = lobby.maps[bound( 0, lobby.winner, Q_max( lobby.nmaps - 1, 0 ))];
 
 	// the models and controllers: slots go to the players in the order they joined
 	{
@@ -1276,6 +1404,7 @@ static void Lobby_Frame( void )
 	{
 		lobby.counting = true;
 		lobby.end = now + LOBBY_COUNTDOWN;
+		lobby.winner = Lobby_Tally();
 	}
 	else if( now >= lobby.end )
 		Lobby_Launch();
@@ -1361,7 +1490,19 @@ void CL_SplitLobbyDraw( void )
 		ty += th + 2;
 		Q_snprintf( text, sizeof( text ), p->ready ? "%s" : "< %s >", lobby.models[p->model] );
 		UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
-		ty += th + 10;
+		ty += th + 6;
+
+		// the picture of the character, in what is left of the card
+		{
+			const int room = ( y + h - th - 16 ) - ty - ( th * 2 + 14 );
+			const int ph = Q_min( 96, room );
+
+			if( ph >= 36 )
+			{
+				Lobby_DrawThumb( p->model, x + 6, ty, w - 12, ph, k );
+				ty += ph + 8;
+			}
+		}
 
 		UI_TextCenter( x + w / 2, ty, "Mapa", 160, 160, 160 );
 		ty += th + 2;
@@ -1380,14 +1521,15 @@ void CL_SplitLobbyDraw( void )
 
 		if( lobby.counting )
 		{
-			Q_snprintf( text, sizeof( text ), "Empieza en %d   (B: cancelar)", (int)ceil( lobby.end - host.realtime ));
+			Q_snprintf( text, sizeof( text ), "Mapa: %s   Empieza en %d   (B: cancelar)",
+				lobby.maps[bound( 0, lobby.winner, lobby.nmaps - 1 )], (int)ceil( lobby.end - host.realtime ));
 			UI_TextCenter( W / 2, by, text, 120, 255, 140 );
 		}
 		else if( joined >= 2 && ready == joined )
 			UI_TextCenter( W / 2, by, "Todos listos", 120, 255, 140 );
 		else if( joined < 2 )
 			UI_TextCenter( W / 2, by, "Hacen falta al menos dos jugadores", 255, 200, 90 );
-		else UI_TextCenter( W / 2, by, "Todos deben confirmar con A", 255, 200, 90 );
+		else UI_TextCenter( W / 2, by, "Todos confirman con A - gana el mapa mas votado", 255, 200, 90 );
 
 		if( joined == 2 )
 		{

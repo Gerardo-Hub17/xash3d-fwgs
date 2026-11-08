@@ -461,6 +461,10 @@ void V_RenderView( void )
 
 	} while( rp.nextView );
 
+#if XASH_OGC
+	CL_SplitNoteMainTime(( Platform_DoubleTime() - pv_start ) * 1000.0 );
+#endif
+
 	// split screen: the second player's view
 	CL_SplitRenderView();
 

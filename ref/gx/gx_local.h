@@ -56,6 +56,8 @@ byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, 
 #define BLOCK_SIZE		tr.block_size
 #define BLOCK_SIZE_DEFAULT	128
 #define BLOCK_SIZE_MAX 256
+#define GX_DLIGHT_RING	6	// split screen: textures the dynamic lightmaps take turns in (see LM_UploadDynamicBlock)
+int GX_DlightRingTexture( int i );
 
 #define MAX_TEXTURES 2048
 #define MAX_DETAIL_TEXTURES	256
@@ -217,6 +219,7 @@ typedef struct
 	int		dlightframecount;
 	int		realframecount;
 	int		framecount;
+	qboolean		split_newframe;	// split screen: the first view of an engine frame advances realframecount
 
 	qboolean		fCustomRendering;
 	qboolean		fResetVis;

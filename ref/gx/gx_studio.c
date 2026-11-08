@@ -1935,12 +1935,24 @@ int R_GetEntityRenderMode( cl_entity_t *ent )
 	return ent->curstate.rendermode;
 }
 
+static int g_studio_event_frame[4096]; // per entity: the frame whose events were run
+
 static void R_StudioClientEventsImpl( void )
 {
 	cl_entity_t	*e = RI.currententity;
 
 	if( g_studio.frametime == 0.0 )
 		return;
+
+	// split screen: a model drawn in several views of one frame runs its events (muzzle
+	// flashes, sounds) only in the first one
+	if( e != tr.viewent && e->index > 0 && e->index < (int)( sizeof( g_studio_event_frame ) / sizeof( g_studio_event_frame[0] )))
+	{
+		if( g_studio_event_frame[e->index] == tr.realframecount && tr.realframecount != 0 )
+			return;
+
+		g_studio_event_frame[e->index] = tr.realframecount;
+	}
 
 	if( m_pStudioHeader->numattachments <= 0 )
 	{
@@ -2683,11 +2695,13 @@ void R_RunViewmodelEvents( void )
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
-	// split screen player 2's weapon has no events to run (no muzzle flash)
-	if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL ))
+	// split screen: the weapon of this view's player (it is not the local player's)
+	const qboolean own = FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL );
+
+	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		return;
 
-	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+	if( !own && ( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer()))
 		return;
 
 	RI.currententity = tr.viewent;
@@ -2697,7 +2711,7 @@ void R_RunViewmodelEvents( void )
 
 	R_StudioSetupTimings();
 
-	vec3_t simorg = Vec3( gp_cl->simorg );
+	vec3_t simorg = Vec3( own ? RI.rvp.vieworigin : gp_cl->simorg );
 	for( int i = 0; i < 4; i++ )
 		VectorCopy( simorg, RI.currententity->attachment[i] );
 	RI.currentmodel = RI.currententity->model;

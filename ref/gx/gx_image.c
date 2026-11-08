@@ -1417,6 +1417,13 @@ int GX_TexMemory( void )
 	return total;
 }
 
+static int gx_dlight_ring[GX_DLIGHT_RING]; // [0] is tr.dlightTexture
+
+int GX_DlightRingTexture( int i )
+{
+	return ( i >= 0 && i < GX_DLIGHT_RING ) ? gx_dlight_ring[i] : 0;
+}
+
 void R_InitDlightTexture( void )
 {
 	rgbdata_t r_image =
@@ -1430,6 +1437,25 @@ void R_InitDlightTexture( void )
 	qboolean update = ( tr.dlightTexture != 0 );
 	tr.dlightTexture = GX_LoadTextureFromBuffer( "*dlight", &r_image,
 		TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE, update );
+
+	// split screen: every view re-writes the dynamic lightmaps; with one texture the CPU has
+	// to wait for the GPU before each write, so they take turns in a few
+	gx_dlight_ring[0] = tr.dlightTexture;
+
+	for( int i = 1; i < GX_DLIGHT_RING; i++ )
+	{
+		char name[16];
+
+		if( gx_split_lod.value < 2.0f )
+		{
+			gx_dlight_ring[i] = 0;
+			continue;
+		}
+
+		Q_snprintf( name, sizeof( name ), "*dlight%d", i );
+		gx_dlight_ring[i] = GX_LoadTextureFromBuffer( name, &r_image,
+			TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE, GL_TextureForName( name ) != NULL );
+	}
 }
 
 static const char *GX_FormatToString( u8 fmt )

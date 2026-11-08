@@ -1230,6 +1230,7 @@ void CL_SplitHudSize( int *w, int *h );
 float CL_SplitViewAspect( int player );
 void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
 void CL_SplitRenderView( void );
+void CL_SplitNoteMainTime( double ms );
 void CL_SplitDrawHUD( void );
 qboolean CL_SplitGrab( int player );
 void CL_SplitMenuToggle( int player );
