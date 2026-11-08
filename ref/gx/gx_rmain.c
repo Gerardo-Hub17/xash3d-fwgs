@@ -351,10 +351,28 @@ static void R_Clear( int bitMask )
     GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 }
 
+// split screen: into how many views the screen is split (1 = not split)
+static inline int R_SplitViews( void )
+{
+    return FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) ? RF_SPLIT_COUNT( RI.rvp.flags ) : 1;
+}
+
 static float R_GetFarClip( void )
 {
     if( WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
-        return gp_movevars->zmax * 1.73f;
+    {
+        float zfar = gp_movevars->zmax * 1.73f;
+
+        // each view of a split screen sees less of the map: less to walk and to draw
+        switch( R_SplitViews( ))
+        {
+        case 2: zfar = Q_min( zfar, 6000.0f ); break;
+        case 3: zfar = Q_min( zfar, 4000.0f ); break;
+        case 4: zfar = Q_min( zfar, 3000.0f ); break;
+        }
+
+        return zfar;
+    }
     return 2048.0f;
 }
 
@@ -795,6 +813,29 @@ static inline qboolean R_SkipViewEntity( const cl_entity_t *e )
     return FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RI.rvp.viewentity && e->index == RI.rvp.viewentity;
 }
 
+// split screen: models and sprites far from the view are skipped (players see farther)
+static qboolean R_SplitCullEntity( const cl_entity_t *e )
+{
+    float range;
+
+    switch( R_SplitViews( ))
+    {
+    case 3: range = 1800.0f; break;
+    case 4: range = 1300.0f; break;
+    default: return false;
+    }
+
+    if( !e->model || e->model->type == mod_brush || e->curstate.entityType == ET_BEAM )
+        return false;
+
+    if( e->player )
+        range *= 1.5f;
+
+    vec3_t d;
+    VectorSubtract( e->origin, RI.rvp.vieworigin, d );
+    return DotProduct( d, d ) > range * range;
+}
+
 static void R_DrawEntitiesOnList( void )
 {
     GXPT_BEGIN();
@@ -808,7 +849,7 @@ static void R_DrawEntitiesOnList( void )
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
             continue;
 
-        if( R_SkipViewEntity( RI.currententity ))
+        if( R_SkipViewEntity( RI.currententity ) || R_SplitCullEntity( RI.currententity ))
             continue;
 
         Assert( RI.currententity != NULL );
@@ -839,7 +880,7 @@ static void R_DrawEntitiesOnList( void )
         Assert( RI.currententity != NULL );
         Assert( RI.currentmodel  != NULL );
 
-        if( RI.currentmodel->type == mod_sprite )
+        if( RI.currentmodel->type == mod_sprite && !R_SplitCullEntity( RI.currententity ))
             R_DrawSpriteModel( RI.currententity );
     }
 
@@ -865,7 +906,7 @@ static void R_DrawEntitiesOnList( void )
 
         if( tr.blend <= 0.0f ) continue;
 
-        if( R_SkipViewEntity( RI.currententity ))
+        if( R_SkipViewEntity( RI.currententity ) || R_SplitCullEntity( RI.currententity ))
             continue;
 
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
@@ -919,6 +960,17 @@ void R_RenderScene( void )
     if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
         tr.frametime = gp_cl->time - gp_cl->oldtime;
     else tr.frametime = 0.0;
+
+    // split screen: the views of one frame share the world, so particles and beams
+    // advance once, in the first view (otherwise they run N times faster and cost N times more)
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ))
+    {
+        static double split_lasttime = -1.0;
+
+        if( gp_cl->time == split_lasttime && tr.frametime != 0.0 )
+            tr.frametime = 0.0;
+        else split_lasttime = gp_cl->time;
+    }
 
     tr.framecount++;
 
@@ -984,7 +1036,10 @@ void R_RenderScene( void )
             }
         }
     }
-    tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+    // split screen with 3 or 4 views: no dynamic lights on the walls (they are marked once per view)
+    if( R_SplitViews( ) >= 3 )
+        tr.dlightframecount = tr.framecount;
+    else tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
 
     R_SetupFrustum();
     R_SetupFrame();

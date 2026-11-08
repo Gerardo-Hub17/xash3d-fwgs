@@ -340,7 +340,7 @@ static void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
 	if( CL_SplitActive( ))
 	{
 		CL_SplitFov( 0, cl.local.scr_fov, &rvp->fov_x, &rvp->fov_y );
-		SetBits( rvp->flags, RF_SPLIT_VIEW );
+		SetBits( rvp->flags, RF_SPLIT_VIEW | RF_SPLIT_COUNT_BITS( CL_SplitCount( )));
 	}
 
 	if( fd->onlyClientDraw )

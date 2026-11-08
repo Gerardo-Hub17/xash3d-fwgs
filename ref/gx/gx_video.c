@@ -46,6 +46,7 @@ CVAR_DEFINE_AUTO( gl_finish, "0", FCVAR_GLCONFIG, "use GX_DrawDone instead of a 
 CVAR_DEFINE_AUTO( gl_nosort, "0", FCVAR_GLCONFIG, "disable sorting of translucent surfaces" );
 CVAR_DEFINE_AUTO( gl_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( gl_msaa, "0", FCVAR_GLCONFIG, "enable or disable the GX copy-filter antialiasing" );
+CVAR_DEFINE_AUTO( gx_split_lod, "0", 0, "split screen detail level (set by the engine, number of players)" );
 CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelformat stencil bits (0 - auto)" );
 CVAR_DEFINE_AUTO( gl_overbright, "0", FCVAR_GLCONFIG, "overbrights" );
 CVAR_DEFINE_AUTO( gl_fog, "1", FCVAR_GLCONFIG, "allow for rendering fog using the GX hardware fog unit" );
@@ -436,6 +437,7 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_wireframe );
 	gEngfuncs.Cvar_RegisterVariable( &gx_vsync );
 	gEngfuncs.Cvar_RegisterVariable( &gl_msaa );
+	gEngfuncs.Cvar_RegisterVariable( &gx_split_lod );
 	gEngfuncs.Cvar_RegisterVariable( &gl_stencilbits );
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );

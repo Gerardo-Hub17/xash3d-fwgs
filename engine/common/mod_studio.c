@@ -1157,6 +1157,10 @@ void Mod_PreloadSeqGroups( model_t *mod, studiohdr_t *phdr )
     if( !phdr || phdr->numseqgroups <= 1 || phdr->numseqgroups > MAXSTUDIOGROUPS )
         return;
 
+    // split screen shares the memory between the views: sequence files load when they are needed
+    if( Cvar_VariableValue( "gx_split_lod" ) >= 2.0f )
+        return;
+
     paSequences = (cache_user_t *)mod->submodels;
     if( paSequences == NULL )
     {

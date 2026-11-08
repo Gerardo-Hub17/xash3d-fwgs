@@ -1046,6 +1046,22 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	Q_snprintf( sv.model_precache[WORLD_INDEX], sizeof( sv.model_precache[0] ), "maps/%s.bsp", sv.name );
 	SetBits( sv.model_precache_flags[WORLD_INDEX], RES_FATALIFMISSING );
+	// split screen on this console: the renderer makes smaller textures, and nothing is
+	// preloaded, while the memory is shared between the views (decided for every map)
+	{
+		int lod = 0;
+
+		if( !Host_IsDedicated() && !background && svs.maxclients > 1 )
+		{
+			const int mode = (int)Cvar_VariableValue( "wii_split" );
+
+			if( mode == 1 || mode == 2 )
+				lod = bound( 2, (int)Cvar_VariableValue( "wii_split_players" ), 4 );
+		}
+
+		Cvar_SetValue( "gx_split_lod", lod );
+	}
+
 	sv.worldmodel = sv.models[WORLD_INDEX] = Mod_LoadWorld( sv.model_precache[WORLD_INDEX], true );
 	CRC32_MapFile( &sv.worldmapCRC, sv.model_precache[WORLD_INDEX], svs.maxclients > 1 );
 

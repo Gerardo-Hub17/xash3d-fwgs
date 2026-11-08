@@ -294,6 +294,10 @@ void CL_SplitFrame( void )
 
 	CL_SplitUIFrame();
 
+	// back at the menu: the next map is not a split screen one until a server says so
+	if( cls.state == ca_disconnected && !SV_Active() && Cvar_VariableValue( "gx_split_lod" ) != 0.0f )
+		Cvar_SetValue( "gx_split_lod", 0.0f );
+
 	if( !wanted )
 	{
 		SV_SplitStopAll();
@@ -846,7 +850,7 @@ void CL_SplitRenderView( void )
 		VectorCopy( origin, rvp.vieworigin );
 		VectorAdd( split.p[player].angles, punch, rvp.viewangles );
 		rvp.viewentity = index;
-		rvp.flags = RF_DRAW_WORLD | RF_SPLIT_VIEW | RF_NO_VIEWMODEL;
+		rvp.flags = RF_DRAW_WORLD | RF_SPLIT_VIEW | RF_NO_VIEWMODEL | RF_SPLIT_COUNT_BITS( split.count );
 		CL_SplitFov( player, cl.local.scr_fov, &rvp.fov_x, &rvp.fov_y );
 
 		// GL_RenderFrame changes these, the 2D code after the views still needs player 1's

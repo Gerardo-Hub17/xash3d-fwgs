@@ -673,6 +673,7 @@ extern convar_t	gl_finish;
 extern convar_t	gl_nosort;
 extern convar_t	gl_test;
 extern convar_t	gl_msaa;
+extern convar_t	gx_split_lod;	// set by the engine: >= 2 while a split screen map is loaded (players)
 extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t gl_fog;
