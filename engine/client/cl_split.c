@@ -600,6 +600,64 @@ void CL_SplitGunLimit( float *left, float *down, float halfx, float halfy )
 
 /*
 =============
+CL_SplitGunAim
+
+Points the weapon where the pointer is, always, while its place on the screen is
+held by CL_SplitGunLimit (so it never leaves the picture). The angles (left, down,
+degrees) are applied in full; the part the limit took off would have moved the gun
+across the screen, so it is undone by moving the weapon back along the way: the
+gun turns about its own middle (wii_gun_pivot: forward, left, up in its model
+space) and ends up pointing at the pointer without sliding off. wii_gun_aim 0
+brings back the old behaviour of just stopping the gun short.
+=============
+*/
+void CL_SplitGunAim( cl_entity_t *view, float left, float down, float halfx, float halfy )
+{
+	const float aim = bound( 0.0f, CL_SplitCvar( "wii_gun_aim", 1.0f ), 1.0f );
+	float ll = left, ld = down, fl, fd;
+	vec3_t pivot = { 16.0f, -6.0f, -6.0f };
+	vec3_t al, af, pl, pf;
+	matrix3x4 ml, mf;
+	convar_t *cv;
+
+	CL_SplitGunLimit( &ll, &ld, halfx, halfy );
+
+	fl = ll + ( left - ll ) * aim;
+	fd = ld + ( down - ld ) * aim;
+
+	if(( cv = Cvar_FindVar( "wii_gun_pivot" )) != NULL && cv->string )
+	{
+		float px, py, pz;
+
+		if( sscanf( cv->string, "%f %f %f", &px, &py, &pz ) == 3 )
+			VectorSet( pivot, px, py, pz );
+	}
+
+	// where the middle of the gun is with the limited angles, and with the full ones.
+	// The renderer flips the pitch of a model when it builds its matrix, so do the same.
+	VectorSet( al, view->angles[PITCH] - ld, view->angles[YAW] + ll, view->angles[ROLL] );
+	VectorSet( af, view->angles[PITCH] - fd, view->angles[YAW] + fl, view->angles[ROLL] );
+
+	if( !FBitSet( host.features, ENGINE_COMPENSATE_QUAKE_BUG ))
+	{
+		al[PITCH] = -al[PITCH];
+		af[PITCH] = -af[PITCH];
+	}
+
+	Matrix3x4_CreateFromEntity( ml, al, vec3_origin, 1.0f );
+	Matrix3x4_CreateFromEntity( mf, af, vec3_origin, 1.0f );
+	Matrix3x4_VectorTransform( ml, pivot, pl );
+	Matrix3x4_VectorTransform( mf, pivot, pf );
+
+	view->angles[YAW]   += fl;
+	view->angles[PITCH] -= fd;
+
+	VectorAdd( view->origin, pl, view->origin );
+	VectorSubtract( view->origin, pf, view->origin );
+}
+
+/*
+=============
 CL_SplitPickFireSeq
 
 The game plays the firing animation of a weapon from a client event, which a fake
@@ -891,14 +949,8 @@ static qboolean CL_SplitSetupViewModel( int player, int entindex, const vec3_t o
 		if( fabsf( p->fpx ) < 0.001f ) p->fpx = 0.0f;
 		if( fabsf( p->fpy ) < 0.001f ) p->fpy = 0.0f;
 
-		{
-			float left = -RAD2DEG( atanf( p->fpx * tx ));
-			float down = RAD2DEG( atanf( p->fpy * ty ));
-
-			CL_SplitGunLimit( &left, &down, RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
-			view->angles[YAW]   += left;
-			view->angles[PITCH] -= down;
-		}
+		CL_SplitGunAim( view, -RAD2DEG( atanf( p->fpx * tx )), RAD2DEG( atanf( p->fpy * ty )),
+			RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
 		view->angles[PITCH] += p->tilt;
 		view->angles[ROLL]  += p->roll - p->fpx * sway;
 		view->angles[ROLL]   = bound( -90.0f, view->angles[ROLL], 90.0f );

@@ -51,6 +51,8 @@ static CVAR_DEFINE_AUTO( wii_gun_shift, "-7", FCVAR_ARCHIVE, "units the weapon s
 static CVAR_DEFINE_AUTO( wii_gun_smooth, "0", FCVAR_ARCHIVE, "how fast the weapon catches up with the pointer (higher = snappier, lower = heavier, 0 = no smoothing)" );
 static CVAR_DEFINE_AUTO( wii_gun_edge, "0.85", FCVAR_ARCHIVE, "how far towards the screen edge the weapon may follow the pointer, as a fraction of half the view (0 = no limit)" );
 static CVAR_DEFINE_AUTO( wii_gun_home, "0.35", FCVAR_ARCHIVE, "where the weapon rests, to the right and below the centre, as a fraction of half the view" );
+static CVAR_DEFINE_AUTO( wii_gun_aim, "1", FCVAR_ARCHIVE, "1 = the weapon always points at the pointer, even where its position is held back at the screen edge; 0 = it just stops short" );
+static CVAR_DEFINE_AUTO( wii_gun_pivot, "16 -6 -6", FCVAR_ARCHIVE, "middle of the weapon in its model space (forward, left, up), the point it turns about when aiming at the screen edge" );
 static CVAR_DEFINE_AUTO( wii_aspect, "0", FCVAR_ARCHIVE, "TV aspect ratio used to draw (0 = follow the Wii system setting, 1 = 4:3, 2 = 16:9)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
@@ -806,6 +808,8 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_gun_smooth );
 	Cvar_RegisterVariable( &wii_gun_edge );
 	Cvar_RegisterVariable( &wii_gun_home );
+	Cvar_RegisterVariable( &wii_gun_aim );
+	Cvar_RegisterVariable( &wii_gun_pivot );
 	Cvar_RegisterVariable( &wii_ir_cursor );
 	Cvar_RegisterVariable( &wii_aspect );
 Cvar_RegisterVariable( &wii_nunchuk_sens );
@@ -1844,12 +1848,10 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
 
     // Aplica el offset angular al arma, con limite suave para que no salga de la pantalla
     {
-        float left = f_yaw, down = f_pitch, tx, ty;
+        float tx, ty;
 
         OGC_PointerTans( &tx, &ty );
-        CL_SplitGunLimit( &left, &down, RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
-        view->angles[YAW]   += left;
-        view->angles[PITCH] -= down;
+        CL_SplitGunAim( view, f_yaw, f_pitch, RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
     }
     view->angles[PITCH] += tpitch;
 

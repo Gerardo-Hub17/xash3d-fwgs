@@ -366,9 +366,9 @@ static float R_GetFarClip( void )
         // each view of a split screen sees less of the map: less to walk and to draw
         switch( R_SplitViews( ))
         {
-        case 2: zfar = Q_min( zfar, 6000.0f ); break;
-        case 3: zfar = Q_min( zfar, 4000.0f ); break;
-        case 4: zfar = Q_min( zfar, 3000.0f ); break;
+        case 2: zfar = Q_min( zfar, 5000.0f ); break;
+        case 3: zfar = Q_min( zfar, 3200.0f ); break;
+        case 4: zfar = Q_min( zfar, 2500.0f ); break;
         }
 
         return zfar;
@@ -820,6 +820,7 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
 
     switch( R_SplitViews( ))
     {
+    case 2: range = 3000.0f; break;
     case 3: range = 1300.0f; break;
     case 4: range = 1000.0f; break;
     default: return false;
@@ -833,7 +834,25 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
 
     vec3_t d;
     VectorSubtract( e->origin, RI.rvp.vieworigin, d );
-    return DotProduct( d, d ) > range * range;
+
+    const float dist2 = DotProduct( d, d );
+    if( dist2 > range * range )
+        return true;
+
+    // too small to see: a view is a few hundred pixels tall, so what would cover only a
+    // couple of them (its radius seen from where it is) is not worth the transform + draw
+    if( e->model->radius > 0.0f && !e->player && RI.rvp.viewport[3] > 0 && RI.rvp.fov_y > 1.0f )
+    {
+        const float px_per_unit_at_1 = ( RI.rvp.viewport[3] * 0.5f ) / tanf( DEG2RAD( RI.rvp.fov_y ) * 0.5f );
+        const float minpx = ( R_SplitViews( ) >= 3 ) ? 3.0f : 2.0f;
+        const float r = e->model->radius * Q_max( 1.0f, e->curstate.scale );
+
+        // r * px_per_unit_at_1 / dist < minpx   ->   dist > r * px_per_unit_at_1 / minpx
+        const float far_d = r * px_per_unit_at_1 / minpx;
+        return dist2 > far_d * far_d;
+    }
+
+    return false;
 }
 
 static void R_DrawEntitiesOnList( void )
