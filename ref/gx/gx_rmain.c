@@ -22,6 +22,9 @@ GNU General Public License for more details.
 
 /* Contador de rendimiento para cl_showfps 3 */
 extern double g_gx_frame_time_ms;
+extern void OGC_ProfAdd( int bucket, double dt );
+extern void OGC_ProfFrameInfo( int models, int studiotris, int worldtris, int particles );
+extern void GX_UpdateStyleSurfaces( const byte *changed );
 extern double g_gx_cpu_time_ms;
 
 
@@ -31,11 +34,12 @@ extern double g_gx_cpu_time_ms;
 extern void GX_DbgWait( const char *tag );
 extern void GX_MemReport( const char *tag );
 
-#define GXT( s ) do { static int _n; if( _n++ < 1 ) gEngfuncs.Con_Printf( "[GX] " s "\n" ); } while( 0 )
+#define GXT( s ) do { static int _n; if( _n++ < 1 ) GX_LOG( "[GX] " s "\n" ); } while( 0 )
 
 #define IsLiquidContents( cnt ) ( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
 
 float           gldepthmin, gldepthmax;
+extern int      gx_testmode;
 ref_instance_t  RI;
 
 float gx_pending_texcoord[MAX_TEXTURE_UNITS][2];
@@ -53,7 +57,12 @@ void GX_ReloadProjectionMtx( float zbias )
 {
     Mtx44 biased;
     memcpy( biased, gx_projection_mtx, sizeof( Mtx44 ));
-    biased[2][3] -= zbias;
+    /* zbias > 0 acerca a la camara. En perspectiva el desplazamiento va en [2][2]
+     * (constante en espacio NDC, como glPolygonOffset); en ortografica en [2][3] */
+    if( gx_projection_type == GX_PERSPECTIVE )
+        biased[2][2] += zbias;
+    else
+        biased[2][3] -= zbias;
     GX_LoadProjectionMtx( biased, gx_projection_type );
 }
 
@@ -342,10 +351,28 @@ static void R_Clear( int bitMask )
     GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 }
 
+// split screen: into how many views the screen is split (1 = not split)
+static inline int R_SplitViews( void )
+{
+    return FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) ? RF_SPLIT_COUNT( RI.rvp.flags ) : 1;
+}
+
 static float R_GetFarClip( void )
 {
     if( WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
-        return gp_movevars->zmax * 1.73f;
+    {
+        float zfar = gp_movevars->zmax * 1.73f;
+
+        // each view of a split screen sees less of the map: less to walk and to draw
+        switch( R_SplitViews( ))
+        {
+        case 2: zfar = Q_min( zfar, 6000.0f ); break;
+        case 3: zfar = Q_min( zfar, 4000.0f ); break;
+        case 4: zfar = Q_min( zfar, 3000.0f ); break;
+        }
+
+        return zfar;
+    }
     return 2048.0f;
 }
 
@@ -507,9 +534,29 @@ static void R_SetupFrame( void )
 
                sizeof( cl_entity_t* ), R_TransEntityCompare );
     }
-
+    GX_ResetEffectState();
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
         R_FindViewLeaf();
+}
+
+// ultimo viewport aplicado (x, y, ancho, alto), para poder cambiar solo el rango Z
+static f32 gx_vp[4];
+
+// deja el scissor como lo pide la vista actual: pantalla completa, o su mitad en
+// pantalla dividida. Quien lo restablezca a mitad de una vista debe usar esto
+void GX_RestoreViewScissor( void )
+{
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && gx_vp[2] > 0.0f && gx_vp[3] > 0.0f )
+        GX_SetScissor( (u32)gx_vp[0], (u32)gx_vp[1], (u32)gx_vp[2], (u32)gx_vp[3] );
+    else
+        GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
+}
+
+void GX_SetDepthRange( float zmin, float zmax )
+{
+    if( gx_vp[2] <= 0.0f || gx_vp[3] <= 0.0f )
+        return;
+    GX_SetViewport( gx_vp[0], gx_vp[1], gx_vp[2], gx_vp[3], zmin, zmax );
 }
 
 void R_SetupGL( qboolean set_gl_state )
@@ -529,16 +576,25 @@ void R_SetupGL( qboolean set_gl_state )
         int y2 = ceil(  gpGlobals->height - ( RI.rvp.viewport[1] + RI.rvp.viewport[3] ) * gpGlobals->height / gpGlobals->height );
 
         if( tr.rotation & 1 )
-            GX_SetViewport( (f32)y2, (f32)x, (f32)(y - y2), (f32)(x2 - x), gldepthmin, gldepthmax );
+        {
+            gx_vp[0] = (f32)y2; gx_vp[1] = (f32)x; gx_vp[2] = (f32)(y - y2); gx_vp[3] = (f32)(x2 - x);
+        }
         else
-            GX_SetViewport( (f32)x,  (f32)y2, (f32)(x2 - x), (f32)(y - y2), gldepthmin, gldepthmax );
+        {
+            gx_vp[0] = (f32)x; gx_vp[1] = (f32)y2; gx_vp[2] = (f32)(x2 - x); gx_vp[3] = (f32)(y - y2);
+        }
+        GX_SetViewport( gx_vp[0], gx_vp[1], gx_vp[2], gx_vp[3], gldepthmin, gldepthmax );
+
+        // sin scissor la guarda de GX deja pasar triangulos fuera del viewport: con la
+        // pantalla dividida invadirian la otra vista (R_Set2DMode lo restablece)
+        if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ))
+            GX_SetScissor( (u32)gx_vp[0], (u32)gx_vp[1], (u32)gx_vp[2], (u32)gx_vp[3] );
     }
     else
     {
-        GX_SetViewport(
-            (f32)RI.rvp.viewport[0], (f32)RI.rvp.viewport[1],
-            (f32)RI.rvp.viewport[2], (f32)RI.rvp.viewport[3],
-            gldepthmin, gldepthmax );
+        gx_vp[0] = (f32)RI.rvp.viewport[0]; gx_vp[1] = (f32)RI.rvp.viewport[1];
+        gx_vp[2] = (f32)RI.rvp.viewport[2]; gx_vp[3] = (f32)RI.rvp.viewport[3];
+        GX_SetViewport( gx_vp[0], gx_vp[1], gx_vp[2], gx_vp[3], gldepthmin, gldepthmax );
     }
 
     GX_SetCullMode( GX_CULL_FRONT );
@@ -719,8 +775,70 @@ void R_DrawFog( void )
     glState.isFogEnabled = true;
 }
 
+/*
+ * Estado conocido antes de dibujar efectos en el mundo (beams, sprites, particulas,
+ * TriAPI del cliente): matriz de vista del mundo, proyeccion sin sesgo de profundidad,
+ * rango de profundidad completo y generacion de coordenadas de textura normal.
+ * Lo que dejaban los modelos, el arma o el pase de lightmaps no debe condicionarlos.
+ */
+void GX_ResetEffectState( void )
+{
+    /* los modelos dejaban el culling en BACK: los quads de TriAPI del cliente (laseres)
+     * y los beams solo se veian desde un lado. Efectos siempre a doble cara
+     * (no se toca glState.faceCull, que usa el culling por CPU de entidades brush) */
+    GX_SetCullMode( GX_CULL_NONE );
+
+    if( !gx_fx_reset.value )
+        return;
+
+    glState.num_polyoffsets = 0;
+    tr.modelviewIdentity = false;
+    R_LoadIdentity();
+
+    GX_ReloadProjectionMtx( 0.0f );
+    GX_SetCurrentMtx( GX_PNMTX0 );
+    GX_SetDepthRange( gldepthmin, gldepthmax );
+
+    GX_SetNumTexGens( 1 );
+    GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
+}
+
+/* medicion por etapa de wii_prof: ent.solido, ent.sprite, efx.opaco, tri.normal, ent.trans, tri.trans, efx.trans, alfa */
+#define GXPT_BEGIN() double gxpt = Platform_DoubleTime()
+#define GXPT_END( b ) do { double gxpn = Platform_DoubleTime(); OGC_ProfAdd(( b ), gxpn - gxpt ); gxpt = gxpn; } while( 0 )
+
+// split screen: the entity the view belongs to is not drawn in its own view
+static inline qboolean R_SkipViewEntity( const cl_entity_t *e )
+{
+    return FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RI.rvp.viewentity && e->index == RI.rvp.viewentity;
+}
+
+// split screen: models and sprites far from the view are skipped (players see farther)
+static qboolean R_SplitCullEntity( const cl_entity_t *e )
+{
+    float range;
+
+    switch( R_SplitViews( ))
+    {
+    case 3: range = 1300.0f; break;
+    case 4: range = 1000.0f; break;
+    default: return false;
+    }
+
+    if( !e->model || e->model->type == mod_brush || e->curstate.entityType == ET_BEAM )
+        return false;
+
+    if( e->player )
+        range *= 1.5f;
+
+    vec3_t d;
+    VectorSubtract( e->origin, RI.rvp.vieworigin, d );
+    return DotProduct( d, d ) > range * range;
+}
+
 static void R_DrawEntitiesOnList( void )
 {
+    GXPT_BEGIN();
     tr.blend = 1.0f;
 
     for( int i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
@@ -729,6 +847,9 @@ static void R_DrawEntitiesOnList( void )
         RI.currentmodel  = RI.currententity->model;
 
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+            continue;
+
+        if( R_SkipViewEntity( RI.currententity ) || R_SplitCullEntity( RI.currententity ))
             continue;
 
         Assert( RI.currententity != NULL );
@@ -743,7 +864,10 @@ static void R_DrawEntitiesOnList( void )
         }
     }
 
+    GXPT_END( 29 );
     R_DrawAlphaTextureChains();
+    GXPT_END( 36 );
+    GX_ResetEffectState();
 
     for( int i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
     {
@@ -756,15 +880,20 @@ static void R_DrawEntitiesOnList( void )
         Assert( RI.currententity != NULL );
         Assert( RI.currentmodel  != NULL );
 
-        if( RI.currentmodel->type == mod_sprite )
+        if( RI.currentmodel->type == mod_sprite && !R_SplitCullEntity( RI.currententity ))
             R_DrawSpriteModel( RI.currententity );
     }
 
+    GXPT_END( 30 );
+    GX_ResetEffectState();
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         gEngfuncs.CL_DrawEFX( tr.frametime, false );
+    GXPT_END( 31 );
 
+    GX_ResetEffectState();
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
         gEngfuncs.pfnDrawNormalTriangles();
+    GXPT_END( 32 );
 
     for( int i = 0; i < tr.draw_list->num_trans_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
     {
@@ -776,6 +905,9 @@ static void R_DrawEntitiesOnList( void )
         else tr.blend = 1.0f;
 
         if( tr.blend <= 0.0f ) continue;
+
+        if( R_SkipViewEntity( RI.currententity ) || R_SplitCullEntity( RI.currententity ))
+            continue;
 
         if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
             continue;
@@ -792,22 +924,27 @@ static void R_DrawEntitiesOnList( void )
         default: break;
         }
     }
-
+    GXPT_END( 33 );
+    GX_ResetEffectState();
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
     {
         GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
         gEngfuncs.pfnDrawTransparentTriangles();
     }
+    GXPT_END( 34 );
 
+    GX_ResetEffectState();
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
     {
         R_AllowFog( false );
         gEngfuncs.CL_DrawEFX( tr.frametime, true );
         R_AllowFog( true );
     }
+    GXPT_END( 35 );
 
     GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 
+    GX_ResetEffectState();
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         R_DrawViewModel();
     gEngfuncs.CL_ExtraUpdate();
@@ -824,8 +961,85 @@ void R_RenderScene( void )
         tr.frametime = gp_cl->time - gp_cl->oldtime;
     else tr.frametime = 0.0;
 
+    // split screen: the views of one frame share the world, so particles and beams
+    // advance once, in the first view (otherwise they run N times faster and cost N times more)
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ))
+    {
+        static double split_lasttime = -1.0;
+
+        if( gp_cl->time == split_lasttime && tr.frametime != 0.0 )
+            tr.frametime = 0.0;
+        else split_lasttime = gp_cl->time;
+    }
+
     tr.framecount++;
-    tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+
+    /* Red de seguridad para estilos de luz conmutables (32..63: interruptores,
+       apagar la luz de una sala). Si el cambio no llega por la actualizacion
+       parcial de lightmaps, se reconstruyen todas (lo mismo que hace cambiar el
+       brillo en las opciones de video). Como mucho una vez cada ~15 frames. */
+    if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ) && !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) && r_dynamic->value )
+    {
+        static int ls_prev[MAX_LIGHTSTYLES];
+        static const void *ls_world;
+        static int ls_last_rebuild;
+        static int ls_cur[MAX_LIGHTSTYLES];
+        static unsigned char ls_chg[MAX_LIGHTSTYLES], ls_anim[MAX_LIGHTSTYLES];
+
+        /* Los estilos que cambian todo el rato (luces con "pattern" que parpadean)
+           ya se actualizan por superficie en R_CheckLightMap. Reconstruir TODOS los
+           lightmaps por culpa de ellos costaba ~40 ms cada 16 cuadros (tirones).
+           Se marcan como animados y la red de seguridad los ignora: solo se
+           reconstruye por interruptores que cambian de vez en cuando. */
+        for( int i = 32; i < MAX_LIGHTSTYLES; i++ )
+        {
+            if( ls_cur[i] != (int)g_lightstylevalue[i] )
+            {
+                ls_cur[i] = (int)g_lightstylevalue[i];
+                if( ls_chg[i] < 255 ) ls_chg[i]++;
+            }
+        }
+        if(( tr.framecount & 63 ) == 0 )
+        {
+            for( int i = 32; i < MAX_LIGHTSTYLES; i++ )
+            {
+                ls_anim[i] = ls_chg[i] >= 4;
+                ls_chg[i] = 0;
+            }
+        }
+
+        if( ls_world != WORLDMODEL )
+        {
+            ls_world = WORLDMODEL;
+            for( int i = 0; i < MAX_LIGHTSTYLES; i++ ) ls_prev[i] = g_lightstylevalue[i];
+        }
+        else
+        {
+            byte ls_changed[MAX_LIGHTSTYLES];
+            int changed = 0;
+            memset( ls_changed, 0, sizeof( ls_changed ));
+            for( int i = 32; i < MAX_LIGHTSTYLES; i++ )
+            {
+                if( !ls_anim[i] && ls_prev[i] != (int)g_lightstylevalue[i] )
+                {
+                    ls_changed[i] = 1;
+                    changed = 1;
+                }
+            }
+
+            if( changed && ( tr.framecount - ls_last_rebuild ) > 15 )
+            {
+                ls_last_rebuild = tr.framecount;
+                for( int i = 0; i < MAX_LIGHTSTYLES; i++ ) ls_prev[i] = g_lightstylevalue[i];
+                /* solo las superficies de los estilos que cambiaron (antes: todos los lightmaps, ~62 ms) */
+                GX_UpdateStyleSurfaces( ls_changed );
+            }
+        }
+    }
+    // split screen with 3 or 4 views: no dynamic lights on the walls (they are marked once per view)
+    if( R_SplitViews( ) >= 3 )
+        tr.dlightframecount = tr.framecount;
+    else tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
 
     R_SetupFrustum();
     R_SetupFrame();
@@ -834,18 +1048,25 @@ void R_RenderScene( void )
 
     R_MarkLeaves();
     R_DrawFog();
+    GX_ResetEffectState();
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
         R_AnimateRipples();
 
     R_CheckGLFog();
+    double __t_w = Platform_DoubleTime();
     R_DrawWorld();
+    OGC_ProfAdd( 15, Platform_DoubleTime() - __t_w );
     R_CheckFog();
 
     gEngfuncs.CL_ExtraUpdate();
 
+    __t_w = Platform_DoubleTime();
     R_DrawEntitiesOnList();
+    OGC_ProfAdd( 16, Platform_DoubleTime() - __t_w );
     R_DrawWaterSurfaces();
 	g_gx_frame_time_ms = (Platform_DoubleTime() - __t_start) * 1000.0;
+OGC_ProfAdd( 14, Platform_DoubleTime() - __t_start );
+    OGC_ProfFrameInfo( r_stats.c_studio_models_drawn, r_stats.c_studio_polys, r_stats.c_world_polys, r_stats.c_particle_count );
 }
 
 void R_GammaChanged( qboolean do_reset_gamma )
@@ -898,7 +1119,7 @@ void R_BeginFrame( qboolean clearScene )
 {
 	GX_ResetRenderState();
 	static int bf;
-	if( bf < 5 ) gEngfuncs.Con_Printf( "[GX] BeginFrame %d\n", bf );
+	if( bf < 5 ) GX_LOG( "[GX] BeginFrame %d\n", bf );
 	bf++;
 	GX_DbgWait( "beginframe start" );
 
@@ -938,6 +1159,18 @@ void R_SetupRefParams( const ref_viewpass_t *rvp )
     RI.farClip = 0;
 }
 
+// The views of a split screen are drawn in the same engine frame: they share the frame
+// counter, otherwise the walk cycle of the models, their events and the entities seen
+// are worked out again for each view as if a new frame had passed.
+static void R_NextRealFrame( void )
+{
+    if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && !tr.split_newframe )
+        return;
+
+    tr.split_newframe = false;
+    tr.realframecount++;
+}
+
 void R_RenderFrame( const ref_viewpass_t *rvp )
 {
     if( r_norefresh->value )
@@ -956,27 +1189,28 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
         if( gEngfuncs.drawFuncs->GL_RenderFrame( rvp ))
         {
             R_GatherPlayerLight( tr.viewent );
-            tr.realframecount++;
+            R_NextRealFrame();
             tr.fResetVis = true;
             return;
         }
     }
 
     tr.fCustomRendering = false;
+    GX_ResetEffectState();
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         R_RunViewmodelEvents();
 
-    tr.realframecount++;
+    R_NextRealFrame();
     R_RenderScene();
 }
 
 void R_EndFrame( void )
 {
 	static int ef;
-	if( ef < 5 ) gEngfuncs.Con_Printf( "[GX] EndFrame %d\n", ef );
+	if( ef < 5 ) GX_LOG( "[GX] EndFrame %d\n", ef );
 	R_Set2DMode( false );
 	gEngfuncs.GL_SwapBuffers();
-	if( ef < 5 ) gEngfuncs.Con_Printf( "[GX] EndFrame %d done\n", ef );
+	if( ef < 5 ) GX_LOG( "[GX] EndFrame %d done\n", ef );
 	ef++;
 }
 

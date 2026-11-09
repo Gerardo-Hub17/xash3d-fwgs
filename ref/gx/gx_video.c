@@ -15,6 +15,8 @@ GNU General Public License for more details.
 */
 
 #include "gx_local.h"
+extern double Platform_DoubleTime( void );
+extern void OGC_ProfAdd( int bucket, double dt );
 
 #include <gccore.h>
 #include <ogc/gx.h>
@@ -32,12 +34,19 @@ CVAR_DEFINE_AUTO( gl_lightmap_nearest, "0", FCVAR_GLCONFIG, "disable lightmap fi
 CVAR_DEFINE_AUTO( gl_keeptjunctions, "1", FCVAR_GLCONFIG, "removing tjuncs causes blinking pixels" );
 CVAR_DEFINE_AUTO( gl_check_errors, "1", FCVAR_GLCONFIG, "ignore video engine errors" );
 CVAR_DEFINE_AUTO( gl_polyoffset, "2", FCVAR_GLCONFIG, "polygon offset for decals" );
+CVAR_DEFINE_AUTO( gx_beamdiag, "0", 0, "dump beam endpoints to the console once" );
+CVAR_DEFINE_AUTO( gx_lm_bias, "0", FCVAR_GLCONFIG, "depth bias of the lightmap pass, fixes light seams between polygons (0 = off)" );
+CVAR_DEFINE_AUTO( gx_decal_offset, "0.25", FCVAR_GLCONFIG, "units decals are pushed out of the wall (fixes z-fighting)" );
 CVAR_DEFINE_AUTO( gl_polyoffset_bmodels, "2", FCVAR_GLCONFIG, "polygon offset for brush models" );
+CVAR_DEFINE_AUTO( gx_fx_reset, "1", 0, "debug: reload the world matrices before drawing effects (0 = off)" );
+CVAR_DEFINE_AUTO( gx_fx_noz, "0", 0, "debug: draw beams and translucent TriAPI ignoring depth (1 = on)" );
 CVAR_DEFINE_AUTO( gl_wireframe, "0", FCVAR_GLCONFIG|FCVAR_SPONLY, "show wireframe overlay" );
+CVAR_DEFINE_AUTO( gx_vsync, "0", FCVAR_GLCONFIG, "0 = 60 fps (baja a 30 si el cuadro llega tarde), 1 = automatico (30 fijo si no alcanza 60), 2 = 30 fps fijos" );
 CVAR_DEFINE_AUTO( gl_finish, "0", FCVAR_GLCONFIG, "use GX_DrawDone instead of a plain flush" );
 CVAR_DEFINE_AUTO( gl_nosort, "0", FCVAR_GLCONFIG, "disable sorting of translucent surfaces" );
 CVAR_DEFINE_AUTO( gl_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( gl_msaa, "0", FCVAR_GLCONFIG, "enable or disable the GX copy-filter antialiasing" );
+CVAR_DEFINE_AUTO( gx_split_lod, "0", 0, "split screen detail level (set by the engine, number of players)" );
 CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelformat stencil bits (0 - auto)" );
 CVAR_DEFINE_AUTO( gl_overbright, "0", FCVAR_GLCONFIG, "overbrights" );
 CVAR_DEFINE_AUTO( gl_fog, "1", FCVAR_GLCONFIG, "allow for rendering fog using the GX hardware fog unit" );
@@ -75,6 +84,44 @@ static struct
 } gxvid;
 
 static qboolean gx_video_initialized = false;
+
+extern float OGC_GetAspect( void );
+
+// Ancho que ocupa la imagen en la senal de video. El modo por defecto de libogc
+// usa 640 de los 720 muestreos (deja ~40 a cada lado en negro); en 16:9 se usa
+// todo el ancho para que la imagen llene la pantalla. El framebuffer sigue siendo
+// de 640 y el VI lo escala.
+#define GX_VI_MAX_WIDTH 720
+
+static int gx_vi_default_w, gx_vi_default_x;
+
+// Ajusta rmode->viWidth/viXOrigin segun wii_aspect. Devuelve true si cambiaron.
+static qboolean GX_UpdateViWidth( void )
+{
+	GXRModeObj *rmode = gxvid.rmode;
+	int w, x;
+
+	if( !rmode )
+		return false;
+
+	if( OGC_GetAspect() > 1.5f )
+	{
+		w = GX_VI_MAX_WIDTH;
+		x = 0;
+	}
+	else
+	{
+		w = gx_vi_default_w;
+		x = gx_vi_default_x;
+	}
+
+	if( rmode->viWidth == w && rmode->viXOrigin == x )
+		return false;
+
+	rmode->viWidth = w;
+	rmode->viXOrigin = x;
+	return true;
+}
 
 #define GX_FIFO_SIZE ( 256 * 1024 )
 
@@ -145,26 +192,74 @@ void GX_Present( void )
 	if( gx_testmode == 2 )
 		GX_TestBars();
 
-	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: DrawDone\n", n );
+	if( n < 5 ) GX_LOG( "[GX] present %d: DrawDone\n", n );
+	double t_gpu = Platform_DoubleTime();
 	GX_DrawDone();
 	/* GX_CopyDisp(clear=TRUE) solo limpia color/alpha/Z si sus escrituras estan habilitadas en ese momento. */
 	/* Si el ultimo dibujo dejo Z-write o color-update apagado, el EFB no se limpia y el frame anterior se acumula. */
 	GX_SetColorUpdate( GX_TRUE );
 	GX_SetAlphaUpdate( GX_TRUE );
 	GX_SetZMode( GX_TRUE, GX_ALWAYS, GX_TRUE );
-	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: CopyDisp\n", n );
+	if( n < 5 ) GX_LOG( "[GX] present %d: CopyDisp\n", n );
 	GX_CopyDisp( gxvid.xfb[gxvid.fb], GX_TRUE );
 	GX_DrawDone(); /* esperar a que la copia EFB->XFB termine antes de mostrarla (evita tearing) */
+    double t_vs = Platform_DoubleTime();
+    OGC_ProfAdd( 17, t_vs - t_gpu ); // espera a que la GPU termine el cuadro
+
+	/* Ritmo de cuadros. Con vsync, un cuadro que tarda un poco mas de 16,7 ms espera
+	   hasta 33,3 ms, y si el trabajo anda justo en ese limite la imagen alterna 60/30
+	   (tirones). En modo automatico, si en los ultimos 32 cuadros muchos pasaron de
+	   ~16 ms de trabajo se fijan 30 fps constantes; se vuelve a 60 cuando todos bajan
+	   de ~13,5 ms. */
+	static double last_end;
+	static int interval = 1, win_n, win_over;
+	static double win_max;
+	double work = t_vs - last_end;
+	int mode = (int)gx_vsync.value;
+
+	if( mode == 2 ) interval = 2;
+	else if( mode <= 0 ) interval = 1;
+	else if( work < 0.1 ) // se ignoran las cargas
+	{
+		win_n++;
+		if( work > 0.0158 ) win_over++;
+		if( work > win_max ) win_max = work;
+
+		if( win_n >= 32 )
+		{
+			if( interval == 1 && win_over >= 6 ) interval = 2;
+			else if( interval == 2 && win_max < 0.0135 ) interval = 1;
+			win_n = win_over = 0;
+			win_max = 0.0;
+		}
+	}
 
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
 	VIDEO_Flush();
 	VIDEO_WaitVSync();
+	
+	if( work < 0.1 ) OGC_ProfAdd( 24, work ); // trabajo real del cuadro, sin esperas
+	OGC_ProfSetInterval( interval );
+	if( interval == 2 && ( Platform_DoubleTime() - last_end ) < 0.024 )
+	    VIDEO_WaitVSync(); // todavia no pasaron dos retrazos: esperar el segundo
+	double t_end = Platform_DoubleTime();
+	OGC_ProfAdd( 18, t_end - t_vs ); // espera de vsync (las dos)
+	last_end = t_end;
 	if( gxvid.rmode && FBitSet( gxvid.rmode->viTVMode, VI_NON_INTERLACE ))
 		VIDEO_WaitVSync();
-	if( n < 5 ) gEngfuncs.Con_Printf( "[GX] present %d: vsync ok\n", n );
+	if( n < 5 ) GX_LOG( "[GX] present %d: vsync ok\n", n );
 
 	gxvid.fb ^= 1;
 	n++;
+
+	// wii_aspect cambio en el menu: reconfigurar el ancho del VI al vuelo
+	if( GX_UpdateViWidth( ))
+	{
+		VIDEO_Configure( gxvid.rmode );
+		VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb ^ 1] ); // el ultimo cuadro mostrado
+		VIDEO_Flush();
+		VIDEO_WaitVSync();
+	}
 }
 
 static void GX_SetDefaultTexState( void )
@@ -316,6 +411,9 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_sort_textures );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_drawelements );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_builtin_renderer );
+	gEngfuncs.Cvar_RegisterVariable( &gx_studio_maxdist );
+	gEngfuncs.Cvar_RegisterVariable( &gx_studio_flatdist );
+	gEngfuncs.Cvar_RegisterVariable( &gx_studio_lightcache );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple_updatetime );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple_spawntime );
@@ -337,7 +435,9 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_nosort );
 	gEngfuncs.Cvar_RegisterVariable( &gl_test );
 	gEngfuncs.Cvar_RegisterVariable( &gl_wireframe );
+	gEngfuncs.Cvar_RegisterVariable( &gx_vsync );
 	gEngfuncs.Cvar_RegisterVariable( &gl_msaa );
+	gEngfuncs.Cvar_RegisterVariable( &gx_split_lod );
 	gEngfuncs.Cvar_RegisterVariable( &gl_stencilbits );
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );
@@ -345,7 +445,17 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_litwater_force );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset );
+	gEngfuncs.Cvar_RegisterVariable( &gx_decal_offset );
+	gEngfuncs.Cvar_RegisterVariable( &gx_beamdiag );
+	gEngfuncs.Cvar_RegisterVariable( &gx_lm_bias );
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset_bmodels );
+	gEngfuncs.Cvar_RegisterVariable( &gx_fx_reset );
+	gEngfuncs.Cvar_RegisterVariable( &gx_fx_noz );
+
+	/* r_dynamic es FCVAR_ARCHIVE: un 0 guardado en un config.cfg viejo apaga
+	   lightstyles y luces dinamicas para siempre (el log mostraba r_dynamic=0).
+	   El puerto Wii lo fuerza a 1 en cada arranque. */
+	gEngfuncs.Cvar_SetValue( "r_dynamic", 1.0f );
 
 	gEngfuncs.Cmd_AddCommand( "r_info", R_RenderInfo_f, "display renderer info" );
 	gEngfuncs.Cmd_AddCommand( "timerefresh", SCR_TimeRefresh_f, "turn quickly and print rendering statistcs" );
@@ -371,6 +481,8 @@ void GX_SetupAttributes( int safegl )
 	VIDEO_Init();
 
 	gxvid.rmode = VIDEO_GetPreferredMode( NULL );
+	gx_vi_default_w = gxvid.rmode->viWidth;
+	gx_vi_default_x = gxvid.rmode->viXOrigin;
 }
 
 void GX_OnContextCreated( void )
@@ -386,14 +498,19 @@ void GX_OnContextCreated( void )
 	gxvid.fb = 0;
 
 	{
-		FILE *tf = fopen( "sd:/xash3d/gxtest.txt", "r" );
+		extern const char *OGC_BaseDir( void );
+		char tpath[64];
+		FILE *tf;
+
+		snprintf( tpath, sizeof( tpath ), "%s/gxtest.txt", OGC_BaseDir( ));
+		tf = fopen( tpath, "r" );
 		if( tf )
 		{
 			int c = 0;
 			if( fscanf( tf, "%d", &c ) == 1 && c >= 0 && c < 100 ) gx_testmode = c;
 			fclose( tf );
 		}
-		gEngfuncs.Con_Printf( "[GX] testmode = %d\n", gx_testmode );
+		GX_LOG( "[GX] testmode = %d\n", gx_testmode );
 	}
 
 	// console_init() replaces devoptab stdout/stderr with libogc's on-screen
@@ -412,6 +529,7 @@ void GX_OnContextCreated( void )
 	VIDEO_ClearFrameBuffer( rmode, gxvid.xfb[1], COLOR_BLACK );
 
 
+	GX_UpdateViWidth();
 	VIDEO_Configure( rmode );
 	VIDEO_SetNextFramebuffer( gxvid.xfb[gxvid.fb] );
 	VIDEO_SetBlack( FALSE );
@@ -462,7 +580,7 @@ void GX_OnContextCreated( void )
 	GX_InitExtensions();
 	GX_SetDefaultState();
 	GX_SetDefaults();
-	gEngfuncs.Con_Printf( "[GX] defaults OK\n" );
+	GX_LOG( "[GX] defaults OK\n" );
 }
 
 /* Neutralizado: duplicado con gx_rmain.c */

@@ -654,15 +654,12 @@ void Host_Frame( double time )
 	// Walk every pool sentinel each frame. Corruption on this port shows up
 	// long after the fact as something unrelated, so the point is to catch it
 	// in the frame it happens rather than wherever it eventually bites.
-	{
-		static int mc_frame;
+	// Recorrer todos los pools cuesta varios ms por cuadro en la Wii (miles de bloques),
+	// asi que solo se hace cada ~10 s: suficiente para avisar, sin bajar los fps.
+	static int mc_frame;
 
+	if(( ++mc_frame % 600 ) == 0 )
 		Mem_Check();
-
-		if(( mc_frame % 10 ) == 0 )
-			Con_Printf( "[MEMCHECK] frame %d clean\n", mc_frame );
-		mc_frame++;
-	}
 #endif
 
 	// decide the simulation time
@@ -674,11 +671,26 @@ void Host_Frame( double time )
 	if( host.framecount == 0 )
 		Con_DPrintf( "Time to first frame: %.3f seconds\n", t1 - host.starttime );
 
-	Host_InputFrame ();  // input frame
-	Host_ClientBegin (); // begin client
-	Host_GetCommands (); // dedicated in
-	Host_ServerFrame (); // server frame
-	Host_ClientFrame (); // client frame
+#if XASH_OGC
+    double tp = Platform_DoubleTime();
+    Host_InputFrame ();  // input frame
+    OGC_ProfAdd( 5, Platform_DoubleTime() - tp );
+    Host_ClientBegin (); // begin client
+    Host_GetCommands (); // dedicated in
+    tp = Platform_DoubleTime();
+    Host_ServerFrame (); // server frame
+    OGC_ProfAdd( 1, Platform_DoubleTime() - tp );
+    tp = Platform_DoubleTime();
+    Host_ClientFrame (); // client frame
+    OGC_ProfAdd( 2, Platform_DoubleTime() - tp );
+#else
+    Host_InputFrame ();  // input frame
+    Host_ClientBegin (); // begin client
+    Host_GetCommands (); // dedicated in
+    Host_ServerFrame (); // server frame
+    Host_ClientFrame (); // client frame
+#endif
+
 	HTTP_Run();			 // both server and client
 	XRcon_Frame();
 
@@ -690,6 +702,9 @@ void Host_Frame( double time )
 
 	host.framecount++;
 	host.pureframetime = Platform_DoubleTime() - t1;
+#if XASH_OGC
+	OGC_ProfAdd( 0, host.pureframetime );
+#endif
 }
 
 /*
@@ -1329,7 +1344,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 			"bind R1_BUTTON \"+attack\"\n"
 			"bind L2_BUTTON \"+speed\"\n"
 			"bind R2_BUTTON \"+attack2\"\n"
-			"bind DPAD_UP \"+reload\"\n"
+			"bind DPAD_UP \"impulse 201\"\n"
 			"bind DPAD_DOWN \"lastinv\"\n"
 			"bind DPAD_LEFT \"invprev\"\n"
 			"bind DPAD_RIGHT \"invnext\"\n"

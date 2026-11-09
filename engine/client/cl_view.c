@@ -22,6 +22,15 @@ GNU General Public License for more details.
 #include "input.h" // touch
 #include "platform/platform.h" // GL_UpdateSwapInterval
 
+#if XASH_OGC
+// wii_prof: tiempo de cada etapa del dibujo 2D / vista
+#define PT_BEGIN() double pt_ = Platform_DoubleTime()
+#define PT_END( b ) do { double pn_ = Platform_DoubleTime(); OGC_ProfAdd(( b ), pn_ - pt_ ); pt_ = pn_; } while( 0 )
+#else
+#define PT_BEGIN()
+#define PT_END( b )
+#endif
+
 /*
 ===============
 V_CalcViewRect
@@ -81,6 +90,9 @@ static void V_CalcViewRect( void )
 	if( full ) clgame.viewport[1] = 0;
 	else clgame.viewport[1] = ( refState.height - sb_lines - clgame.viewport[3] ) / 2;
 
+	// split screen: player 1 gets its half
+	if( CL_SplitActive( ))
+		CL_SplitViewport( 0, clgame.viewport );
 }
 
 /*
@@ -244,6 +256,7 @@ static float V_CalcFov( float *fov_x, float width, float height )
 	return RAD2DEG( half_fov_y ) * 2;
 }
 
+#if !XASH_OGC
 /*
 ====================
 V_AdjustFov
@@ -272,6 +285,7 @@ static void V_AdjustFov( float *fov_x, float *fov_y, float width, float height, 
 	if( *fov_x < x ) *fov_x = x;
 	else *fov_y = y;
 }
+#endif // !XASH_OGC
 
 /*
 =============
@@ -304,14 +318,30 @@ static void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
 	// calc FOV
 	rvp->fov_x = bound( 10.0f, cl.local.scr_fov, 150.0f ); // this is a final fov value
 
-	// first we need to compute FOV and other things that needs for frustum properly work
-	rvp->fov_y = V_CalcFov( &rvp->fov_x, clgame.viewport[2], clgame.viewport[3] );
+#if XASH_OGC
+        {
+                const float aspect = OGC_GetAspect();
+                float fov_y = V_CalcFov( &rvp->fov_x, 640.0f, 480.0f );
 
-	// adjust FOV for widescreen
-	if( refState.wideScreen && r_adjust_fov.value )
-		V_AdjustFov( &rvp->fov_x, &rvp->fov_y, clgame.viewport[2], clgame.viewport[3], false );
+                rvp->fov_x = V_CalcFov( &fov_y, 480.0f, 480.0f * aspect );
+                rvp->fov_y = fov_y;
+        }
+#else
+        // first we need to compute FOV and other things that needs for frustum properly work
+        rvp->fov_y = V_CalcFov( &rvp->fov_x, clgame.viewport[2], clgame.viewport[3] );
+
+        // adjust FOV for widescreen
+        if( refState.wideScreen && r_adjust_fov.value )
+                V_AdjustFov( &rvp->fov_x, &rvp->fov_y, clgame.viewport[2], clgame.viewport[3], false );
+#endif
 
 	rvp->flags = 0;
+
+	if( CL_SplitActive( ))
+	{
+		CL_SplitFov( 0, cl.local.scr_fov, &rvp->fov_x, &rvp->fov_y );
+		SetBits( rvp->flags, RF_SPLIT_VIEW | RF_SPLIT_COUNT_BITS( CL_SplitCount( )));
+	}
 
 	if( fd->onlyClientDraw )
 		SetBits( rvp->flags, RF_ONLY_CLIENTDRAW );
@@ -326,14 +356,6 @@ V_PreRender
 */
 qboolean V_PreRender( void )
 {
-	static int n;
-	if( n < 5 )
-	{
-		Con_Printf( "[V] PreRender %d: ref.init=%d status=%d disable_screen=%.1f state=%d\n",
-			n, (int)ref.initialized, (int)host.status, (double)cls.disable_screen, (int)cls.state );
-		n++;
-	}
-
 	// too early
 	if( !ref.initialized )
 		return false;
@@ -403,6 +425,9 @@ void V_RenderView( void )
 	if( !cl.video_prepped || ( !ui_renderworld.value && UI_IsVisible() && !cl.background ))
 		return; // still loading
 
+#if XASH_OGC
+	double pv_start = Platform_DoubleTime(), pv_calc = 0.0;
+#endif
 	V_CalcViewRect ();	// compute viewport rectangle
 	V_SetRefParams( &rp );
 	V_SetupViewModel ();
@@ -412,8 +437,12 @@ void V_RenderView( void )
 
 	do
 	{
+#if XASH_OGC
+		double pv_t = Platform_DoubleTime();
+#endif
 		clgame.dllFuncs.pfnCalcRefdef( &rp );
 #if XASH_OGC
+		pv_calc += Platform_DoubleTime() - pv_t;
 		// after the client has placed the weapon, lean it towards the pointer
 		OGC_ApplyPointerToViewModel( &clgame.viewent );
 #endif
@@ -432,9 +461,20 @@ void V_RenderView( void )
 
 	} while( rp.nextView );
 
+#if XASH_OGC
+	CL_SplitNoteMainTime(( Platform_DoubleTime() - pv_start ) * 1000.0 );
+#endif
+
+	// split screen: the second player's view
+	CL_SplitRenderView();
+
 	// draw debug triangles on a server
 	SV_DrawDebugTriangles ();
 	ref.dllFuncs.GL_BackendEndFrame ();
+#if XASH_OGC
+	OGC_ProfAdd( 45, pv_calc );
+	OGC_ProfAdd( 38, Platform_DoubleTime() - pv_start );
+#endif
 }
 
 #define POINT_SIZE		16.0f
@@ -534,11 +574,12 @@ V_PostRender
 
 ==================
 */
-#define VPR( s ) do { static int _n; if( _n++ < 1 ) Con_Printf( "[VPR] " s "\n" ); } while( 0 )
+#define VPR( s ) do { } while( 0 )
 
 void V_PostRender( void )
 {
 	qboolean		draw_2d = false;
+	PT_BEGIN();
 
 	ref.dllFuncs.R_AllowFog( false );
 	VPR( "fog ok" );
@@ -579,11 +620,15 @@ void V_PostRender( void )
 		ref.dllFuncs.R_ShowTextures();
 		VPR( "showtextures ok" );
 		R_ShowTree();
+		CL_SplitLobbyDraw();
 		VPR( "pre-console" );
+		PT_END( 39 );
 		Con_DrawConsole();
 		VPR( "console drawn" );
+		PT_END( 40 );
 		UI_UpdateMenu( host.realtime );
 		VPR( "menu drawn" );
+		PT_END( 41 );
 		Con_DrawVersion();
 		VPR( "version drawn" );
 		Con_DrawDebug(); // must be last
@@ -591,6 +636,7 @@ void V_PostRender( void )
 		OSK_Draw();
 
 		S_ExtraUpdate();
+		PT_END( 42 );
 	}
 
 	SCR_MakeScreenShot();

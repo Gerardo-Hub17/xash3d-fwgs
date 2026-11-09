@@ -27,6 +27,13 @@ GNU General Public License for more details.
 #include "library.h"
 #include "platform/platform.h"
 
+#if XASH_OGC
+#include <fat.h>
+#include <ogc/usbstorage.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #if XASH_WIN32
 #include <direct.h>
 #endif
@@ -38,6 +45,65 @@ static CVAR_DEFINE_AUTO( fs_mount_l10n, "0", FCVAR_PRIVILEGED, "mount localizati
 static CVAR_DEFINE_AUTO( ui_language, "english", FCVAR_PRIVILEGED, "selected game language" );
 
 fs_api_t g_fsapi;
+#if XASH_OGC
+// perfil de lecturas (wii_prof): se envuelven LoadFile y Read del filesystem
+static byte *(*fs_real_LoadFile)( const char *path, fs_offset_t *filesizeptr, qboolean gamedironly );
+static fs_offset_t (*fs_real_Read)( file_t *file, void *buffer, size_t buffersize );
+static file_t *(*fs_real_Open)( const char *filepath, const char *mode, qboolean gamedironly );
+static int (*fs_real_Seek)( file_t *file, fs_offset_t offset, int whence );
+
+static byte *OGC_FS_LoadFile( const char *path, fs_offset_t *filesizeptr, qboolean gamedironly )
+{
+    double t0 = Platform_DoubleTime();
+    fs_offset_t size = 0;
+    byte *buf = fs_real_LoadFile( path, &size, gamedironly );
+
+    if( filesizeptr ) *filesizeptr = size;
+    OGC_ProfAdd( 8, Platform_DoubleTime() - t0 );
+    if( buf ) OGC_ProfBytes( 8, (double)size );
+    return buf;
+}
+
+static fs_offset_t OGC_FS_Read( file_t *file, void *buffer, size_t buffersize )
+{
+    double t0 = Platform_DoubleTime();
+    fs_offset_t n = fs_real_Read( file, buffer, buffersize );
+
+    OGC_ProfAdd( 9, Platform_DoubleTime() - t0 );
+    if( n > 0 ) OGC_ProfBytes( 9, (double)n );
+    return n;
+}
+
+static file_t *OGC_FS_Open( const char *filepath, const char *mode, qboolean gamedironly )
+{
+    double t0 = Platform_DoubleTime();
+    file_t *f = fs_real_Open( filepath, mode, gamedironly );
+
+    OGC_ProfAdd( 12, Platform_DoubleTime() - t0 );
+    return f;
+}
+
+static int OGC_FS_Seek( file_t *file, fs_offset_t offset, int whence )
+{
+    double t0 = Platform_DoubleTime();
+    int ret = fs_real_Seek( file, offset, whence );
+
+    OGC_ProfAdd( 13, Platform_DoubleTime() - t0 );
+    return ret;
+}
+
+static void OGC_HookFS( void )
+{
+    fs_real_LoadFile = g_fsapi.LoadFile;
+    fs_real_Read = g_fsapi.Read;
+    fs_real_Open = g_fsapi.Open;
+    fs_real_Seek = g_fsapi.Seek;
+    g_fsapi.LoadFile = OGC_FS_LoadFile;
+    g_fsapi.Read = OGC_FS_Read;
+    g_fsapi.Open = OGC_FS_Open;
+    g_fsapi.Seek = OGC_FS_Seek;
+}
+#endif
 fs_globals_t *FI;
 
 static pfnCreateInterface_t fs_pfnCreateInterface;
@@ -61,7 +127,7 @@ file_t *FS_Open( const char *filepath, const char *mode, qboolean gamedironly )
 
 byte *FS_LoadFile( const char *path, fs_offset_t *filesizeptr, qboolean gamedironly )
 {
-	return g_fsapi.LoadFile( path, filesizeptr, gamedironly );
+    return g_fsapi.LoadFile( path, filesizeptr, gamedironly );
 }
 
 byte *FS_LoadDirectFile( const char *path, fs_offset_t *filesizeptr )
@@ -251,6 +317,10 @@ static qboolean FS_LoadProgs( void )
 		return false;
 	}
 
+#if XASH_OGC
+	OGC_HookFS();
+#endif
+
 	if( !( fs_pfnCreateInterface = (pfnCreateInterface_t)COM_GetProcAddress( fs_hInstance, "CreateInterface" )))
 	{
 		FS_UnloadProgs();
@@ -272,14 +342,84 @@ base directory lookup need it. Whichever runs first does the mount; the other
 gets the cached answer.
 ==================
 */
+// carpeta de datos (sd:/xash3d o usb:/xash3d) elegida al montar
+static char ogc_basedir[32] = "sd:/xash3d";
+static const char *ogc_argv0;
+
+void OGC_SetArgv0( const char *argv0 )
+{
+	ogc_argv0 = argv0;
+}
+
+const char *OGC_BaseDir( void )
+{
+	return ogc_basedir;
+}
+
+static qboolean OGC_IsDir( const char *path )
+{
+	struct stat st;
+
+	return stat( path, &st ) == 0 && S_ISDIR( st.st_mode );
+}
+
+// busca xash3d/valve (o al menos xash3d) en los dispositivos, en el orden dado
+static qboolean OGC_FindBase( const char *first, const char *second )
+{
+	const char *devs[2] = { first, second };
+	int pass, i;
+	char path[40];
+
+	for( pass = 0; pass < 2; pass++ )
+	{
+		for( i = 0; i < 2; i++ )
+		{
+			Q_snprintf( path, sizeof( path ), "%s:/xash3d%s", devs[i], pass == 0 ? "/valve" : "" );
+
+			if( OGC_IsDir( path ))
+			{
+				Q_snprintf( ogc_basedir, sizeof( ogc_basedir ), "%s:/xash3d", devs[i] );
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 qboolean OGC_MountSD( void )
 {
-	static int mounted = -1;
+    static int mounted = -1;
 
-	if( mounted < 0 )
-		mounted = fatInitDefault() ? 1 : 0;
+    if( mounted < 0 )
+    {
+        const qboolean from_usb = ogc_argv0 && !Q_strnicmp( ogc_argv0, "usb", 3 );
+        const char *first = from_usb ? "usb" : "sd";
+        const char *second = from_usb ? "sd" : "usb";
+        int tries;
 
-	return mounted == 1 ? true : false;
+        mounted = fatInit( 32, true ) ? 1 : 0; // cache grande, ver sys_debuglog.c
+
+        if( !OGC_FindBase( first, second ))
+        {
+            // fatInitDefault no siempre deja el USB listo a la primera
+            for( tries = 0; tries < 8; tries++ )
+            {
+                if( OGC_IsDir( "usb:/" ) || fatMountSimple( "usb", &__io_usbstorage ))
+                {
+                    if( OGC_FindBase( first, second ))
+                    {
+                        mounted = 1;
+                        break;
+                    }
+                }
+
+                usleep( 500000 );
+            }
+        }
+    }
+
+    return mounted == 1 ? true : false;
 }
 #endif
 
@@ -304,7 +444,7 @@ static qboolean FS_DetermineRootDirectory( char *out, size_t size )
 #elif XASH_OGC
 	if( OGC_MountSD( ))
 	{
-		Q_strncpy( out, "sd:/xash3d", size );
+		Q_strncpy( out, OGC_BaseDir(), size );
 		return true;
 	}
 	Sys_Error( "couldn't find %s data directory", XASH_ENGINE_NAME );

@@ -35,6 +35,9 @@ void GX_DbgWait( const char *tag )
 	static u16 token = 0x100;
 	int i;
 
+	if( !gx_verbose || gx_verbose->value < 1 )
+	    return;
+
 	if( calls++ >= 8 )
 		return;
 
@@ -61,13 +64,17 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 {
 	if( gx_testmode == 3 ) return; // diagnostic: no textured quads at all
 	static int dsp;
-	int dbg = ( dsp < 2 );
+	int dbg = ( dsp < 2 ) && gx_verbose && gx_verbose->value >= 1;
 
 	if( dbg ) GX_DbgWait( "dsp pre-bind" );
 
 	GX_Bind( XASH_TEXTURE0, texnum );
 
 	if( dbg ) GX_DbgWait( "dsp post-bind" );
+
+	// el HUD nunca pasa por el Z-test; no confiar en el estado que dejo otro dibujo
+	if( glState.in2DMode )
+		GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 
 
  // Make the whole 2D textured-quad pipeline explicit. Nothing else in the
@@ -355,7 +362,7 @@ void GX_UpdateTexture( int texnum, int cols, int rows, int width, int height, co
 	byte *raw;
 	if( cols != width || rows != height )
 	{
-		raw = GX_ResampleTexture( buffer, cols, rows, width, height, false );
+		raw = GL_ResampleTexture( buffer, cols, rows, width, height, false );
 		cols = width;
 		rows = height;
 	}
@@ -418,6 +425,11 @@ void GX_ReadPixelsRGBA( int x, int y, int w, int h, byte *out )
     }
 
     GX_DrawDone();
+    /* GX_CopyTex copia el rectangulo y formato definidos con GX_SetTexCopySrc/Dst. En todo el
+       codigo nunca se llamaban, asi que la captura salia con tamano/formato de destino sin
+       definir (capturas corruptas en Load Game). EFB: origen arriba a la izquierda. */
+    GX_SetTexCopySrc( 0, 0, (u16)tw, (u16)th );
+    GX_SetTexCopyDst( (u16)tw, (u16)th, GX_TF_RGBA8, GX_FALSE );
     GX_CopyTex( tileBuf, GX_FALSE );
     GX_PixModeSync();
     GX_DrawDone();
@@ -452,7 +464,7 @@ void GX_ReadPixelsRGBA( int x, int y, int w, int h, byte *out )
                         dst[0] = r;
                         dst[1] = g;
                         dst[2] = b;
-                        dst[3] = a;
+                        dst[3] = 255; /* el alfa del EFB (RGB8/RGB565) no es fiable */
                     }
                 }
             }
@@ -501,6 +513,9 @@ void R_Set2DMode( qboolean enable )
 		Matrix4x4_ToMtx44( gxProj, projection_matrix );
 		GX_LoadProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
 		GX_SaveProjectionMtx( gxProj, GX_ORTHOGRAPHIC );
+
+		// the split screen views set a scissor of their own
+		GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
 
 		matrix4x4 worldview_matrix;
 		Matrix4x4_LoadIdentity( worldview_matrix );

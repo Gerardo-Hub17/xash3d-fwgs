@@ -294,18 +294,55 @@ static qboolean NET_GetHostByName( const char *hostname, int family, struct sock
 
 	return ret;
 #else
-	struct hostent *h;
+	// IOS resuelve DNS de forma poco fiable (falla a ratos con "failed to resolve"):
+    // reintentamos y guardamos las ultimas resoluciones buenas como respaldo
+    static struct { string name; struct in_addr ip; } cache[8];
+    static int cache_next;
+    struct hostent *h = NULL;
+    int i;
 
-	if( family == AF_INET6 )
-		return false;
+    if( family == AF_INET6 )
+        return false;
 
-	if(!( h = net_gethostbyname( hostname )))
-		return false;
+    for( i = 0; i < 3 && !h; i++ )
+    {
+        if( i ) Platform_Sleep( 250 );
+        h = net_gethostbyname( hostname );
+        if( h && ( h->h_length != 4 || !h->h_addr_list || !h->h_addr_list[0] ))
+            h = NULL;
+    }
 
-	((struct sockaddr_in *)addr)->sin_family = AF_INET;
-	((struct sockaddr_in *)addr)->sin_addr = *(struct in_addr *)h->h_addr_list[0];
+    if( h )
+    {
+        struct in_addr ip = *(struct in_addr *)h->h_addr_list[0];
 
-	return true;
+        for( i = 0; i < ARRAYSIZE( cache ); i++ )
+            if( !Q_strcmp( cache[i].name, hostname ))
+                break;
+
+        if( i == ARRAYSIZE( cache ))
+            i = cache_next++ % ARRAYSIZE( cache );
+
+        Q_strncpy( cache[i].name, hostname, sizeof( cache[i].name ));
+        cache[i].ip = ip;
+
+        ((struct sockaddr_in *)addr)->sin_family = AF_INET;
+        ((struct sockaddr_in *)addr)->sin_addr = ip;
+        return true;
+    }
+
+    for( i = 0; i < ARRAYSIZE( cache ); i++ )
+    {
+        if( cache[i].name[0] && !Q_strcmp( cache[i].name, hostname ))
+        {
+            Con_Printf( "DNS: usando direccion en cache para %s\n", hostname );
+            ((struct sockaddr_in *)addr)->sin_family = AF_INET;
+            ((struct sockaddr_in *)addr)->sin_addr = cache[i].ip;
+            return true;
+        }
+    }
+
+    return false;
 #endif
 }
 
@@ -470,7 +507,12 @@ net_gai_state_t NET_StringToSockaddr( const char *s, struct sockaddr_storage *sa
 	{
 		qboolean asyncfailed = true;
 
+#if XASH_OGC
+		// sin hilo DNS en Wii: net_gethostbyname bloquea poco y evita fallos de pthread/IOS
+		if( false )
+#else
 		if( net.threads_initialized && nonblocking )
+#endif
 		{
 			mutex_lock( nsthread.mutexres );
 
@@ -1354,7 +1396,14 @@ queue normal and lagged packets
 */
 static qboolean NET_QueuePacket( int net_socket, netsrc_t sock, netadr_t *from, byte *data, size_t *length )
 {
+#if XASH_OGC
+	// el stack principal de la Wii es de solo 128KB y esta justo encima de .bss;
+	// 32KB por llamada (en cada poll de red) lo acercan al borde. Solo el hilo
+	// principal llama aqui, asi que un buffer estatico es seguro.
+	static byte	buf[NET_MAX_FRAGMENT];
+#else
 	byte		buf[NET_MAX_FRAGMENT];
+#endif
 	struct sockaddr_storage	addr = { 0 };
 
 	*length = 0;
@@ -1624,13 +1673,12 @@ static int NET_IPSocket( const char *net_iface, int port, int family )
 		setsockopt( net_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 	}
 
-	#if !XASH_OGC
-	// make it broadcast capable
+	// make it broadcast capable (en Wii hace falta para la lista de partidas LAN;
+	// si IOS lo rechaza solo es un aviso)
 	if( NET_IsSocketError( setsockopt( net_socket, SOL_SOCKET, SO_BROADCAST, (char *)&_true, sizeof( _true ))))
 	{
 		Con_DPrintf( S_WARN "%s: port: %d setsockopt SO_BROADCAST: %s\n", __func__, port, NET_ErrorString( ));
 	}
-	#endif //not supported
 
 	if( !NET_MakeSocketReuseAddr( net_socket ))
 	{
@@ -2037,12 +2085,19 @@ void NET_Init( void )
 		return;
 	}
 	Con_Printf("wii network configured, ip: %s, gw: %s, mask %s\n", localip, gateway, netmask);
+	ogc_net_set_netmask( netmask );
 #endif
 
 	NET_InitializeCriticalSections();
 
 	net.allow_ip = !Sys_CheckParm( "-noip" );
+#if XASH_OGC
+	// IOS/libogc no tiene IPv6: el socket "v6" salia como IPv4 y el escaneo LAN
+	// llenaba la consola de "Address family not supported ... to [::]:2701x"
+	net.allow_ip6 = false;
+#else
 	net.allow_ip6 = !Sys_CheckParm( "-noip6" );
+#endif
 
 	// specify custom host port
 	if( Sys_GetParmFromCmdLine( "-port", cmd ) && Q_isdigit( cmd ))

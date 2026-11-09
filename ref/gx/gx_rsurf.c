@@ -24,6 +24,12 @@ GNU General Public License for more details.
 
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
+extern void OGC_ProfAdd( int bucket, double dt );
+
+extern void OGC_ProfAdd( int bucket, double dt );
+
+extern void OGC_ProfAdd( int bucket, double dt );
+
 static const float r_turbsin[] =
 {
 #include "warpsin.h"
@@ -615,7 +621,25 @@ static void LM_UploadDynamicBlock( void )
 {
 	/* la GPU lee la textura dinamica de forma asincrona: esperar a que termine los dibujos */
 	/* ya encolados que la usan (mundo) antes de reescribirla (entidades brush, 2do bloque) */
-	GX_DrawDone();
+	if( gx_split_lod.value >= 2.0f && GX_DlightRingTexture( 1 ))
+	{
+		/* pantalla dividida: cada escritura va a otra textura del turno; solo si se acaban */
+		/* (mas escrituras que texturas en un cuadro) hay que esperar a la GPU como antes */
+		static int frame = -1, used;
+
+		if( frame != tr.realframecount )
+		{
+			frame = tr.realframecount;
+			used = 0;
+		}
+
+		if( used >= GX_DLIGHT_RING )
+			GX_DrawDone();
+
+		tr.dlightTexture = GX_DlightRingTexture( used % GX_DLIGHT_RING );
+		used++;
+	}
+	else GX_DrawDone();
 	/* siempre la pagina completa: si se subiera solo max_height, la textura se achicaria y las UV quedarian mal */
 	GX_UpdateTexture( tr.dlightTexture,
 		BLOCK_SIZE, BLOCK_SIZE,
@@ -672,7 +696,7 @@ static void LM_UploadBlock( qboolean dynamic )
 			BLOCK_SIZE, BLOCK_SIZE,
 			gx_lms.lightmap_buffer,
 			TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE );
-        if( i < 3 ) gEngfuncs.Con_Printf("[LMDIAG] p%d px0=%02X%02X%02X%02X px1=%02X%02X%02X%02X\n", i, gx_lms.lightmap_buffer[0], gx_lms.lightmap_buffer[1], gx_lms.lightmap_buffer[2], gx_lms.lightmap_buffer[3], gx_lms.lightmap_buffer[4], gx_lms.lightmap_buffer[5], gx_lms.lightmap_buffer[6], gx_lms.lightmap_buffer[7]);
+        if( i < 3 ) GX_LOG("[LMDIAG] p%d px0=%02X%02X%02X%02X px1=%02X%02X%02X%02X\n", i, gx_lms.lightmap_buffer[0], gx_lms.lightmap_buffer[1], gx_lms.lightmap_buffer[2], gx_lms.lightmap_buffer[3], gx_lms.lightmap_buffer[4], gx_lms.lightmap_buffer[5], gx_lms.lightmap_buffer[6], gx_lms.lightmap_buffer[7]);
 
 		if( ++gx_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 			gEngfuncs.Host_Error( "%s: full\n", __func__ );
@@ -1145,7 +1169,13 @@ static void R_BlendLightmaps( void )
 		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_FALSE );
 		GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
 
-		for( int i = 0; i < MAX_LIGHTMAPS; i++ )
+		/* el pase de lightmap repite la geometria del pase difuso con prueba LEQUAL: un error de
+   redondeo en la profundidad dejaba pixeles sin multiplicar (lineas claras en las
+   costuras de los poligonos). Un empujon minimo hacia la camara lo evita. */
+if( gx_lm_bias.value > 0.0f )
+    GX_PushPolygonOffset( -1.0f, -gx_lm_bias.value );
+
+for( int i = 0; i < MAX_LIGHTMAPS; i++ )
 		{
 			msurface_t *surf;
 			if( !gx_lms.lightmap_surfaces[i] )
@@ -1165,8 +1195,8 @@ static void R_BlendLightmaps( void )
 						glpoly2_t *pp = q->polys;
 						GX_LOG( "[LMDRAW]   s%d ls=%d lt=%d vbo=%d nv=%d", k, (int)q->light_s, (int)q->light_t, (int)q->info->reserved[0], pp ? pp->numverts : -1 );
 						if( pp && pp->numverts >= 3 )
-							gEngfuncs.Con_Printf( " uv0=%.3f,%.3f uv1=%.3f,%.3f uv2=%.3f,%.3f", pp->verts[0][5], pp->verts[0][6], pp->verts[1][5], pp->verts[1][6], pp->verts[2][5], pp->verts[2][6] );
-						gEngfuncs.Con_Printf( "\n" );
+							GX_LOG( " uv0=%.3f,%.3f uv1=%.3f,%.3f uv2=%.3f,%.3f", pp->verts[0][5], pp->verts[0][6], pp->verts[1][5], pp->verts[1][6], pp->verts[2][5], pp->verts[2][6] );
+						GX_LOG( "\n" );
 					}
 				}
 			}
@@ -1181,7 +1211,10 @@ static void R_BlendLightmaps( void )
 		/* lightmaps dinamicos (linterna, dlights, estilos animados) */
 		R_BlendDynamicLightmapsSingle();
 
-		GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
+		if( gx_lm_bias.value > 0.0f )
+    GX_PopPolygonOffset();
+
+GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 		GX_SetNumTexGens( 1 );
 		GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
@@ -1580,10 +1613,12 @@ static void R_RenderDecalsForSurface( msurface_t *fa, int cull_type )
 	}
 }
 
+
 static qboolean R_CheckLightMap( msurface_t *fa )
 {
 	if( unlikely( !r_dynamic->value ))
 		return false;
+
 
 	if( fa->dlightframe == tr.framecount )
 		return true;
@@ -1612,6 +1647,7 @@ static qboolean R_CheckLightMap( msurface_t *fa )
 
 		R_UpdateSurfaceCachedLight( fa );
 
+
 		GX_UpdateTextureSub( tr.lightmapTextures[fa->lightmaptexturenum],
 			fa->light_s, fa->light_t, smax, tmax, temp );
 
@@ -1619,6 +1655,57 @@ static qboolean R_CheckLightMap( msurface_t *fa )
 	}
 
 	return false;
+}
+
+/*
+Actualiza solo las superficies que usan alguno de los estilos de luz marcados en
+"changed" (con la misma logica que R_CheckLightMap). Antes se reconstruian TODOS los
+lightmaps cuando cambiaba un estilo (~62 ms), con un tiron cada vez que una luz
+parpadeaba. Aqui el costo es proporcional a las superficies afectadas.
+*/
+void GX_UpdateStyleSurfaces( const byte *changed )
+{
+    static byte temp[132*132*4];
+    model_t *world = WORLDMODEL;
+
+    if( !world || !world->surfaces )
+        return;
+
+    for( int i = 0; i < world->numsurfaces; i++ )
+    {
+        msurface_t *fa = &world->surfaces[i];
+
+        if( !fa->polys || FBitSet( fa->flags, SURF_DRAWTILED ) || !fa->samples || !fa->info )
+            continue;
+
+        if( fa->lightmaptexturenum < 0 || fa->lightmaptexturenum >= MAX_LIGHTMAPS || !tr.lightmapTextures[fa->lightmaptexturenum] )
+            continue;
+
+        qboolean hit = false;
+        for( int maps = 0; maps < MAXLIGHTMAPS && fa->styles[maps] != 255; maps++ )
+        {
+            if( changed[fa->styles[maps]] && g_lightstylevalue[fa->styles[maps]] != fa->cached_light[maps] )
+            {
+                hit = true;
+                break;
+            }
+        }
+
+        if( !hit )
+            continue;
+
+        mextrasurf_t *info = fa->info;
+        int sample_size = gEngfuncs.Mod_SampleSizeForFace( fa );
+        int smax = ( info->lightextents[0] / sample_size ) + 1;
+        int tmax = ( info->lightextents[1] / sample_size ) + 1;
+
+        if( smax >= 132 || tmax >= 132 )
+            continue; // las superficies enormes las deja como estan R_CheckLightMap
+
+        R_BuildLightMap( fa, temp, smax * 4, true );
+        R_UpdateSurfaceCachedLight( fa );
+        GX_UpdateTextureSub( tr.lightmapTextures[fa->lightmaptexturenum], fa->light_s, fa->light_t, smax, tmax, temp );
+    }
 }
 
 static void R_RenderLightmapForSurface( msurface_t *fa )
@@ -2102,9 +2189,11 @@ static int R_SortBrushModelSurfaces( cl_entity_t *e, model_t *clmodel, vec3_t mi
 	return num_sorted;
 }
 
-void R_DrawBrushModel( cl_entity_t *e )
+// Reparado para brush_v12
+static void R_DrawBrushModelImpl( cl_entity_t *e )
 {
 	vec3_t mins, maxs;
+	double prof_t = Platform_DoubleTime(), prof_n;
 	qboolean rotated;
 	qboolean allow_vbo = R_HasEnabledVBO();
 
@@ -2138,6 +2227,12 @@ void R_DrawBrushModel( cl_entity_t *e )
 	memset( gx_lms.lightmap_surfaces, 0, sizeof( gx_lms.lightmap_surfaces ));
 	int old_rendermode = e->curstate.rendermode;
 	gx_lms.dynamic_surfaces = NULL;
+
+	// el culling de caras por CPU (R_CullSurface) solo actua si faceCull != NONE. Sprites, TriAPI
+	// del cliente y beams lo dejan en NONE/BACK/FRONT: con NONE se dibujaban tambien las caras
+	// traseras de los cristales (brush transparente) y se veian dobles/oscuros
+	int old_facecull = glState.faceCull;
+	glState.faceCull = XASH_CULL_FRONT;
 
 	if( rotated )
 	{
@@ -2176,6 +2271,9 @@ void R_DrawBrushModel( cl_entity_t *e )
 
 	qboolean drawlightmap = R_HasLightmap();
 
+	prof_n = Platform_DoubleTime(); OGC_ProfAdd( 50, prof_n - prof_t ); prof_t = prof_n; // brush.prep: cull + orden de superficies
+	OGC_ProfAdd( 53, num_sorted * 0.001 ); // brush.sup#: el "ms" de esta columna es la cantidad de superficies
+
 	if( gl_polyoffset_bmodels.value )
 		GX_PushPolygonOffset( -0.5f, -gl_polyoffset_bmodels.value );
 
@@ -2191,6 +2289,10 @@ void R_DrawBrushModel( cl_entity_t *e )
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 	GX_SetCullMode( GX_CULL_NONE );
 
+	// formato de vertice de las superficies: el mismo para todas, se fija una vez. Las superficies
+	// de agua (EmitWaterPolys) lo cambian, asi que tras una se vuelve a fijar
+	qboolean fmt_set = false;
+
 	for( int i = 0; i < num_sorted; i++ )
 	{
 		msurface_t *bs = gpGlobals->draw_surfaces[i].surf;
@@ -2199,34 +2301,35 @@ void R_DrawBrushModel( cl_entity_t *e )
 		{
 			R_RenderBrushPoly( bs, gpGlobals->draw_surfaces[i].cull );
 
+			if( FBitSet( bs->flags, SURF_DRAWTURB ))
+				fmt_set = false;
+
 			if( bs->polys && !FBitSet( bs->flags, SURF_DRAWTURB | SURF_DRAWSKY ))
 			{
 				glpoly2_t *q;
-				int tris = 0;
 
-				for( q = bs->polys; q != NULL; q = q->chain )
-					if( q->numverts >= 3 ) tris += q->numverts - 2;
-
-				if( tris > 0 )
+				if( !fmt_set )
 				{
 					GX_ClearVtxDesc();
 					GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 					GX_SetVtxDesc( GX_VA_TEX0, GX_DIRECT );
 					GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ, GX_F32, 0 );
 					GX_SetVtxAttrFmt( GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0 );
-					GX_Begin( GX_TRIANGLES, GX_VTXFMT0, tris * 3 );
-					for( q = bs->polys; q != NULL; q = q->chain )
+					fmt_set = true;
+				}
+
+				for( q = bs->polys; q != NULL; q = q->chain )
+				{
+					if( q->numverts < 3 )
+						continue;
+
+					GX_Begin( GX_TRIANGLEFAN, GX_VTXFMT0, (u16)q->numverts );
+					for( int k = 0; k < q->numverts; k++ )
 					{
-						float *base = q->verts[0];
-						for( int k = 1; k < q->numverts - 1; k++ )
-						{
-							float *v[3] = { base, base + k * VERTEXSIZE, base + ( k + 1 ) * VERTEXSIZE };
-							for( int m = 0; m < 3; m++ )
-							{
-								GX_Position3f32( v[m][0], v[m][1], v[m][2] );
-								GX_TexCoord2f32( v[m][3], v[m][4] );
-							}
-						}
+						float *v = q->verts[0] + k * VERTEXSIZE;
+
+						GX_Position3f32( v[0], v[1], v[2] );
+						GX_TexCoord2f32( v[3], v[4] );
 					}
 					GX_End();
 				}
@@ -2234,8 +2337,9 @@ void R_DrawBrushModel( cl_entity_t *e )
 		}
 	}
 
-	R_DrawVBO( drawlightmap, true );
+	prof_n = Platform_DoubleTime(); OGC_ProfAdd( 51, prof_n - prof_t ); prof_t = prof_n;
 
+	R_DrawVBO( drawlightmap, true );
 	DrawDecalsBatch();
 
 	GX_ResetFogColor();
@@ -2252,6 +2356,7 @@ void R_DrawBrushModel( cl_entity_t *e )
 		R_AllowFog( true );
 
 	e->curstate.rendermode = old_rendermode;
+	glState.faceCull = old_facecull;
 	GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
 	GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
@@ -2264,6 +2369,16 @@ void R_DrawBrushModel( cl_entity_t *e )
 	}
 
 	R_LoadIdentity();
+
+	OGC_ProfAdd( 52, Platform_DoubleTime() - prof_t ); // brush.pase: decals, lightmaps, fullbright, detalles
+}
+
+void R_DrawBrushModel( cl_entity_t *e )
+{
+	double t0 = Platform_DoubleTime();
+
+	R_DrawBrushModelImpl( e );
+	OGC_ProfAdd( 49, Platform_DoubleTime() - t0 ); // ent.brush
 }
 
 qboolean R_HasGeneratedVBO( void )
@@ -2511,7 +2626,7 @@ void R_DrawWorld( void )
 			glState.currentTexturesIndex[u] = 0;
 			glState.currentTextures[u] = NULL;
 		}
-		GX_SetScissor( 0, 0, gpGlobals->width, gpGlobals->height );
+		GX_RestoreViewScissor(); // en pantalla dividida el scissor es el de la vista
 		GX_SetClipMode( GX_CLIP_ENABLE );
 		GX_SetCoPlanar( GX_DISABLE );
 		GX_SetColorUpdate( GX_TRUE );

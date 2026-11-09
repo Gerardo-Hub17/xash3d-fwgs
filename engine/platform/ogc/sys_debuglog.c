@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <fat.h>
+#include <time.h>
 #include <sys/iosupport.h>
 
 static FILE *g_log_fp = NULL;
@@ -13,8 +14,11 @@ static void OGC_DebugOpen(void)
 {
     if (g_log_fp) return;
 
-    /* la SD no está montada cuando corren los constructores: montarla ahora */
-    fatInitDefault();
+    /* la SD no está montada cuando corren los constructores: montarla ahora.
+       Cache de libfat de 32 paginas (~128 KB, antes 4 paginas): con la
+       cache por defecto las lecturas grandes (texturas, modelos) expulsan los
+       directorios y cada busqueda de archivo vuelve a leerlos de la SD. */
+    fatInit( 32, true );
 
     g_log_fp = fopen("sd:/xash_debug.log", "w");
     if (!g_log_fp) g_log_fp = fopen("usb:/xash_debug.log", "w");
@@ -25,6 +29,22 @@ static void OGC_DebugOpen(void)
 }
 
 void OGC_DebugInit(void) { OGC_DebugOpen(); }
+
+/*
+fsync despues de CADA mensaje costaba decenas de ms en la SD/USB (FAT): cada linea
+de consola, incluidas las de carga de nivel, paraba el juego. fflush deja el dato
+en el cache de libfat; el fsync completo se hace como mucho una vez por segundo y
+siempre en los errores.
+*/
+static void OGC_DebugSync(int force)
+{
+    static time_t last;
+    time_t now = time(NULL);
+
+    if (!force && now == last) return;
+    last = now;
+    fsync(fileno(g_log_fp));
+}
 
 void OGC_DebugPrint(const char *fmt, ...)
 {
@@ -48,7 +68,7 @@ static ssize_t OGC_SDWrite(struct _reent *r, void *fd, const char *ptr, size_t l
 
     fwrite(ptr, 1, len, g_log_fp);
     fflush(g_log_fp);
-    fsync(fileno(g_log_fp));
+    OGC_DebugSync(0);
     return len;
 }
 

@@ -100,6 +100,10 @@ static qboolean Tri_CheckVertexCount( void )
 
 void TriRenderMode( int mode )
 {
+	// diagnostico: efectos sin test de profundidad
+	if( gx_fx_noz.value && mode != kRenderNormal )
+		GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
+
 	ds.renderMode = mode;
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
@@ -133,6 +137,10 @@ void TriRenderMode( int mode )
 		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_FALSE );
 		break;
 	}
+
+	// el HUD tambien usa TriAPI: en 2D nunca hay test de profundidad
+	if( glState.in2DMode )
+		GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 }
 
 void TriBegin( int mode )
@@ -145,7 +153,7 @@ void TriBegin( int mode )
 	case TRI_QUADS:          ds.primitive = GX_QUADS; break;
 	case TRI_LINES:          ds.primitive = GX_LINES; break;
 	case TRI_TRIANGLE_STRIP: ds.primitive = GX_TRIANGLESTRIP; break;
-	case TRI_QUAD_STRIP:     ds.primitive = GX_QUADS; break;
+	case TRI_QUAD_STRIP:     ds.primitive = GX_TRIANGLESTRIP; break; /* mismo orden de vertices que GL_QUAD_STRIP */
 	case TRI_POLYGON:
 	default:                 ds.primitive = GX_TRIANGLEFAN; break;
 	}
@@ -167,6 +175,9 @@ void TriEnd( void )
 
 	GX_SetChanVtxColor( true );
 	GX_SetNumTevStages( 1 );
+    // las coordenadas de textura salen siempre del primer juego de UVs de este vertice
+    GX_SetNumTexGens( 1 );
+    GX_SetTexCoordGen( GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY );
 	GX_ClearVtxDesc();
 	GX_SetVtxDesc( GX_VA_POS,  GX_DIRECT );
 	GX_SetVtxDesc( GX_VA_CLR0, GX_DIRECT );

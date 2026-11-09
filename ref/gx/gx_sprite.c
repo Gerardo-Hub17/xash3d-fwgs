@@ -328,7 +328,7 @@ static qboolean R_SpriteAllowLerping( cl_entity_t *e, msprite_t *psprite )
 	return true;
 }
 
-void R_DrawSpriteModel( cl_entity_t *e )
+static void R_DrawSpriteModelInt( cl_entity_t *e )
 {
 	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		return;
@@ -473,8 +473,9 @@ void R_DrawSpriteModel( cl_entity_t *e )
 		break;
 	}
 
-	if( psprite->facecull == SPR_CULL_NONE )
-		GX_Cull( XASH_CULL_NONE );
+	/* los quads de sprite de GX son visibles con NONE o BACK, nunca con FRONT: no heredar
+	 * el culling (dependia de lo dibujado antes) y dibujarlos siempre a doble cara */
+	GX_Cull( XASH_CULL_NONE );
 
 	GXColor matColor;
 	matColor.r = (u8)(color[0] * 255.0f);
@@ -532,8 +533,7 @@ void R_DrawSpriteModel( cl_entity_t *e )
 		GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
 	}
 
-	if( psprite->facecull == SPR_CULL_NONE )
-		GX_Cull( XASH_CULL_BACK );
+	GX_Cull( XASH_CULL_BACK );
 
 	GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
 	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
@@ -548,4 +548,14 @@ void R_DrawSpriteModel( cl_entity_t *e )
 		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
 		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
 	}
+}
+void R_DrawSpriteModel( cl_entity_t *e )
+{
+	tr.modelviewIdentity = false;	// recargar siempre la matriz del mundo
+	/* los sprites pegados a la pared (humo, impactos) peleaban con la profundidad */
+	qboolean bias = gl_polyoffset.value && e->curstate.rendermode != kRenderGlow;
+
+	if( bias ) GX_PushPolygonOffset( -1.0f, -gl_polyoffset.value * 2.0f );
+	R_DrawSpriteModelInt( e );
+	if( bias ) GX_PopPolygonOffset();
 }

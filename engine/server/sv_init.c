@@ -820,7 +820,12 @@ static void SV_SetupClients( void )
 	// feedback for cvar
 	Cvar_FullSet( "maxplayers", va( "%d", svs.maxclients ), FCVAR_LATCH );
 #if XASH_LOW_MEMORY != 2
+	#if XASH_OGC
+	// el cliente de Wii usa MULTIPLAYER_BACKUP 32, el servidor se queda en 16 (memoria)
+	SV_UPDATE_BACKUP = ( svs.maxclients == 1 ) ? SINGLEPLAYER_BACKUP : 16;
+#else
 	SV_UPDATE_BACKUP = ( svs.maxclients == 1 ) ? SINGLEPLAYER_BACKUP : MULTIPLAYER_BACKUP;
+#endif
 #endif
 
 	svs.clients = Z_Realloc( svs.clients, sizeof( sv_client_t ) * svs.maxclients );
@@ -932,6 +937,10 @@ Change the server to a new map, taking all connected
 clients along with it.
 ================
 */
+#if XASH_OGC
+void OGC_LoadMark( int what );
+#endif
+
 qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean background )
 {
 	int		i;
@@ -1037,6 +1046,22 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	Q_snprintf( sv.model_precache[WORLD_INDEX], sizeof( sv.model_precache[0] ), "maps/%s.bsp", sv.name );
 	SetBits( sv.model_precache_flags[WORLD_INDEX], RES_FATALIFMISSING );
+	// split screen on this console: the renderer makes smaller textures, and nothing is
+	// preloaded, while the memory is shared between the views (decided for every map)
+	{
+		int lod = 0;
+
+		if( !Host_IsDedicated() && !background && svs.maxclients > 1 )
+		{
+			const int mode = (int)Cvar_VariableValue( "wii_split" );
+
+			if( mode == 1 || mode == 2 )
+				lod = bound( 2, (int)Cvar_VariableValue( "wii_split_players" ), 4 );
+		}
+
+		Cvar_SetValue( "gx_split_lod", lod );
+	}
+
 	sv.worldmodel = sv.models[WORLD_INDEX] = Mod_LoadWorld( sv.model_precache[WORLD_INDEX], true );
 	CRC32_MapFile( &sv.worldmapCRC, sv.model_precache[WORLD_INDEX], svs.maxclients > 1 );
 
@@ -1110,11 +1135,17 @@ State machine exec new map
 void SV_ExecLoadLevel( void )
 {
 	SV_SetStringArrayMode( false );
+#if XASH_OGC
+	OGC_LoadMark( 0 );
+#endif
 	if( SV_SpawnServer( GameState->levelName, NULL, GameState->backgroundMap ))
 	{
 		SV_SpawnEntities( GameState->levelName );
 		SV_ActivateServer( true );
 	}
+#if XASH_OGC
+   OGC_LoadMark( 1 );
+#endif
 }
 
 /*
@@ -1126,12 +1157,18 @@ State machine exec load saved game
 */
 void SV_ExecLoadGame( void )
 {
+#if XASH_OGC
+	OGC_LoadMark( 0 );
+#endif
 	if( SV_SpawnServer( GameState->levelName, NULL, false ))
 	{
 		if( !SV_LoadGameState( GameState->levelName ))
 			SV_SpawnEntities( GameState->levelName );
 		SV_ActivateServer( false );
 	}
+#if XASH_OGC
+   OGC_LoadMark( 1 );
+#endif
 }
 
 /*
@@ -1143,5 +1180,11 @@ State machine exec changelevel path
 */
 void SV_ExecChangeLevel( void )
 {
+#if XASH_OGC
+	OGC_LoadMark( 0 );
+#endif
 	SV_ChangeLevel( GameState->loadGame, GameState->levelName, GameState->landmarkName, GameState->backgroundMap );
+#if XASH_OGC
+	OGC_LoadMark( 1 );
+#endif
 }

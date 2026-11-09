@@ -320,19 +320,60 @@ SPR_AdjustSize
 draw hudsprite routine
 ====================
 */
+// the crosshair follows the view, not the HUD, so it ignores the HUD margins
+static qboolean cl_hud_nomargin;
+
 void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 {
-	if( refState.width == clgame.scrInfo.iWidth && refState.height == clgame.scrInfo.iHeight )
+	float mx = 0.0f, my = 0.0f; // inset per side, as a fraction of the screen
+	float rx = 0.0f, ry = 0.0f; // region of the framebuffer the HUD is drawn on
+	float rw = refState.width, rh = refState.height;
+
+	if( !cl_hud_nomargin )
+	{
+		mx = bound( 0.0f, hud_margin_x.value, 20.0f ) * 0.01f;
+		my = bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f;
+	}
+
+	if( CL_SplitActive( )) // split screen: the HUD of player 1 lives in its own view
+	{
+		int ix, iy, iw, ih;
+
+		CL_SplitRect( 0, &ix, &iy, &iw, &ih );
+		rx = ix;
+		ry = iy;
+		rw = iw;
+		rh = ih;
+	}
+
+	if( mx <= 0.0f && my <= 0.0f && rx == 0.0f && ry == 0.0f && rw == clgame.scrInfo.iWidth && rh == clgame.scrInfo.iHeight )
 		return;
 
 	// scale for screen sizes
-	float xscale = refState.width / (float)clgame.scrInfo.iWidth;
-	float yscale = refState.height / (float)clgame.scrInfo.iHeight;
-
+	float xscale = rw / (float)clgame.scrInfo.iWidth;
+	float yscale = rh / (float)clgame.scrInfo.iHeight;
 	*x *= xscale;
 	*y *= yscale;
 	*w *= xscale;
 	*h *= yscale;
+
+	// shrink the whole HUD towards the centre so its edges sit inside the margin
+	if( mx > 0.0f )
+	{
+		const float k = 1.0f - 2.0f * mx;
+		*x = rw * mx + *x * k;
+		*w *= k;
+	}
+
+	if( my > 0.0f )
+	{
+		const float k = 1.0f - 2.0f * my;
+		*y = rh * my + *y * k;
+		*h *= k;
+	}
+
+	*x += rx;
+	*y += ry;
 }
 
 static void SPR_AdjustTexCoords( int texnum, float width, float height, float *s1, float *t1, float *s2, float *t2 )
@@ -818,6 +859,8 @@ static void CL_DrawCrosshair( void )
 {
 	int	x, y, width, height;
 	float xscale, yscale;
+	float rx = 0.0f, rw = refState.width, rh = refState.height;
+	float vw = clgame.viewport[2], vh = clgame.viewport[3]; // size of the view the crosshair lives in
 
 	if( !clgame.ds.pCrosshair || !cl_crosshair.value )
 		return;
@@ -830,11 +873,27 @@ static void CL_DrawCrosshair( void )
 	width = clgame.ds.rcCrosshair.right - clgame.ds.rcCrosshair.left;
 	height = clgame.ds.rcCrosshair.bottom - clgame.ds.rcCrosshair.top;
 
-	x = clgame.viewport[0] + ( clgame.viewport[2] >> 1 );
-	y = clgame.viewport[1] + ( clgame.viewport[3] >> 1 );
+	if( CL_SplitActive( ))
+	{
+		// player 1's view is a part of the screen (2D coordinates, top left origin)
+		int sx, sy, sw, sh;
+
+		CL_SplitRect( 0, &sx, &sy, &sw, &sh );
+		rx = sx;
+		rw = vw = sw;
+		rh = vh = sh;
+		x = sx + ( sw >> 1 );
+		y = sy + ( sh >> 1 );
+	}
+	else
+	{
+		x = clgame.viewport[0] + ( clgame.viewport[2] >> 1 );
+		y = clgame.viewport[1] + ( clgame.viewport[3] >> 1 );
+	}
 
 #if XASH_OGC
 	// Wii FPS: mover el crosshair segun la posicion del IR
+	if( OGC_AimIsPointer( ))
 	{
 		float px = 0.0f, py = 0.0f;
 		OGC_GetPointer( &px, &py );
@@ -842,14 +901,15 @@ static void CL_DrawCrosshair( void )
 		if( px >  1.0f ) px =  1.0f;
 		if( py < -1.0f ) py = -1.0f;
 		if( py >  1.0f ) py =  1.0f;
-		x += (int)( px * ( clgame.viewport[2] * 0.5f ));
-		y += (int)( py * ( clgame.viewport[3] * 0.5f ));
+		x += (int)( px * ( vw * 0.5f ));
+		y += (int)( py * ( vh * 0.5f ));
 	}
 #endif
 
 	// g-cont - cl.crosshairangle is the autoaim angle.
 	// if we're not using autoaim, just draw in the middle of the screen
-	if( !VectorIsNull( cl.crosshairangle ))
+	// (WorldToScreen would use the matrices of player 2's view in split screen)
+	if( !VectorIsNull( cl.crosshairangle ) && !CL_SplitActive( ))
 	{
 		vec3_t	angles;
 		vec3_t	forward;
@@ -865,10 +925,11 @@ static void CL_DrawCrosshair( void )
 	}
 
 	// back to logical sizes
-	xscale = (float)clgame.scrInfo.iWidth / refState.width;
-	yscale = (float)clgame.scrInfo.iHeight / refState.height;
+	// (player 1's view always starts at the top left corner, so only x needs the offset)
+	xscale = (float)clgame.scrInfo.iWidth / rw;
+	yscale = (float)clgame.scrInfo.iHeight / rh;
 
-	x *= xscale;
+	x = ( x - rx ) * xscale;
 	y *= yscale;
 
 	// move at center the screen
@@ -878,7 +939,9 @@ static void CL_DrawCrosshair( void )
 	clgame.ds.pSprite = clgame.ds.pCrosshair;
 	Vector4Copy( clgame.ds.rgbaCrosshair, clgame.ds.spriteColor );
 
+	cl_hud_nomargin = true;
 	pfnSPR_DrawHoles( 0, x, y, &clgame.ds.rcCrosshair );
+	cl_hud_nomargin = false;
 }
 
 /*
@@ -921,6 +984,7 @@ void CL_DrawHUD( int state )
 		CL_DrawCrosshair ();
 		CL_DrawCenterPrint ();
 		clgame.dllFuncs.pfnRedraw( cl.time, cl.intermission );
+		CL_SplitDrawHUD ();
 		if( cl.intermission ) CL_DrawScreenFade ();
 		break;
 	case CL_PAUSED:
@@ -1015,10 +1079,14 @@ void CL_InitEdicts( int maxclients )
 	Assert( clgame.entities == NULL );
 
 	if( !clgame.mempool ) return; // Host_Error without client
-#if XASH_LOW_MEMORY != 2 && !XASH_OGC
+#if XASH_LOW_MEMORY != 2 || XASH_OGC
+	// En Wii esto estaba excluido y CL_UPDATE_BACKUP se quedaba en SINGLEPLAYER_BACKUP (4)
+	// tambien en multijugador: con mascara 3 cualquier ack con >=3 paquetes de retraso
+	// daba "delta frame is too old", el cliente descartaba el frame y el movimiento
+	// iba lento y a saltos. cl.frames/commands ya tienen MULTIPLAYER_BACKUP (16) entradas.
 	CL_UPDATE_BACKUP = ( maxclients <= 1 ) ? SINGLEPLAYER_BACKUP : MULTIPLAYER_BACKUP;
 #endif
-	cls.num_client_entities = CL_UPDATE_BACKUP * NUM_PACKET_ENTITIES;
+	cls.num_client_entities = CL_UPDATE_BACKUP * CL_NUM_PACKET_ENTITIES;
 	cls.packet_entities = Mem_Realloc( clgame.mempool, cls.packet_entities, sizeof( entity_state_t ) * cls.num_client_entities );
 	clgame.entities = Mem_Calloc( clgame.mempool, sizeof( cl_entity_t ) * clgame.maxEntities );
 	clgame.static_entities = NULL; // will be initialized later
@@ -1635,6 +1703,77 @@ static client_sprite_t *SPR_GetList( char *psz, int *piCount )
 
 /*
 =============
+Split screen HUD sprites
+
+The HUD of players 2-4 is drawn by the engine with the same sprites the game's
+client uses for player 1 (hud.txt and the weapon lists), in framebuffer pixels.
+=============
+*/
+HSPRITE CL_SplitLoadSprite( const char *name )
+{
+	return pfnSPR_Load( name );
+}
+
+const client_sprite_t *CL_SplitSpriteList( const char *file, int *count )
+{
+	char name[MAX_QPATH];
+
+	Q_strncpy( name, file, sizeof( name ));
+
+	return SPR_GetList( name, count );
+}
+
+// draws the rectangle prc of a sprite at x, y (framebuffer pixels) scaled by sx, sy
+void CL_SplitDrawSprite( HSPRITE hspr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode )
+{
+	const model_t *spr = CL_GetSpritePointer( hspr );
+	const model_t *saved = clgame.ds.pSprite;
+	float s1, t1, s2, t2, w, h;
+	int iw = 0, ih = 0, texnum;
+	wrect_t rc;
+
+	if( !spr )
+		return;
+
+	R_GetSpriteParms( &iw, &ih, NULL, 0, spr );
+	texnum = R_GetSpriteTexture( spr, 0 );
+
+	if( iw <= 0 || ih <= 0 || texnum <= 0 )
+		return;
+
+	if( prc )
+		rc = *prc;
+	else
+	{
+		rc.left = rc.top = 0;
+		rc.right = iw;
+		rc.bottom = ih;
+	}
+
+	if( rc.left < 0 || rc.left >= iw ) rc.left = 0;
+	if( rc.top < 0 || rc.top >= ih ) rc.top = 0;
+	if( rc.right <= 0 || rc.right > iw ) rc.right = iw;
+	if( rc.bottom <= 0 || rc.bottom > ih ) rc.bottom = ih;
+
+	s1 = rc.left;
+	t1 = rc.top;
+	s2 = rc.right;
+	t2 = rc.bottom;
+	SPR_AdjustTexCoords( texnum, iw, ih, &s1, &t1, &s2, &t2 );
+
+	w = ( rc.right - rc.left ) * sx;
+	h = ( rc.bottom - rc.top ) * sy;
+
+	ref.dllFuncs.GL_SetRenderMode( rendermode );
+	ref.dllFuncs.Color4ub( bound( 0, r, 255 ), bound( 0, g, 255 ), bound( 0, b, 255 ), bound( 0, a, 255 ));
+	ref.dllFuncs.R_DrawStretchPic( x, y, w, h, s1, t1, s2, t2, texnum );
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+
+	clgame.ds.pSprite = saved;
+}
+
+/*
+=============
 CL_FillRGBA
 
 =============
@@ -1700,6 +1839,30 @@ int GAME_EXPORT CL_GetScreenInfo( SCREENINFO *pscrinfo )
 		clgame.scrInfo.iWidth = refState.width;
 		clgame.scrInfo.iHeight = refState.height;
 		ClearBits( clgame.scrInfo.iFlags, SCRINFO_STRETCHED );
+	}
+
+#if XASH_OGC
+	// a 16:9 TV stretches the 640x480 framebuffer horizontally: give the HUD a
+	// proportionally wider virtual screen (853x480) so sprites and text keep
+	// their shape. SPR_AdjustSize maps it back onto the framebuffer.
+	if( refState.width > 0 && refState.height > 0 )
+	{
+		float xk = OGC_GetAspect() * refState.height / refState.width;
+
+		if( xk > 1.001f || xk < 0.999f )
+			clgame.scrInfo.iWidth = (int)( clgame.scrInfo.iWidth * xk + 0.5f );
+	}
+#endif
+
+	// split screen: the HUD of player 1 is laid out on the size of its view
+	if( CL_SplitActive( ))
+	{
+		int hw, hh;
+
+		CL_SplitHudSize( &hw, &hh );
+		clgame.scrInfo.iWidth = hw;
+		clgame.scrInfo.iHeight = hh;
+		SetBits( clgame.scrInfo.iFlags, SCRINFO_STRETCHED );
 	}
 
 	if( !pscrinfo ) return 0;
@@ -2105,6 +2268,17 @@ return interpolated angles from previous frame
 static void GAME_EXPORT pfnGetViewAngles( float *angles )
 {
 	if( angles ) VectorCopy( cl.viewangles, angles );
+#if XASH_OGC
+	// Wiimote: the client dll's weapon code must see the aim direction (the one
+	// the server fires along), not the camera
+	if( angles && OGC_AimIsPointer( ))
+	{
+		float dy, dp;
+		OGC_GetAimDelta( &dy, &dp );
+		angles[YAW] += dy;
+		angles[PITCH] += dp;
+	}
+#endif
 }
 
 /*
@@ -2117,6 +2291,15 @@ return interpolated angles from previous frame
 static void GAME_EXPORT pfnSetViewAngles( float *angles )
 {
 	if( angles ) VectorCopy( angles, cl.viewangles );
+#if XASH_OGC
+	if( angles && OGC_AimIsPointer( ))
+	{
+		float dy, dp;
+		OGC_GetAimDelta( &dy, &dp );
+		cl.viewangles[YAW] -= dy;
+		cl.viewangles[PITCH] -= dp;
+	}
+#endif
 }
 
 /*

@@ -22,6 +22,7 @@ the Free Software Foundation, either version 3 of the License, or
 #include <ogc/gx.h>
 #include <ogc/cache.h>
 #include <ogc/video.h>
+#include <ogc/conf.h>
 #include <ogc/system.h>
 #include <malloc.h>
 #include <string.h>
@@ -87,6 +88,14 @@ static qboolean VID_InitGX( void )
 
 	VIDEO_Init();
 	rmode = &TVNtsc480IntDf;
+
+	// Forzar 16:9 anamórfico (720x480) si la consola está configurada en pantalla ancha
+	if( CONF_GetAspectRatio() == CONF_ASPECT_16_9 )
+	{
+		rmode->viWidth = 720;
+		rmode->viXOrigin = (VI_MAX_WIDTH_NTSC - 720) / 2;
+	}
+
 	VIDEO_Configure( rmode );
 
 	xfb_size = rmode->fbWidth * rmode->xfbHeight * VI_DISPLAY_PIX_SZ;

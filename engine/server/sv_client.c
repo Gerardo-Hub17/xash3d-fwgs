@@ -33,6 +33,7 @@ static int	g_userid = 1;
 
 static void SV_UserinfoChanged( sv_client_t *cl );
 static void SV_ExecuteClientCommand( sv_client_t *cl, const char *s );
+static void SV_PutClientInServer( sv_client_t *cl );
 
 /*
 =================
@@ -545,6 +546,67 @@ edict_t *GAME_EXPORT SV_FakeConnect( const char *netname )
 	SV_MaybeNotifyPlayerCountChange( cl, "local" );
 
 	return cl->edict;
+}
+
+/*
+==================
+SV_AddLocalPlayer
+
+A fake client that goes through the same steps a real one does (the game
+dll accepts it and puts it in the server), for the split screen players 2-4
+==================
+*/
+edict_t *SV_AddLocalPlayer( const char *netname, const char *model, int player )
+{
+	// shirt and pants colours so the players can be told apart
+	static const char *colors[SPLIT_MAX_PLAYERS][2] = { { "1", "1" }, { "30", "10" }, { "100", "90" }, { "160", "150" } };
+	char reason[MAX_INFO_STRING];
+	sv_client_t *cl;
+	edict_t *ent;
+
+	if( sv.state != ss_active )
+		return NULL;
+
+	ent = SV_FakeConnect( netname );
+
+	if( !ent )
+		return NULL;
+
+	cl = SV_ClientFromEdict( ent, false );
+
+	if( !cl )
+		return NULL;
+
+	if( !COM_StringEmptyOrNULL( model ))
+		Info_SetValueForKey( cl->userinfo, "model", model, sizeof( cl->userinfo ));
+
+	if( player > 0 && player < SPLIT_MAX_PLAYERS )
+	{
+		Info_SetValueForKey( cl->userinfo, "topcolor", colors[player][0], sizeof( cl->userinfo ));
+		Info_SetValueForKey( cl->userinfo, "bottomcolor", colors[player][1], sizeof( cl->userinfo ));
+	}
+
+	SV_UserinfoChanged( cl );
+
+	Q_strncpy( reason, "Connection rejected by game\n", sizeof( reason ));
+
+	if( !svgame.dllFuncs.pfnClientConnect( ent, cl->name, "127.0.0.1", reason ))
+	{
+		SV_DropClient( cl, false );
+		return NULL;
+	}
+
+	SV_PutClientInServer( cl );
+
+	// SV_PutClientInServer clears the entity flags
+	SetBits( ent->v.flags, FL_CLIENT|FL_FAKECLIENT );
+
+	return ent;
+}
+
+void SV_ClientCommandFor( sv_client_t *cl, const char *s )
+{
+	SV_ExecuteClientCommand( cl, s );
 }
 
 /*

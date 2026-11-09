@@ -406,6 +406,10 @@ static int SV_Multicast( int dest, const vec3_t origin, const edict_t *ent, qboo
 		if( j < 1 || j > numclients ) return 0;
 		current = svs.clients + (j - 1);
 		numclients = 1; // send to one
+
+		// player 2 of the split screen is a fake client: nobody reads its messages,
+		// but its weapon animations are needed to draw its viewmodel
+		SV_SplitSniffMessage( ent, &sv.multicast );
 		break;
 	case MSG_SPEC:
 		specproxy = reliable = true;
@@ -2275,7 +2279,7 @@ static void GAME_EXPORT pfnGetAimVector( edict_t* ent, float speed, float *rgflR
 	// try all possible entities
 	VectorCopy( svgame.globals->v_forward, bestdir );
 	if( sv_allow_autoaim.value )
-		bestdist = sv_aim.value;
+		bestdist = SV_SplitAimThreshold( ent, sv_aim.value );
 	else bestdist = 0;
 
 	check = SV_EdictNum( 1 ); // start at first client
@@ -3835,6 +3839,18 @@ static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewang
 
 /*
 =============
+SV_FakeClientMove
+
+engine side entry of pfnRunPlayerMove, used by the split screen player
+=============
+*/
+void SV_FakeClientMove( edict_t *ent, const vec3_t viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec )
+{
+	pfnRunPlayerMove( ent, viewangles, fmove, smove, upmove, buttons, impulse, msec );
+}
+
+/*
+=============
 pfnNumberOfEntities
 
 returns actual entity count
@@ -4060,6 +4076,9 @@ void GAME_EXPORT SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word 
 		// add the view_ofs to avoid problems with crossed contents line
 		VectorAdd( pInvoker->v.origin, pInvoker->v.view_ofs, pvspoint );
 		args.entindex = invokerIndex = NUM_FOR_EDICT( pInvoker );
+
+		// split screen players have no client to play the event for their own view model
+		SV_SplitNoteEvent( pInvoker, sv.event_precache[eventindex] );
 
 		// g-cont. allow 'ducking' param for all entities
 		args.ducking = FBitSet( pInvoker->v.flags, FL_DUCKING ) ? true : false;
@@ -4885,6 +4904,10 @@ static qboolean SV_ParseEdict( char **pfile, edict_t *ent )
 		char	value[2048];
 		int len;
 
+                // Seguridad: limpiar buffers antes de leer para evitar basura si el guardado está corrupto
+                memset( keyname, 0, sizeof( keyname ));
+                memset( value, 0, sizeof( value ));
+
 		// parse key
 		if(( *pfile = COM_ParseFile( *pfile, keyname, sizeof( keyname ))) == NULL )
 			Host_Error( "%s: EOF without closing brace\n", __func__ );
@@ -4944,19 +4967,25 @@ static qboolean SV_ParseEdict( char **pfile, edict_t *ent )
 			keyname[len - 1] = '\0';
 
 		// create keyvalue strings
-		pkvd[numpairs].szClassName = (char*)""; // unknown at this moment
-		pkvd[numpairs].szKeyName = copystring( keyname );
-		pkvd[numpairs].szValue = copystring( value );
-		pkvd[numpairs].fHandled = false;
-		numpairs++;
+		// Evitar desbordamiento de buffer: comprobar ANTES de escribir en pkvd
+if( numpairs >= ARRAYSIZE( pkvd ))
+{
+if( classname )
+Con_Printf( S_ERROR "%s: too many keyvalue pairs for %s!\n", __func__, classname );
+else Con_Printf( S_ERROR "%s: too many keyvalue pairs!\n", __func__ );
+break;
+}
 
-		if( numpairs > ARRAYSIZE( pkvd ))
-		{
-			if( classname )
-				Con_Printf( S_ERROR "%s: too many keyvalue pairs for %s!\n", __func__, classname );
-			else Con_Printf( S_ERROR "%s: too many keyvalue pairs!\n", __func__ );
-			break;
-		}
+// Protección: forzar el terminador nulo por si el mapa/guardado tiene datos corruptos
+keyname[sizeof(keyname) - 1] = '\0';
+value[sizeof(value) - 1] = '\0';
+
+// create keyvalue strings
+pkvd[numpairs].szClassName = (char*)""; // unknown at this moment
+pkvd[numpairs].szKeyName = copystring( keyname );
+pkvd[numpairs].szValue = copystring( value );
+pkvd[numpairs].fHandled = false;
+numpairs++;
 	}
 
 	if( classname == NULL )

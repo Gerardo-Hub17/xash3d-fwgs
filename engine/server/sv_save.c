@@ -2078,12 +2078,21 @@ void SV_ChangeLevel( qboolean loadfromsavedgame, const char *mapname, const char
 		}
 	}
 
+#if XASH_OGC_MEMCHECK
+	Mem_Check(); // [A] antes de tocar nada del nivel viejo
+#endif
 	SV_InactivateClients ();
 	SV_FinalMessage( "", true );
 	SV_DeactivateServer ();
+#if XASH_OGC_MEMCHECK
+	Mem_Check(); // [B] despues de SV_DeactivateServer
+#endif
 
 	if( !SV_SpawnServer( level, startspot, background ))
 		return;	// ???
+#if XASH_OGC_MEMCHECK
+	Mem_Check(); // [C] despues de SV_SpawnServer (carga del mapa nuevo)
+#endif
 
 	if( loadfromsavedgame )
 	{
@@ -2290,9 +2299,27 @@ SV_GetSaveComment
 check savegame for valid
 ==================
 */
+// Los datos que escribe el DLL del juego (cabeceras de bloque, numero de campos) van en
+// little-endian aunque la Wii sea big-endian, y no estan alineados: se leen con memcpy + swap.
+static short SaveCommentShort( const char *p )
+{
+	short v;
+
+	memcpy( &v, p, sizeof( v ));
+	return LittleShort( v );
+}
+
+static int SaveCommentInt( const char *p )
+{
+	int v;
+
+	memcpy( &v, p, sizeof( v ));
+	return LittleLong( v );
+}
+
 int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 {
-	int	i, tag, size, nNumberOfFields, nFieldSize, tokenSize, tokenCount;
+	int	i, tag, size, size_total, nNumberOfFields, nFieldSize, tokenSize, tokenCount;
 	char	*pData, *pSaveData, *pFieldName, **pTokenList;
 	string	mapName, description;
 	file_t	*f;
@@ -2340,10 +2367,12 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 	mapName[0] = '\0';
 	comment[0] = '\0';
 
+	// el .sav (JSAV) solo guarda size, tokenCount y tokenSize: tableCount va en el .HL1 (VALV)
 	FS_Read( f, &size, sizeof( int ));
 	FS_Read( f, &tokenCount, sizeof( int ));	// These two ints are the token list
 	FS_Read( f, &tokenSize, sizeof( int ));
 	size += tokenSize;
+	size_total = size;
 
 	// sanity check.
 	if( tokenCount < 0 || tokenCount > SAVE_HASHSTRINGS )
@@ -2379,11 +2408,12 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 	else pTokenList = NULL;
 
 	// short, short (size, index of field name)
-	nFieldSize = *(short *)pData;
+	nFieldSize = SaveCommentShort( pData );
 	pData += sizeof( short );
-	pFieldName = pTokenList[*(short *)pData];
+	i = SaveCommentShort( pData );
+	pFieldName = ( pTokenList && i >= 0 && i < tokenCount ) ? pTokenList[i] : NULL;
 
-	if( Q_stricmp( pFieldName, "GameHeader" ))
+	if( !pFieldName || Q_stricmp( pFieldName, "GameHeader" ))
 	{
 		Q_strncpy( comment, "<missing GameHeader>", MAX_STRING );
 		if( pTokenList ) Mem_Free( pTokenList );
@@ -2394,22 +2424,27 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 
 	// int (fieldcount)
 	pData += sizeof( short );
-	nNumberOfFields = (int)*pData;
+	nNumberOfFields = SaveCommentInt( pData );
 	pData += nFieldSize;
 
 	// each field is a short (size), short (index of name), binary string of "size" bytes (data)
-	for( i = 0; i < nNumberOfFields; i++ )
+	for( i = 0; i < nNumberOfFields && i < 64; i++ )
 	{
 		size_t size;
+		int tokenIndex;
 		// Data order is:
 		// Size
 		// szName
 		// Actual Data
-		nFieldSize = *(short *)pData;
+		nFieldSize = SaveCommentShort( pData );
 		pData += sizeof( short );
 
-		pFieldName = pTokenList[*(short *)pData];
+		tokenIndex = SaveCommentShort( pData );
+		pFieldName = ( pTokenList && tokenIndex >= 0 && tokenIndex < tokenCount ) ? pTokenList[tokenIndex] : NULL;
 		pData += sizeof( short );
+
+		if( !pFieldName || nFieldSize < 0 || pData + nFieldSize > pSaveData + size_total )
+			break;
 
 		size = Q_min( nFieldSize, MAX_STRING );
 

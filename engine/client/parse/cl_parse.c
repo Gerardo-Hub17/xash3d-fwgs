@@ -626,6 +626,17 @@ static void CL_ParseCustomization( sizebuf_t *msg )
 		return;
 	}
 
+#if XASH_OGC
+	// los sprays/logos de otros jugadores son solo decoracion; en la Wii pedirlos al servidor
+	// termino en "server failed to transmit file 'customization'" y "Reliable channel overflowed"
+	if( !cl_customization.value )
+	{
+		Con_DPrintf( "Refusing customization, cl_customization set to 0\n" );
+		Mem_Free( pRes );
+		return;
+	}
+#endif
+
 	if( cls.state == ca_active && !cl_download_ingame.value )
 	{
 		Con_DPrintf( "Refusing new resource, cl_download_ingame set to 0\n" );
@@ -816,7 +827,10 @@ static void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 		MSG_ReadBytes( msg, clientdllmd5, sizeof( clientdllmd5 ), sizeof( clientdllmd5 ));
 		cl.maxclients = MSG_ReadByte( msg );
 		cl.playernum = MSG_ReadByte( msg );
+		// UnMunge trabaja sobre los bytes tal como llegaron (little-endian)
+		cl.checksum = LittleLong( cl.checksum );
 		COM_UnMunge3((byte *)&cl.checksum, sizeof( cl.checksum ), ( 0xff - cl.playernum ) & 0xff );
+		cl.checksum = LittleLong( cl.checksum );
 
 		MSG_SeekToBit( msg, sizeof( uint8_t ) << 3, SEEK_CUR ); // quake leftover, coop flag
 
@@ -877,6 +891,7 @@ static void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 		if( cl.worldmapCRC != cl.checksum )
 		{
 			Con_Printf( S_ERROR "Your map [%s] differs from the server's.\n", clgame.mapname );
+			Con_Printf( "map crc: client %08x, server %08x (%s)\n", (unsigned int)cl.worldmapCRC, (unsigned int)cl.checksum, mapfile );
 			CL_Disconnect_f(); // for local game, call EndGame
 			Host_AbortCurrentFrame(); // to avoid svc_bad
 		}

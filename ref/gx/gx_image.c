@@ -250,7 +250,8 @@ static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth 
 	case GX_TF_IA8:     return (size_t)w4 * h4 * 2 * depth;
 	case GX_TF_I8:
 	case GX_TF_IA4:     return (size_t)w8 * h4 * depth;
-	case GX_TF_I4:      return (size_t)w8 * h8 / 2 * depth;
+	case GX_TF_I4:
+	case GX_TF_CMPR:    return (size_t)w8 * h8 / 2 * depth;
 	case GX_TF_RGBA8:
 	default:            return (size_t)w4 * h4 * 4 * depth;
 	}
@@ -269,6 +270,21 @@ static int GX_CalcMipmapCount( gl_texture_t *tex, qboolean haveBuffer )
 			break;
 	}
 	return mipcount + 1;
+}
+
+/*
+ * Split screen: the views share the memory, so the textures of the world and of the
+ * models are made half the size (a quarter of the memory) and are stored as CMPR (DXT1)
+ * when they have no alpha. Interface, sky, lightmaps and anything that is rewritten
+ * later keep their normal format.
+ */
+static qboolean GX_SplitTexture( const gl_texture_t *tex )
+{
+	if( gx_split_lod.value < 2.0f )
+		return false;
+
+	return !FBitSet( tex->flags, TF_NOMIPMAP | TF_ATLAS_PAGE | TF_NORMALMAP | TF_KEEP_SOURCE | TF_SKYSIDE |
+		TF_CUBEMAP | TF_DEPTHMAP | TF_NEAREST | TF_BORDER | TF_RECTANGLE | TF_MULTISAMPLE | TF_ARB_FLOAT );
 }
 
 static void GX_SetTextureDimensions( gl_texture_t *tex, int width, int height, int depth )
@@ -293,6 +309,12 @@ static void GX_SetTextureDimensions( gl_texture_t *tex, int width, int height, i
 
 	width  = scaled_width;
 	height = scaled_height;
+
+	if( width >= 32 && height >= 32 && GX_SplitTexture( tex ))
+	{
+		width  >>= 1;
+		height >>= 1;
+	}
 
 	while( width > maxTextureSize || height > maxTextureSize )
 	{
@@ -544,6 +566,8 @@ static u8 GX_PickFormat( const byte *src, int width, int height, pixformat_t fmt
 
 
 
+static void GX_ConvertCMPR( byte *dst, const byte *src, int width, int height, const gx_srcfmt_t *s );
+
 static void GX_ConvertToNative( byte *dst, const byte *src, int width, int height, pixformat_t fmt, u8 gxFmt )
 {
 	gx_srcfmt_t s;
@@ -552,6 +576,12 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 	if( gxFmt == GX_TF_RGBA8 || !GX_GetSrcFmt( fmt, &s ) )
 	{
 		GX_ConvertToRGBA8( dst, src, width, height, fmt );
+		return;
+	}
+
+	if( gxFmt == GX_TF_CMPR )
+	{
+		GX_ConvertCMPR( dst, src, width, height, &s );
 		return;
 	}
 
@@ -645,6 +675,173 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 	}
 }
 
+
+/* one 4x4 block to DXT1: 565 end points from the bounding box, 4 colors, no alpha */
+static void GX_EncodeBlockDXT1( byte *dst, const byte rgb[16][3] )
+{
+	int lo[3] = { 255, 255, 255 }, hi[3] = { 0, 0, 0 };
+	int i, k;
+
+	for( i = 0; i < 16; i++ )
+	{
+		for( k = 0; k < 3; k++ )
+		{
+			if( rgb[i][k] < lo[k] ) lo[k] = rgb[i][k];
+			if( rgb[i][k] > hi[k] ) hi[k] = rgb[i][k];
+		}
+	}
+
+	for( k = 0; k < 3; k++ ) // pull the end points in a little: less ringing on the extremes
+	{
+		int inset = ( hi[k] - lo[k] ) >> 4;
+		hi[k] -= inset;
+		lo[k] += inset;
+	}
+
+	u16 c0 = (u16)((( hi[0] >> 3 ) << 11 ) | (( hi[1] >> 2 ) << 5 ) | ( hi[2] >> 3 ));
+	u16 c1 = (u16)((( lo[0] >> 3 ) << 11 ) | (( lo[1] >> 2 ) << 5 ) | ( lo[2] >> 3 ));
+	u32 indices = 0;
+
+	if( c0 < c1 )
+	{
+		u16 t = c0; c0 = c1; c1 = t;
+	}
+
+	dst[0] = (byte)( c0 >> 8 ); dst[1] = (byte)c0;
+	dst[2] = (byte)( c1 >> 8 ); dst[3] = (byte)c1;
+
+	if( c0 != c1 ) // c0 == c1 would be the 3 color mode: every index stays 0
+	{
+		int pal[4][3];
+
+		pal[0][0] = (( c0 >> 11 ) << 3 ) | (( c0 >> 11 ) >> 2 );
+		pal[0][1] = ((( c0 >> 5 ) & 63 ) << 2 ) | ((( c0 >> 5 ) & 63 ) >> 4 );
+		pal[0][2] = (( c0 & 31 ) << 3 ) | (( c0 & 31 ) >> 2 );
+		pal[1][0] = (( c1 >> 11 ) << 3 ) | (( c1 >> 11 ) >> 2 );
+		pal[1][1] = ((( c1 >> 5 ) & 63 ) << 2 ) | ((( c1 >> 5 ) & 63 ) >> 4 );
+		pal[1][2] = (( c1 & 31 ) << 3 ) | (( c1 & 31 ) >> 2 );
+
+		for( k = 0; k < 3; k++ )
+		{
+			pal[2][k] = ( 2 * pal[0][k] + pal[1][k] ) / 3;
+			pal[3][k] = ( pal[0][k] + 2 * pal[1][k] ) / 3;
+		}
+
+		for( i = 0; i < 16; i++ )
+		{
+			int best = 0, bestd = 0x7FFFFFFF;
+
+			for( int j = 0; j < 4; j++ )
+			{
+				int dr = rgb[i][0] - pal[j][0];
+				int dg = rgb[i][1] - pal[j][1];
+				int db = rgb[i][2] - pal[j][2];
+				int d = dr * dr + dg * dg + db * db;
+
+				if( d < bestd ) { bestd = d; best = j; }
+			}
+
+			// first texel of a row goes in the highest bits of the row byte
+			indices |= (u32)best << ( 8 * ( i >> 2 ) + 2 * ( 3 - ( i & 3 )));
+		}
+	}
+
+	dst[4] = (byte)indices;
+	dst[5] = (byte)( indices >> 8 );
+	dst[6] = (byte)( indices >> 16 );
+	dst[7] = (byte)( indices >> 24 );
+}
+
+/* GX_TF_CMPR: tiles of 8x8 texels = four 4x4 blocks (TL, TR, BL, BR), 32 bytes per tile */
+static void GX_ConvertCMPR( byte *dst, const byte *src, int width, int height, const gx_srcfmt_t *s )
+{
+	int w8 = ( width + 7 ) & ~7;
+	int h8 = ( height + 7 ) & ~7;
+
+	for( int ty = 0; ty < h8; ty += 8 )
+	{
+		for( int tx = 0; tx < w8; tx += 8 )
+		{
+			byte *tile = dst + (( ty >> 3 ) * ( w8 >> 3 ) + ( tx >> 3 )) * 32;
+
+			for( int q = 0; q < 4; q++ )
+			{
+				byte rgb[16][3];
+				int bx = tx + ( q & 1 ) * 4;
+				int by = ty + ( q >> 1 ) * 4;
+
+				for( int y = 0; y < 4; y++ )
+				{
+					int sy = Q_min( by + y, height - 1 );
+
+					for( int x = 0; x < 4; x++ )
+					{
+						int sx = Q_min( bx + x, width - 1 );
+						const byte *t = src + ( sy * width + sx ) * s->bpp;
+
+						rgb[y * 4 + x][0] = t[s->r];
+						rgb[y * 4 + x][1] = t[s->g];
+						rgb[y * 4 + x][2] = t[s->b];
+					}
+				}
+
+				GX_EncodeBlockDXT1( tile + q * 8, rgb );
+			}
+		}
+	}
+}
+
+/* exact 2x reduction with a box filter (the color of see-through texels is weighted by alpha) */
+static byte *GX_Downscale2x( const byte *in, int outw, int outh, pixformat_t fmt )
+{
+	gx_srcfmt_t s;
+
+	if( !in || !GX_GetSrcFmt( fmt, &s ))
+		return NULL;
+
+	byte *out = (byte *)Mem_Malloc( r_temppool, (size_t)outw * outh * 4 );
+	if( !out )
+		return NULL;
+
+	const int inw = outw * 2;
+
+	for( int y = 0; y < outh; y++ )
+	{
+		for( int x = 0; x < outw; x++ )
+		{
+			const byte *p[4];
+			byte *d = out + ( y * outw + x ) * 4;
+			int r = 0, g = 0, b = 0, a = 0;
+			int wr = 0, wg = 0, wb = 0, wsum = 0;
+
+			p[0] = in + ( ( 2 * y ) * inw + 2 * x ) * s.bpp;
+			p[1] = p[0] + s.bpp;
+			p[2] = p[0] + inw * s.bpp;
+			p[3] = p[2] + s.bpp;
+
+			for( int k = 0; k < 4; k++ )
+			{
+				int ka = ( s.a >= 0 ) ? p[k][s.a] : 255;
+
+				r += p[k][s.r]; g += p[k][s.g]; b += p[k][s.b]; a += ka;
+				wr += p[k][s.r] * ka; wg += p[k][s.g] * ka; wb += p[k][s.b] * ka; wsum += ka;
+			}
+
+			if( s.a >= 0 && wsum > 0 )
+			{
+				d[0] = (byte)( wr / wsum ); d[1] = (byte)( wg / wsum ); d[2] = (byte)( wb / wsum );
+			}
+			else
+			{
+				d[0] = (byte)( r >> 2 ); d[1] = (byte)( g >> 2 ); d[2] = (byte)( b >> 2 );
+			}
+
+			d[3] = (byte)( a >> 2 );
+		}
+	}
+
+	return out;
+}
 
 byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, qboolean isNormal )
 {
@@ -774,9 +971,16 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		return true;
 	}
 
-	byte *data;
+	byte *data = NULL;
 	pixformat_t dataFmt = pic->type;
-	if(( pic->width != tex->width ) || ( pic->height != tex->height ))
+	if( gx_split_lod.value >= 2.0f && pic->width == tex->width * 2 && pic->height == tex->height * 2 )
+		data = GX_Downscale2x( pic->buffer, tex->width, tex->height, pic->type );
+
+	if( data )
+	{
+		dataFmt = PF_RGBA_32;
+	}
+	else if(( pic->width != tex->width ) || ( pic->height != tex->height ))
 	{
 		dataFmt = PF_RGBA_32;
 		data = GX_ResampleTexture( pic->buffer, pic->width, pic->height,
@@ -793,6 +997,13 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
 		if( FBitSet( tex->flags, TF_ATLAS_PAGE ))
 			picked = ( gx_testmode == 14 ) ? GX_TF_RGB565 : GX_TF_RGBA8;
+		else if( picked == GX_TF_RGB565 && GX_SplitTexture( tex ) && !( tex->width & 7 ) && !( tex->height & 7 ))
+		{
+			gx_srcfmt_t sf;
+
+			if( GX_GetSrcFmt( dataFmt, &sf ))
+				picked = GX_TF_CMPR;
+		}
 		if( g_diagTexIdx < 15 )
 		{
 			g_diagTexIdx++;
@@ -1002,7 +1213,33 @@ void GX_UpdateTexSize( int texnum, int width, int height, int depth )
 	}
 }
 
+/* tiempo acumulado cargando texturas, para el log [LOAD] de R_NewMap */
+double gx_load_tex_time;
+int    gx_load_tex_count;
+
+static int GX_LoadTexture_impl( const char *name, const byte *buf, size_t size, int flags );
+static int GX_LoadTextureFromBuffer_impl( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
+
 int GX_LoadTexture( const char *name, const byte *buf, size_t size, int flags )
+{
+	double t0 = Platform_DoubleTime();
+	int ret = GX_LoadTexture_impl( name, buf, size, flags );
+	gx_load_tex_time += Platform_DoubleTime() - t0;
+	gx_load_tex_count++;
+	return ret;
+}
+
+int GX_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update )
+{
+	double t0 = Platform_DoubleTime();
+	int ret = GX_LoadTextureFromBuffer_impl( name, pic, flags, update );
+	gx_load_tex_time += Platform_DoubleTime() - t0;
+	gx_load_tex_count++;
+	return ret;
+}
+
+static int GX_LoadTexture_impl( const char *name, const byte *buf, size_t size, int flags )
+
 {
 	if( !GX_CheckTexName( name )) return 0;
 
@@ -1042,7 +1279,7 @@ int GX_LoadTextureArray( const char **names, int flags )
 	return 0;
 }
 
-int GX_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update )
+static int GX_LoadTextureFromBuffer_impl( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update )
 {
 	if( !GX_CheckTexName( name )) return 0;
 
@@ -1180,6 +1417,13 @@ int GX_TexMemory( void )
 	return total;
 }
 
+static int gx_dlight_ring[GX_DLIGHT_RING]; // [0] is tr.dlightTexture
+
+int GX_DlightRingTexture( int i )
+{
+	return ( i >= 0 && i < GX_DLIGHT_RING ) ? gx_dlight_ring[i] : 0;
+}
+
 void R_InitDlightTexture( void )
 {
 	rgbdata_t r_image =
@@ -1193,6 +1437,25 @@ void R_InitDlightTexture( void )
 	qboolean update = ( tr.dlightTexture != 0 );
 	tr.dlightTexture = GX_LoadTextureFromBuffer( "*dlight", &r_image,
 		TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE, update );
+
+	// split screen: every view re-writes the dynamic lightmaps; with one texture the CPU has
+	// to wait for the GPU before each write, so they take turns in a few
+	gx_dlight_ring[0] = tr.dlightTexture;
+
+	for( int i = 1; i < GX_DLIGHT_RING; i++ )
+	{
+		char name[16];
+
+		if( gx_split_lod.value < 2.0f )
+		{
+			gx_dlight_ring[i] = 0;
+			continue;
+		}
+
+		Q_snprintf( name, sizeof( name ), "*dlight%d", i );
+		gx_dlight_ring[i] = GX_LoadTextureFromBuffer( name, &r_image,
+			TF_NOMIPMAP | TF_CLAMP | TF_ATLAS_PAGE, GL_TextureForName( name ) != NULL );
+	}
 }
 
 static const char *GX_FormatToString( u8 fmt )

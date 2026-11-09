@@ -35,7 +35,6 @@ static void R_StudioRenderShadow( int isprite, float *p1, float *p2, float *p3, 
 
 
 
-static void R_LightStrength( int bone, vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] );
 typedef struct
 {
 	char		name[MAX_OSPATH];
@@ -117,6 +116,7 @@ typedef struct
 	vec2_t			arraycoord[MAXSTUDIOVERTS];
 	unsigned short	arrayelems[MAXSTUDIOVERTS*6];
 	byte			arraycolor[MAXSTUDIOVERTS][4];
+	unsigned int	arraycolor32[MAXSTUDIOVERTS];	// RGB en los 24 bits altos, alfa se pone al dibujar
 	uint			numverts;
 	uint			numelems;
 } studio_draw_state_t;
@@ -124,6 +124,8 @@ typedef struct
 CVAR_DEFINE_AUTO( r_studio_sort_textures, "0", FCVAR_GLCONFIG, "change draw order for additive meshes" );
 CVAR_DEFINE_AUTO( r_studio_drawelements, "1", FCVAR_GLCONFIG, "use glDrawElements for studiomodels" );
 CVAR_DEFINE_AUTO( r_studio_builtin_renderer, "0", 0, "use built-in studio model renderer instead of the one provided by client library (debugging)" );
+CVAR_DEFINE_AUTO( gx_studio_maxdist, "0", FCVAR_ARCHIVE, "do not draw monsters and players farther than this many units (0 = always draw)" );
+CVAR_DEFINE_AUTO( gx_studio_flatdist, "600", FCVAR_ARCHIVE, "models farther than this many units get one flat light value instead of per-vertex lighting (0 = always per-vertex)" );
 static cvar_t			*cl_righthand = NULL;
 
 static r_studio_interface_t	*pStudioDraw;
@@ -994,10 +996,21 @@ static int R_StudioCheckBBox( void )
 	if( !RI.currententity || !RI.currentmodel )
 		return false;
 
+	// con muchos enemigos lejanos cada modelo cuesta huesos + vertices + GX:
+	// no dibujar los que estan mas alla de la distancia configurada
+	if( gx_studio_maxdist.value > 64.0f && RI.currententity != tr.viewent )
+	{
+		vec3_t d;
+
+		VectorSubtract( RI.currententity->origin, RI.rvp.vieworigin, d );
+		if( DotProduct( d, d ) > gx_studio_maxdist.value * gx_studio_maxdist.value )
+			return false;
+	}
+
 	return R_StudioComputeBBox( NULL );
 }
 
-static void R_StudioEntityLight( alight_t *lightinfo )
+static void R_StudioEntityLightImpl( alight_t *lightinfo )
 {
 	float		lstrength[MAX_LOCALLIGHTS];
 	cl_entity_t	*ent = RI.currententity;
@@ -1072,7 +1085,14 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 	}
 }
 
-static void R_StudioSetupLighting( alight_t *plight )
+static void R_StudioEntityLight( alight_t *lightinfo )
+{
+    double t0 = Platform_DoubleTime();
+    R_StudioEntityLightImpl( lightinfo );
+    OGC_ProfAdd( 22, Platform_DoubleTime() - t0 );
+}
+
+static void R_StudioSetupLightingImpl( alight_t *plight )
 {
 	float	scale = 1.0f;
 
@@ -1093,6 +1113,13 @@ static void R_StudioSetupLighting( alight_t *plight )
 	}
 
 	VectorCopy( plight->color, g_studio.lightcolor );
+}
+
+static void R_StudioSetupLighting( alight_t *lightinfo )
+{
+    double t0 = Platform_DoubleTime();
+    R_StudioSetupLightingImpl( lightinfo );
+    OGC_ProfAdd( 22, Platform_DoubleTime() - t0 );
 }
 
 static void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
@@ -1200,12 +1227,27 @@ static void R_StudioSetColorArray( short *ptricmds, vec3_t *pstudionorms, byte *
 	float	*lv = (float *)g_studio.lightvalues[ptricmds[1]];
 
 	color[3] = tr.blend * 255;
+
+	if( likely( !g_studio.numlocallights ))
+	{
+		const byte *c = g_studio.arraycolor[ptricmds[1]];
+
+		color[0] = c[0];
+		color[1] = c[1];
+		color[2] = c[2];
+		return;
+	}
+
 	R_LightLambert( g_studio.lightpos[ptricmds[0]], pstudionorms[ptricmds[1]], lv, color );
 }
 
 static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float s, float t )
 {
 	int	i;
+	// sin luces locales el color sale de la tabla ya empaquetada: una sola escritura de 32 bits
+	// al FIFO en vez de cuatro de 8 bits por vertice
+	const qboolean fast = !g_studio.numlocallights;
+	const unsigned int alpha = (unsigned int)( tr.blend * 255.0f ) & 0xFF;
 
 	while(( i = *( ptricmds++ )))
 	{
@@ -1221,13 +1263,22 @@ static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float
 
 		for( ; i > 0; i--, ptricmds += 4 )
 		{
-			byte color[4];
-			R_StudioSetColorArray( ptricmds, pstudionorms, color );
+			unsigned int rgba;
+
+			if( likely( fast ))
+				rgba = g_studio.arraycolor32[ptricmds[1]] | alpha;
+			else
+			{
+				byte color[4];
+
+				R_StudioSetColorArray( ptricmds, pstudionorms, color );
+				rgba = ( (unsigned int)color[0] << 24 ) | ( (unsigned int)color[1] << 16 ) | ( (unsigned int)color[2] << 8 ) | color[3];
+			}
 
 			GX_Position3f32( g_studio.verts[ptricmds[0]][0],
 			                 g_studio.verts[ptricmds[0]][1],
 			                 g_studio.verts[ptricmds[0]][2] );
-			GX_Color4u8( color[0], color[1], color[2], color[3] );
+			GX_Color1u32( rgba );
 			GX_TexCoord2f32( ptricmds[2] * s, ptricmds[3] * t );
 		}
 
@@ -1379,7 +1430,7 @@ static void R_StudioSubmitMesh( short *ptricmds, vec3_t *pstudionorms, float s, 
 	}
 }
 
-static void R_StudioDrawPoints( void )
+static void R_StudioDrawPointsImpl( void )
 {
 	float		shellscale = 0.0f;
 	qboolean		need_sort = false;
@@ -1403,6 +1454,9 @@ static void R_StudioDrawPoints( void )
 
 	const int numverts = m_pSubModel->numverts;
 	const int numnorms = m_pSubModel->numnorms;
+	double prof_t = Platform_DoubleTime(), prof_n;
+
+#define GXPS_END( b ) do { prof_n = Platform_DoubleTime(); OGC_ProfAdd(( b ), prof_n - prof_t ); prof_t = prof_n; } while( 0 )
 
 	if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ) && m_pSubModel->blendvertinfoindex != 0 && m_pSubModel->blendnorminfoindex != 0 )
 	{
@@ -1414,7 +1468,6 @@ static void R_StudioDrawPoints( void )
 		{
 			R_StudioComputeSkinMatrix( &pvertweight[i], skinMat );
 			Matrix3x4_VectorTransform( skinMat, pstudioverts[i], g_studio.verts[i] );
-			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 		}
 
 		for( int i = 0; i < numnorms; i++ )
@@ -1427,10 +1480,9 @@ static void R_StudioDrawPoints( void )
 	{
 		for( int i = 0; i < numverts; i++ )
 			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], g_studio.verts[i] );
-
-		for( int i = 0; i < numverts; i++ )
-			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 	}
+
+	GXPS_END( 46 ); // est.xform: vertices por la matriz de hueso
 
 	if( RI.currententity->curstate.renderfx == kRenderFxGlowShell )
 	{
@@ -1438,6 +1490,24 @@ static void R_StudioDrawPoints( void )
 		shellscale = Q_max( factor, RI.currententity->curstate.renderamt * factor );
 		R_StudioBuildNormalTable();
 		R_StudioGenerateNormals();
+	}
+
+	// modelos lejanos: una sola luz plana por mesh en vez de una por normal (la iluminacion
+	// por normal es casi la mitad del coste de un modelo grande y a distancia no se nota)
+	qboolean lodflat = false;
+
+	if( gx_studio_flatdist.value > 64.0f && RI.currententity != tr.viewent
+		&& !FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
+	{
+		vec3_t d;
+		float dist = gx_studio_flatdist.value;
+
+		// 3-4 views: the views are small, flat light starts much closer
+		if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RF_SPLIT_COUNT( RI.rvp.flags ) >= 3 )
+			dist = Q_min( dist, 250.0f );
+
+		VectorSubtract( RI.currententity->origin, RI.rvp.vieworigin, d );
+		lodflat = DotProduct( d, d ) > dist * dist;
 	}
 
 	int k = 0;
@@ -1460,9 +1530,20 @@ static void R_StudioDrawPoints( void )
 				VectorSet( g_studio.lightvalues[k], tr.blend, tr.blend, tr.blend );
 			}
 		}
-		else
-		{
-			for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
+		else if( lodflat && !FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+{
+vec3_t zero = { 0.0f, 0.0f, 0.0f }, flat;
+float lv_tmp;
+
+R_StudioLighting( &lv_tmp, -1, g_nFaceFlags | STUDIO_NF_FLATSHADE, zero );
+VectorScale( g_studio.lightcolor, lv_tmp, flat );
+
+for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
+VectorCopy( flat, g_studio.lightvalues[k] );
+}
+else
+{
+for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 			{
 				float lv_tmp;
 				if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
@@ -1476,6 +1557,23 @@ static void R_StudioDrawPoints( void )
 		}
 	}
 
+	// sin luces locales el color final depende solo de la normal: calcularlo una
+	// vez por normal en vez de una vez por cada vertice de cada triangulo
+	if( !g_studio.numlocallights )
+	{
+		for( int n = 0; n < k; n++ )
+		{
+			g_studio.arraycolor[n][0] = (byte)( g_studio.lightvalues[n][0] * 255.0f );
+			g_studio.arraycolor[n][1] = (byte)( g_studio.lightvalues[n][1] * 255.0f );
+			g_studio.arraycolor[n][2] = (byte)( g_studio.lightvalues[n][2] * 255.0f );
+			g_studio.arraycolor32[n] = ( (unsigned int)g_studio.arraycolor[n][0] << 24 ) |
+				( (unsigned int)g_studio.arraycolor[n][1] << 16 ) |
+				( (unsigned int)g_studio.arraycolor[n][2] << 8 );
+		}
+	}
+
+	GXPS_END( 47 ); // est.luzvert: iluminacion por normal
+
 	if( r_studio_sort_textures.value && need_sort )
 	{
 		/* qsort con R_StudioMeshCompare eliminado: función no existe en GX */
@@ -1483,19 +1581,27 @@ static void R_StudioDrawPoints( void )
 
 	pstudionorms = (vec3_t *)((byte *)m_pStudioHeader + m_pSubModel->normindex);
 
-	if( glState.faceCull != GX_CULL_NONE )
+	// El estado de culling NO se puede heredar: sprites, particulas, beams, decals
+	// y TriAPI del cliente lo dejan en NONE/FRONT segun el caso, y el viewmodel
+	// se veia con las caras traseras (transparente) cuando heredaba NONE.
+	// Se fija siempre. Un viewmodel espejado (cl_righthand) invierte el
+	// winding, asi que culla la cara contraria en vez de desactivar el culling.
+	if( R_AllowFlipViewModel( RI.currententity ))
 	{
-		if( R_AllowFlipViewModel( RI.currententity ))
-		{
-			tr.fFlipViewModel = true;
-			GX_Cull( XASH_CULL_NONE );
-		}
-		else
-		{
-			tr.fFlipViewModel = false;
-			GX_Cull( XASH_CULL_BACK );
-		}
+		tr.fFlipViewModel = true;
+		GX_Cull( XASH_CULL_FRONT );
 	}
+	else
+	{
+		tr.fFlipViewModel = false;
+		GX_Cull( XASH_CULL_BACK );
+	}
+
+	// el modo TEV y el formato de vertice son los mismos para todos los meshes del submodelo:
+	// fijarlos una vez en vez de una vez por mesh (cada llamada reescribe registros de la GPU)
+	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
+	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
+	GX_SetupVtxFormatStudio( true, true );
 
 	for( int j = 0; j < m_pSubModel->nummesh; j++ )
 	{
@@ -1530,12 +1636,7 @@ static void R_StudioDrawPoints( void )
 			}
 		}
 
-		GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
-		GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
-
 		R_StudioSetupSkin( m_pStudioHeader, pskinref[pmesh->skinref] );
-
-		GX_SetupVtxFormatStudio( true, true );
 
 		R_StudioSubmitMesh( ptricmds, pstudionorms, s, t, shellscale, 0 );
 
@@ -1553,6 +1654,16 @@ static void R_StudioDrawPoints( void )
 		r_stats.c_studio_polys += pmesh->numtris;
 		tr.blend = oldblend;
 	}
+
+	GXPS_END( 48 ); // est.envio: estado de GX + vertices al FIFO
+#undef GXPS_END
+}
+
+static void R_StudioDrawPoints( void )
+{
+    double t0 = Platform_DoubleTime();
+    R_StudioDrawPointsImpl();
+    OGC_ProfAdd( 23, Platform_DoubleTime() - t0 );
 }
 
 static void R_StudioDrawHulls( void )
@@ -1829,12 +1940,24 @@ int R_GetEntityRenderMode( cl_entity_t *ent )
 	return ent->curstate.rendermode;
 }
 
-static void R_StudioClientEvents( void )
+static int g_studio_event_frame[4096]; // per entity: the frame whose events were run
+
+static void R_StudioClientEventsImpl( void )
 {
 	cl_entity_t	*e = RI.currententity;
 
 	if( g_studio.frametime == 0.0 )
 		return;
+
+	// split screen: a model drawn in several views of one frame runs its events (muzzle
+	// flashes, sounds) only in the first one
+	if( e != tr.viewent && e->index > 0 && e->index < (int)( sizeof( g_studio_event_frame ) / sizeof( g_studio_event_frame[0] )))
+	{
+		if( g_studio_event_frame[e->index] == tr.realframecount && tr.realframecount != 0 )
+			return;
+
+		g_studio_event_frame[e->index] = tr.realframecount;
+	}
 
 	if( m_pStudioHeader->numattachments <= 0 )
 	{
@@ -1882,6 +2005,13 @@ static void R_StudioClientEvents( void )
 		if( (float)pevent[i].frame > start && pevent[i].frame <= end )
 			gEngfuncs.pfnStudioEvent( &pevent[i], e );
 	}
+}
+
+static void R_StudioClientEvents( void )
+{
+    double t0 = Platform_DoubleTime();
+    R_StudioClientEventsImpl();
+    OGC_ProfAdd( 26, Platform_DoubleTime() - t0 );
 }
 
 static int R_StudioGetForceFaceFlags( void )
@@ -2361,7 +2491,6 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 
 		if( !( !gpGlobals->developer && gp_cl->maxclients == 1 ) && ( RI.currentmodel == RI.currententity->model ))
 			RI.currententity->curstate.body = 1;
-
 		lighting.plightvec = dir;
 		R_EntityDynamicLight( RI.currententity, &lighting, FBitSet( RI.rvp.flags, RF_DRAW_WORLD ), g_studio.time, g_studio.lightspot, g_studio.lightvec );
 
@@ -2380,7 +2509,6 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		if( g_nBottomColor > 360 ) g_nBottomColor = 360;
 
 		R_StudioSetRemapColors( g_nTopColor, g_nBottomColor );
-
 		R_StudioRenderModel( );
 		m_pPlayerInfo = NULL;
 
@@ -2478,7 +2606,6 @@ static int R_StudioDrawModel( int flags )
 		g_nBottomColor = (RI.currententity->curstate.colormap & 0xFF00) >> 8;
 
 		R_StudioSetRemapColors( g_nTopColor, g_nBottomColor );
-
 		R_StudioRenderModel();
 	}
 
@@ -2518,7 +2645,7 @@ static cl_entity_t *R_FindParentEntity( cl_entity_t *e, cl_entity_t **entities, 
 	return NULL;
 }
 
-void R_DrawStudioModel( cl_entity_t *e )
+static void R_DrawStudioModelImpl( cl_entity_t *e )
 {
 	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		return;
@@ -2558,6 +2685,13 @@ void R_DrawStudioModel( cl_entity_t *e )
 	}
 }
 
+void R_DrawStudioModel( cl_entity_t *e )
+{
+    double t0 = Platform_DoubleTime();
+    R_DrawStudioModelImpl( e );
+    OGC_ProfAdd( 21, Platform_DoubleTime() - t0 );
+}
+
 void R_RunViewmodelEvents( void )
 {
 	if( r_drawviewmodel->value == 0 )
@@ -2566,7 +2700,13 @@ void R_RunViewmodelEvents( void )
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
-	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+	// split screen: the weapon of this view's player (it is not the local player's)
+	const qboolean own = FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL );
+
+	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		return;
+
+	if( !own && ( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer()))
 		return;
 
 	RI.currententity = tr.viewent;
@@ -2576,7 +2716,7 @@ void R_RunViewmodelEvents( void )
 
 	R_StudioSetupTimings();
 
-	vec3_t simorg = Vec3( gp_cl->simorg );
+	vec3_t simorg = Vec3( own ? RI.rvp.vieworigin : gp_cl->simorg );
 	for( int i = 0; i < 4; i++ )
 		VectorCopy( simorg, RI.currententity->attachment[i] );
 	RI.currentmodel = RI.currententity->model;
@@ -2584,11 +2724,15 @@ void R_RunViewmodelEvents( void )
 	R_StudioDrawModelInternal( RI.currententity, STUDIO_EVENTS );
 }
 
-void R_DrawViewModel( void )
+static void R_DrawViewModelImpl( void )
 {
 	cl_entity_t	*view = tr.viewent;
+	// split screen: the viewent holds player 2's weapon, the local player's health
+	// and light level are not its business
+	qboolean	own = FBitSet( RI.rvp.flags, RF_SPLIT_VIEWMODEL );
 
-	R_GatherPlayerLight( view );
+	if( !own )
+		R_GatherPlayerLight( view );
 
 	if( r_drawviewmodel->value == 0 )
 		return;
@@ -2596,7 +2740,10 @@ void R_DrawViewModel( void )
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
-	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) || ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
+	if( FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		return;
+
+	if( !own && ( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer()))
 		return;
 
 	tr.blend = CL_FxBlend( view ) / 255.0f;
@@ -2610,6 +2757,22 @@ void R_DrawViewModel( void )
 
 	RI.currentmodel = RI.currententity->model;
 
+	// Igual que Quake/GL: el arma usa solo el primer 30% del rango de
+	// profundidad, asi nunca queda tapada ni titila al pegarse a una pared.
+	GX_SetDepthRange( gldepthmin, gldepthmin + 0.3f * ( gldepthmax - gldepthmin ));
+
+	// Estado conocido: el arma se dibujaba con lo que dejara el ultimo sprite,
+	// beam o entidad translucida (Z sin escritura, blend, alpha-test, color de
+	// canal con alfa bajo...) y por eso alternaba entre solida y transparente.
+	{
+		GXColor white = { 255, 255, 255, 255 };
+		GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+		GX_SetBlendMode( GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR );
+		GX_SetAlphaCompare( GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0 );
+		GX_SetChanMatColor( GX_COLOR0A0, white );
+		R_AllowFog( true );
+	}
+
 	switch( RI.currententity->model->type )
 	{
 	case mod_alias:
@@ -2620,6 +2783,20 @@ void R_DrawViewModel( void )
 		R_StudioDrawModelInternal( RI.currententity, STUDIO_RENDER );
 		break;
 	}
+
+	GX_SetDepthRange( gldepthmin, gldepthmax );
+}
+
+void R_DrawViewModel( void )
+{
+    double t0 = Platform_DoubleTime();
+
+    // split screen: the weapon in tr.viewent is player 1's, not this view's
+    if( FBitSet( RI.rvp.flags, RF_NO_VIEWMODEL ))
+        return;
+
+    R_DrawViewModelImpl();
+    OGC_ProfAdd( 25, Platform_DoubleTime() - t0 );
 }
 
 static void R_StudioLoadTexture( model_t *mod, studiohdr_t *phdr, mstudiotexture_t *ptexture )
@@ -2744,9 +2921,98 @@ void Mod_StudioUnloadTextures( void *data )
 	}
 }
 
+/*
+ * R_EntityDynamicLight hace por entidad y por cuadro: una o dos trazas de luz (R_LightVec, que con
+ * r_lighting_extended recorre ademas todos los physents brush) y, como los mapas de HL no tienen
+ * deluxemaps, otras 4 trazas para el gradiente. Con 50-70 modelos eso es mucho trabajo repetido
+ * para un resultado que casi no cambia entre cuadros. Se reutiliza el resultado mientras la entidad
+ * no se mueva mas de 2 unidades y no pasen 0,1 s (los estilos de luz se actualizan a 10 Hz); con
+ * cualquier dlight activo se recalcula siempre, para que los fogonazos iluminen al instante.
+ */
+#define GX_LIGHTCACHE_N 512
+
+CVAR_DEFINE_AUTO( gx_studio_lightcache, "1", FCVAR_ARCHIVE, "reuse the lighting of studio entities for up to 0.1 s while they barely move (0 = recompute every frame)" );
+
+static struct
+{
+    int         index;
+    const model_t   *model;
+    int         renderfx;
+    int         effects;
+    double          time;
+    vec3_t          origin;
+    int         ambientlight;
+    int         shadelight;
+    vec3_t          color;
+    vec3_t          plightvec;
+    vec3_t          lightspot;
+    vec3_t          lightvec;
+    colorVec        floorcolor;
+} gx_lightcache[GX_LIGHTCACHE_N];
+
+static qboolean GX_AnyDynamicLight( double time )
+{
+    for( int i = 0; i < MAX_DLIGHTS; i++ )
+    {
+        if( gp_dlights[i].die >= time && gp_dlights[i].radius > 0.0f )
+            return true;
+    }
+
+    return false;
+}
+
 static void pfnStudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
-	R_EntityDynamicLight( ent, plight, FBitSet( RI.rvp.flags, RF_DRAW_WORLD ), g_studio.time, g_studio.lightspot, g_studio.lightvec );
+    double t0 = Platform_DoubleTime();
+    qboolean draw_world = FBitSet( RI.rvp.flags, RF_DRAW_WORLD ) ? true : false;
+    qboolean use_cache = gx_studio_lightcache.value && draw_world && ent && plight && ent->model && ent->index > 0 && ent->index < 4096;
+
+    if( use_cache )
+    {
+        int slot = ent->index % GX_LIGHTCACHE_N;
+        vec3_t d;
+
+        VectorSubtract( ent->origin, gx_lightcache[slot].origin, d );
+
+        if( gx_lightcache[slot].index == ent->index && gx_lightcache[slot].model == ent->model
+            && gx_lightcache[slot].renderfx == ent->curstate.renderfx && gx_lightcache[slot].effects == ent->curstate.effects
+            && ( g_studio.time - gx_lightcache[slot].time ) < 0.1 && ( g_studio.time - gx_lightcache[slot].time ) >= 0.0
+            && DotProduct( d, d ) < 4.0f && !GX_AnyDynamicLight( g_studio.time ))
+        {
+            plight->ambientlight = gx_lightcache[slot].ambientlight;
+            plight->shadelight = gx_lightcache[slot].shadelight;
+            VectorCopy( gx_lightcache[slot].color, plight->color );
+            VectorCopy( gx_lightcache[slot].plightvec, plight->plightvec );
+            VectorCopy( gx_lightcache[slot].lightspot, g_studio.lightspot );
+            VectorCopy( gx_lightcache[slot].lightvec, g_studio.lightvec );
+            ent->cvFloorColor = gx_lightcache[slot].floorcolor;
+            OGC_ProfAdd( 37, Platform_DoubleTime() - t0 );
+            return;
+        }
+    }
+
+    R_EntityDynamicLight( ent, plight, draw_world, g_studio.time, g_studio.lightspot, g_studio.lightvec );
+
+    if( use_cache )
+    {
+        int slot = ent->index % GX_LIGHTCACHE_N;
+
+        gx_lightcache[slot].index = ent->index;
+        gx_lightcache[slot].model = ent->model;
+        gx_lightcache[slot].renderfx = ent->curstate.renderfx;
+        gx_lightcache[slot].effects = ent->curstate.effects;
+        gx_lightcache[slot].time = g_studio.time;
+        VectorCopy( ent->origin, gx_lightcache[slot].origin );
+        gx_lightcache[slot].ambientlight = plight->ambientlight;
+        gx_lightcache[slot].shadelight = plight->shadelight;
+        VectorCopy( plight->color, gx_lightcache[slot].color );
+        VectorCopy( plight->plightvec, gx_lightcache[slot].plightvec );
+        VectorCopy( g_studio.lightspot, gx_lightcache[slot].lightspot );
+        VectorCopy( g_studio.lightvec, gx_lightcache[slot].lightvec );
+        gx_lightcache[slot].floorcolor = ent->cvFloorColor;
+    }
+
+    OGC_ProfAdd( 37, Platform_DoubleTime() - t0 );
 }
 
 qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefaultDraw )

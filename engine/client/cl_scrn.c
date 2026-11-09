@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "qfont.h"
 #include "input.h"
 #include "library.h"
+#include "platform/platform.h"
 
 CVAR_DEFINE_AUTO( scr_centertime, "2.5", 0, "centerprint hold time" );
 CVAR_DEFINE_AUTO( scr_loading, "0", 0, "loading bar progress" );
@@ -34,7 +35,7 @@ static CVAR_DEFINE_AUTO( net_speeds, "0", FCVAR_ARCHIVE, "show network packets" 
 double g_gx_frame_time_ms = 0.0;
 double g_gx_cpu_time_ms = 0.0;
 
-static CVAR_DEFINE_AUTO( cl_showfps, "3", FCVAR_ARCHIVE, "show client fps" );
+static CVAR_DEFINE_AUTO( cl_showfps, "0", FCVAR_ARCHIVE, "show client fps" );
 static CVAR_DEFINE_AUTO( cl_showpos, "0", FCVAR_ARCHIVE, "show local player position and velocity" );
 static CVAR_DEFINE_AUTO( cl_showents, "0", FCVAR_ARCHIVE | FCVAR_CHEAT, "show entities information (largely undone)" );
 static CVAR_DEFINE_AUTO( cl_showcmd, "0", 0, "visualize usercmd button presses" );
@@ -54,11 +55,6 @@ SCR_DrawFPS
 */
 void SCR_DrawFPS( int height )
 {
-	static int __dbg_cnt = 0;
-	if( ( __dbg_cnt % 180 ) == 0 )
-		if( cl_showfps.value > 0 )
-			Con_Printf( "[FPSDBG] state=%d showfps=%.0f bg=%d\n", (int)cls.state, cl_showfps.value, (int)cl.background );
-	__dbg_cnt++;
 	rgba_t		color;
 	static double	nexttime = 0, lasttime = 0;
 	static double	framerate = 0;
@@ -68,7 +64,7 @@ void SCR_DrawFPS( int height )
 	char		fpsstring[64];
 	int		offset;
 
-	if( cls.state != ca_active || cl.background )  /* TEST: sin check de cvar */
+	if( !cl_showfps.value || cl.background )
 		return;
 
 	switch( cls.scrshot_action )
@@ -110,7 +106,7 @@ void SCR_DrawFPS( int height )
 		if( cl_showfps.value == 2 )
 			Q_snprintf( fpsstring, sizeof( fpsstring ), "fps: ^1%4i min, ^3%4i cur, ^2%4i max", minfps, curfps, maxfps );
 #if XASH_OGC
-		else if( 1 )  /* TEST: forzar siempre */
+		else if( cl_showfps.value == 3 )
 		{
 			float frame_ms = 1000.0f / ( calc + 0.001f );
 			Q_snprintf( fpsstring, sizeof( fpsstring ), "%4i fps | frame: %.1f ms", curfps, frame_ms );
@@ -691,6 +687,23 @@ void SCR_UpdateScreen( void )
 
 	if( !V_PreRender( )) return;
 
+	CL_SplitFrame();
+
+#if XASH_OGC
+	{
+		// wii_aspect changed: the HUD virtual size depends on it, so redo VidInit
+		static float last_aspect;
+		const float aspect = OGC_GetAspect();
+
+		if( last_aspect != aspect )
+		{
+			if( last_aspect != 0.0f )
+				SCR_VidInit();
+			last_aspect = aspect;
+		}
+	}
+#endif
+
 	switch( cls.state )
 	{
 	case ca_disconnected:
@@ -897,7 +910,7 @@ void SCR_VidInit( void )
 	// update screen sizes for menu
 	if( gameui.globals )
 	{
-		gameui.globals->scrWidth = refState.width;
+		gameui.globals->scrWidth = UI_VirtualWidth();
 		gameui.globals->scrHeight = refState.height;
 	}
 

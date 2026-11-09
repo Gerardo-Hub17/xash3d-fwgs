@@ -536,6 +536,8 @@ void SV_SendServerdata( sizebuf_t *msg, sv_client_t *cl );
 void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg );
 void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg );
 edict_t *SV_FakeConnect( const char *netname );
+edict_t *SV_AddLocalPlayer( const char *netname, const char *model, int player );
+void SV_ClientCommandFor( sv_client_t *cl, const char *s );
 void SV_BuildReconnect( sizebuf_t *msg );
 int SV_CalcPing( const sv_client_t *cl );
 void SV_UpdateServerInfo( void );
@@ -679,6 +681,37 @@ void SV_ClearGameState( void );
 //
 void SV_InitClientMove( void );
 void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed );
+
+//
+// sv_split.c
+#ifndef SPLIT_MAX_PLAYERS
+#define SPLIT_MAX_PLAYERS	4	// the local player and up to three more
+#endif
+
+qboolean SV_SplitActive( int player );
+edict_t *SV_SplitEdict( int player );
+int SV_SplitPlayerOf( const edict_t *ent );
+qboolean SV_SplitStart( int player, const char *name, const char *model );
+void SV_SplitStop( int player );
+void SV_SplitStopAll( void );
+void SV_SplitSetInput( int player, const vec3_t angles, float fmove, float smove, float upmove, word buttons );
+void SV_SplitCycleWeapon( int player, int dir );
+void SV_SplitFrame( void );
+void SV_SplitInfo_f( void );
+void SV_SplitPrintInfo( int player );
+qboolean SV_SplitTakeAngles( int player, vec3_t angles );
+void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg );
+qboolean SV_SplitGetAmmo( int player, int *weapon, int *clip, int *reserve1, int *reserve2 );
+qboolean SV_SplitGetWeaponInfo( int player, char *name, size_t size, qboolean *ammo1, qboolean *ammo2 );
+void SV_SplitGetFlashlight( int player, qboolean *on, int *charge );
+void SV_SplitNoteEvent( const edict_t *invoker, const char *eventname );
+unsigned SV_SplitGetFire( int player, qboolean *alt );
+qboolean SV_SplitGetViewModel( int player, int *modelindex, int *sequence, int *body, unsigned *animcount );
+qboolean SV_SplitGetView( int player, vec3_t origin, vec3_t punch, int *index, float *health, float *armor, float *frags );
+float SV_SplitGetSpeed( int player, qboolean *onground );
+void SV_SplitSetAutoaim( int player, float percent );
+float SV_SplitAimThreshold( const edict_t *ent, float def );
+void SV_FakeClientMove( edict_t *ent, const vec3_t viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec );
 
 //
 // sv_world.c

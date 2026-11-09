@@ -64,7 +64,10 @@ typedef struct frame_s
 	entity_state_t	playerstate[MAX_CLIENTS];
 	weapon_data_t	weapondata[MAX_LOCAL_WEAPONS];
 	netbandwidthgraph_t graphdata;
-	byte		flags[MAX_VISIBLE_PACKET_VIS_BYTES];
+	// un paquete del servidor puede traer hasta 1 << MAX_VISIBLE_PACKET_BITS entidades
+	// (el limite de 128 de Wii es solo para alojar partidas): con un servidor
+	// online concurrido SETVISBIT escribia fuera del arreglo y pisaba num_entities
+	byte		flags[(( 1 << MAX_VISIBLE_PACKET_BITS ) + 7 ) / 8];
 	int		num_entities;
 	int		first_entity;	// into the circular cl_packet_entities[]
 } frame_t;
@@ -97,6 +100,20 @@ typedef struct
 #define CL_UPDATE_BACKUP SINGLEPLAYER_BACKUP
 #else
 extern int CL_UPDATE_BACKUP;
+#endif
+
+// entidades por frame que reserva el cliente en su anillo de deltas. En Wii el
+// limite de 64 (NUM_PACKET_ENTITIES) hacia que en servidores con mas de ~100
+// entidades visibles los deltas caducaran en 5-6 frames ("delta frame is too
+// old"). Solo afecta al cliente: el servidor propio sigue con NUM_PACKET_ENTITIES.
+#if XASH_OGC
+#define CL_NUM_PACKET_ENTITIES 256	// el servidor ahora puede mandar hasta 256 entidades visibles
+#else
+#define CL_NUM_PACKET_ENTITIES NUM_PACKET_ENTITIES
+#endif
+
+#if XASH_OGC
+void OGC_NetCount( int what ); // diagnostico de red (wii_prof)
 #endif
 
 #define SIGNONS		2		// signon messages to receive before connected
@@ -249,7 +266,9 @@ typedef struct
 	// predicted velocity
 	vec3_t		simvel;
 
-	entity_state_t	instanced_baseline[MAX_CUSTOM_BASELINES];
+	// el servidor manda un indice de 6 bits: hasta 64, aunque el limite de Wii para
+	// alojar partidas sea 8 (con servidores online se escribia fuera del arreglo)
+	entity_state_t	instanced_baseline[64];
 	int		instanced_baseline_count;
 
 	char		sound_precache[MAX_SOUNDS][MAX_QPATH];
@@ -691,6 +710,7 @@ extern convar_t	mp_decals;
 extern convar_t	cl_logomaxdim;
 extern convar_t	cl_allow_download;
 extern convar_t	cl_download_ingame;
+extern convar_t	cl_customization;
 extern convar_t	cl_nopred;
 extern convar_t	cl_timeout;
 extern convar_t	cl_interp;
@@ -714,6 +734,8 @@ extern convar_t	hud_fontscale;
 extern convar_t hud_fontrender;
 extern convar_t	hud_scale;
 extern convar_t hud_scale_minimal_width;
+extern convar_t hud_margin_x;
+extern convar_t hud_margin_y;
 extern convar_t	r_showtextures;
 extern convar_t	cl_bmodelinterp;
 extern convar_t	cl_lw;		// local weapons
@@ -1171,6 +1193,9 @@ qboolean UI_LoadProgs( void );
 void UI_UpdateMenu( float realtime );
 void UI_KeyEvent( int key, qboolean down );
 void UI_MouseMove( int x, int y );
+float UI_XScale( void );
+
+int UI_VirtualWidth( void );
 void UI_SetActiveMenu( qboolean fActive );
 void UI_AddServerToList( netadr_t adr, const char *info );
 void UI_GetCursorPos( int *pos_x, int *pos_y );
@@ -1191,6 +1216,46 @@ void UI_ConnectionProgress_Connect( const char *server );
 void UI_ConnectionProgress_ChangeLevel( void );
 void UI_ConnectionProgress_ParseServerInfo( const char *server );
 char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly ); // used by both UI and Render APIs
+
+//
+// cl_split.c
+//
+extern convar_t wii_split;
+void CL_SplitInit( void );
+qboolean CL_SplitActive( void );
+void CL_SplitFrame( void );
+void CL_SplitRect( int player, int *x, int *y, int *w, int *h );
+void CL_SplitViewport( int player, int *vp );
+void CL_SplitHudSize( int *w, int *h );
+float CL_SplitViewAspect( int player );
+void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
+void CL_SplitGunLimit( float *left, float *down, float halfx, float halfy );
+void CL_SplitRenderView( void );
+void CL_SplitNoteMainTime( double ms );
+void CL_SplitDrawHUD( void );
+qboolean CL_SplitGrab( int player );
+void CL_SplitMenuToggle( int player );
+qboolean CL_SplitLobbyActive( void );
+HSPRITE CL_SplitLoadSprite( const char *name );
+const client_sprite_t *CL_SplitSpriteList( const char *file, int *count );
+void CL_SplitDrawSprite( HSPRITE hspr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode );
+qboolean CL_SplitPointer( int player, float *px, float *py );
+void CL_SplitDrawCrosshair( int player, int x, int y, int w, int h );
+void CL_SplitLobbyDraw( void );
+void CL_SplitUIInit( void );
+void CL_SplitUIFrame( void );
+qboolean CL_SplitMenuOpen( int player );
+qboolean CL_SplitUIInput( int player, unsigned ui );
+void CL_SplitUIConfig( int player, float *ir_dz, float *stick_dz, float *stick_sens, float *ir_sens, float *autoaim );
+void CL_SplitUIPlayerStarted( int player );
+int CL_SplitPortOf( int player );
+void CL_SplitUIDrawHUD( int player, int x, int y, int w, int h );
+int CL_SplitCount( void );
+float CL_SplitPixelAspectValue( void );
+void CL_SplitDrawText( int x, int y, const char *text, int r, int g, int b, int a );
+int CL_SplitTextWidth( const char *text );
+int CL_SplitTextHeight( void );
+void CL_SplitFill( int x, int y, int w, int h, int r, int g, int b, int a );
 
 //
 // cl_mobile.c

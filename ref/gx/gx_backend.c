@@ -46,6 +46,7 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 
 void GX_BackendStartFrame( void )
 {
+	tr.split_newframe = true;
 	r_speeds_msg[0] = '\0';
 }
 
@@ -370,6 +371,14 @@ void GX_SetRenderMode( int mode )
 	}
 }
 
+void GX_SetAlphaCompareZ( u8 comp0, u8 ref0, u8 aop, u8 comp1, u8 ref1 )
+{
+    ( GX_SetAlphaCompare )( comp0, ref0, aop, comp1, ref1 );
+
+    // sin prueba alfa se puede probar la profundidad antes de texturizar (mas rapido)
+    GX_SetZCompLoc(( comp0 == GX_ALWAYS && comp1 == GX_ALWAYS ) ? GX_TRUE : GX_FALSE );
+}
+
 void GX_PushPolygonOffset( float factor, float units )
 {
 	if( glState.num_polyoffsets >= ARRAYSIZE( glState.polyoffset_state ))
@@ -382,10 +391,10 @@ void GX_PushPolygonOffset( float factor, float units )
 	glState.polyoffset_state[glState.num_polyoffsets].units  = units;
 	glState.num_polyoffsets++;
 
-	const float z_bias_scale = 1.0f / 65536.0f;
+	const float z_bias_scale = 1.0f / 32768.0f;
 	float total_bias = 0.0f;
 	for( int i = 0; i < glState.num_polyoffsets; i++ )
-		total_bias += glState.polyoffset_state[i].units * z_bias_scale;
+		total_bias -= glState.polyoffset_state[i].units * z_bias_scale;
 
 	GX_ReloadProjectionMtx( total_bias );
 }
@@ -401,9 +410,9 @@ void GX_PopPolygonOffset( void )
 	glState.num_polyoffsets--;
 
 	float total_bias = 0.0f;
-	const float z_bias_scale = 1.0f / 65536.0f;
+	const float z_bias_scale = 1.0f / 32768.0f;
 	for( int i = 0; i < glState.num_polyoffsets; i++ )
-		total_bias += glState.polyoffset_state[i].units * z_bias_scale;
+		total_bias -= glState.polyoffset_state[i].units * z_bias_scale;
 
 	GX_ReloadProjectionMtx( total_bias );
 }
@@ -436,7 +445,9 @@ static const envmap_t r_envMapInfo[6] =
 
 qboolean VID_ScreenShot( const char *filename, int shot_type )
 {
-	uint flags = IMAGE_FLIP_Y;
+	// GL lee de abajo hacia arriba y por eso voltea; el EFB de GX ya sale de arriba
+	// hacia abajo (GX_ReadPixelsRGBA), asi que no hay que voltear la imagen.
+	uint flags = 0;
 	int  width = 0, height = 0;
 
 	rgbdata_t *r_shot = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));

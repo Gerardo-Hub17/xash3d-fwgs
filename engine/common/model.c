@@ -13,6 +13,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 #include "common.h"
+#include "platform/platform.h"
 #include "mod_local.h"
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -140,6 +141,14 @@ void Mod_FreeModel( model_t *mod )
 	if( !mod || mod->needload == NL_UNREFERENCED )
 		return;
 
+#if XASH_OGC
+	if( mod->type == mod_studio )
+	{
+		extern void Mod_FreeSeqGroups( model_t *mod );
+		Mod_FreeSeqGroups( mod );
+	}
+#endif
+
 	if( mod->type != mod_brush || mod->name[0] != '*' )
 	{
 		Mod_FreeUserData( mod );
@@ -183,6 +192,17 @@ void Mod_Init( void )
 
 	Cmd_AddCommand( "mapstats", Mod_PrintWorldStats_f, "show stats for currently loaded map" );
 	Cmd_AddCommand( "modellist", Mod_Modellist_f, "display loaded models list" );
+#if XASH_OGC
+	{
+		extern convar_t wii_preload_anims;
+		extern void Mod_MapCRC_f( void );
+		extern convar_t wii_preload_kb, wii_preload_reserve;
+		Cvar_RegisterVariable( &wii_preload_anims );
+		Cvar_RegisterVariable( &wii_preload_kb );
+		Cvar_RegisterVariable( &wii_preload_reserve );
+		Cmd_AddCommand( "wii_mapcrc", Mod_MapCRC_f, "print the multiplayer CRC of a map, read two different ways" );
+	}
+#endif
 
 	Mod_ResetStudioAPI ();
 	Mod_InitStudioHull ();
@@ -308,6 +328,13 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	if( mod->mempool || mod->name[0] == '*' )
 	{
 		mod->needload = NL_PRESENT;
+#if XASH_OGC
+		{
+			// el pool de secuencias se vacia al cambiar de nivel: volver a precargarlas
+			extern void Mod_RefreshSeqGroups( model_t *mod );
+			Mod_RefreshSeqGroups( mod );
+		}
+#endif
 		return mod;
 	}
 
@@ -437,11 +464,26 @@ Loads in a model for the given name
 */
 model_t *Mod_ForName( const char *name, qboolean crash, qboolean trackCRC )
 {
-	if( COM_StringEmptyOrNULL( name ))
-		return NULL;
+    model_t *mod;
 
-	model_t *mod = Mod_FindName( name, trackCRC );
-	return Mod_LoadModel( mod, crash );
+    if( COM_StringEmptyOrNULL( name ))
+        return NULL;
+
+    mod = Mod_FindName( name, trackCRC );
+
+    if( !mod )
+        return NULL;
+
+#if XASH_OGC
+    double t0 = Platform_DoubleTime();
+    model_t *ret = Mod_LoadModel( mod, crash );
+
+    OGC_ProfAdd( 10, Platform_DoubleTime() - t0 );
+    OGC_ProfNote( 'M', mod->name, Platform_DoubleTime() - t0 );
+    return ret;
+#else
+    return Mod_LoadModel( mod, crash );
+#endif
 }
 
 /*
@@ -479,6 +521,12 @@ static void Mod_PurgeStudioCache( void )
 
 	Mem_EmptyPool( com_studiocache );
 	Mod_ClearStudioCache();
+#if XASH_OGC
+	{
+		extern void Mod_ResetPreloadBudget( void );
+		Mod_ResetPreloadBudget();
+	}
+#endif
 }
 
 /*
@@ -614,7 +662,7 @@ void GAME_EXPORT Mod_LoadCacheFile( const char *filename, cache_user_t *cu )
 
 			// assuming filename passes seqgroup's name
 			if( !Q_stricmp( pgrp->name, filename ))
-				Mod_SwapStudioSeqGroupAnims( phdr, &pseq[i], (byte *)cu->data );
+				Mod_SwapStudioSeqGroupAnims( phdr, &pseq[i], (byte *)cu->data, (size_t)size );
 		}
 	}
 #endif

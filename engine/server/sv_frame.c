@@ -621,6 +621,25 @@ static void SV_WriteEntitiesToClient( sv_client_t *cl, sizebuf_t *msg )
 	// may include portal entities that merge other viewpoints
 	SV_AddEntitiesToPacket( cl->pViewEntity, cl->edict, frame, &frame_ents, true );
 
+	// split screen: the local player also needs everything the other local players see,
+	// reuse the portal camera path to merge that PVS into this packet
+	if( !FBitSet( cl->flags, FCL_FAKECLIENT ) && NET_IsLocalAddress( cl->netchan.remote_address ))
+	{
+		int i;
+
+		for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+		{
+			edict_t *other = SV_SplitEdict( i );
+
+			if( !other )
+				continue;
+
+			SetBits( sv.hostflags, SVF_MERGE_VISIBILITY );
+			SV_AddEntitiesToPacket( other, cl->edict, frame, &frame_ents, false );
+			ClearBits( sv.hostflags, SVF_MERGE_VISIBILITY );
+		}
+	}
+
 	if( c_notsend != cl->ignored_ents )
 	{
 		if( c_notsend > 0 )

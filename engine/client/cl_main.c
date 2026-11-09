@@ -37,6 +37,7 @@ static CVAR_DEFINE_AUTO( cl_resend, "6.0", 0, "time to resend connect" );
 CVAR_DEFINE( cl_allow_download, "cl_allowdownload", "1", FCVAR_ARCHIVE, "allow to downloading resources from the server" );
 static CVAR_DEFINE( cl_allow_upload, "cl_allowupload", "1", FCVAR_ARCHIVE, "allow to uploading resources to the server" );
 CVAR_DEFINE_AUTO( cl_download_ingame, "1", FCVAR_ARCHIVE, "allow to downloading resources while client is active" );
+CVAR_DEFINE_AUTO( cl_customization, "0", FCVAR_ARCHIVE, "download other players sprays/logos (Wii: off, they only add traffic)" );
 static CVAR_DEFINE_AUTO( cl_logofile, "lambda", FCVAR_ARCHIVE, "player logo name" );
 static CVAR_DEFINE_AUTO( cl_logocolor, "255 120 24", FCVAR_ARCHIVE, "player logo color" );
 static CVAR_DEFINE_AUTO( cl_logoext, "bmp", FCVAR_ARCHIVE, "temporary cvar to tell engine which logo must be packed" );
@@ -67,6 +68,8 @@ CVAR_DEFINE_AUTO( hud_fontscale, "1.0", FCVAR_ARCHIVE|FCVAR_LATCH, "scale hud fo
 CVAR_DEFINE_AUTO( hud_fontrender, "0", FCVAR_ARCHIVE, "hud font render mode (0: additive, 1: holes, 2: trans)" );
 CVAR_DEFINE_AUTO( hud_scale, "0", FCVAR_ARCHIVE|FCVAR_LATCH, "scale hud at current resolution" );
 CVAR_DEFINE_AUTO( hud_scale_minimal_width, "640", FCVAR_ARCHIVE|FCVAR_LATCH, "if hud_scale results in a HUD virtual screen smaller than this value, it won't be applied" );
+CVAR_DEFINE_AUTO( hud_margin_x, "0", FCVAR_ARCHIVE, "inset the HUD from the left/right screen edges, in percent of the screen width (0-20)" );
+CVAR_DEFINE_AUTO( hud_margin_y, "0", FCVAR_ARCHIVE, "inset the HUD from the top/bottom screen edges, in percent of the screen height (0-20)" );
 CVAR_DEFINE_AUTO( cl_solid_players, "1", 0, "Make all players not solid (can't traceline them)" );
 CVAR_DEFINE_AUTO( cl_updaterate, "20", FCVAR_USERINFO|FCVAR_ARCHIVE, "refresh rate of server messages" );
 CVAR_DEFINE_AUTO( cl_showevents, "0", FCVAR_ARCHIVE, "show events playback" );
@@ -327,6 +330,9 @@ static void CL_CheckClientState( void )
 	if(( cls.state == ca_connected || cls.state == ca_validate ) && ( cls.signon == SIGNONS ))
 	{
 		cls.state = ca_active;
+#if XASH_OGC
+		OGC_LoadMark( 2 );
+#endif
 		cls.changelevel = false;		// changelevel is done
 		cls.changedemo = false;		// changedemo is done
 		cl.first_frame = true;		// first rendering frame
@@ -735,9 +741,23 @@ static void CL_UpdateClientData( void )
 		.fov = cl.local.scr_fov,
 	};
 
+#if XASH_OGC
+	float aim_dy = 0.0f, aim_dp = 0.0f;
+	if( OGC_AimIsPointer( ))
+	{
+		OGC_GetAimDelta( &aim_dy, &aim_dp );
+		cdat.viewangles[YAW] += aim_dy;
+		cdat.viewangles[PITCH] += aim_dp;
+	}
+#endif
+
 	if( clgame.dllFuncs.pfnUpdateClientData( &cdat, cl.time ))
 	{
 		// grab changes if successful
+#if XASH_OGC
+		cdat.viewangles[YAW] -= aim_dy;
+		cdat.viewangles[PITCH] -= aim_dp;
+#endif
 		VectorCopy( cdat.viewangles, cl.viewangles );
 		cl.local.scr_fov = cdat.fov;
 	}
@@ -787,6 +807,8 @@ static void CL_CreateCmd( void )
 	int       i = cls.netchan.outgoing_sequence & CL_UPDATE_MASK;
 	pcmd = &cl.commands[i];
 
+
+
 	if( !cls.demoplayback )
 	{
 		pcmd->processedfuncs = false;
@@ -810,6 +832,11 @@ static void CL_CreateCmd( void )
 	// the shot follows the pointer; the camera does not
 	if( active )
 		OGC_ApplyPointerToAim( cmd->viewangles, &cmd->forwardmove, &cmd->sidemove );
+	else
+		OGC_RestoreAim( cmd->viewangles );
+	// diagnostico (se lee con wii_firestats): no imprime nada durante el juego
+	if( cmd && active && FBitSet( cmd->buttons, IN_ATTACK ))
+		OGC_FireLog( 0, host.realtime, 0.0, ms );
 #endif
 
 	CL_PopPMStates();
@@ -1245,6 +1272,27 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 	netadrtype_t adrtype = NET_NetadrType( &adr );
 
 	if( adr.port == 0 ) adr.port = MSG_BigShort( PORT_SERVER );
+
+#if XASH_OGC
+	if( adrtype != NA_LOOPBACK )
+	{
+		// El cliente de Wii no incluye la prediccion de armas (CLIENT_WEAPONS). Con cl_lw 1 el
+		// servidor no le manda al tirador sus propios eventos (animacion del arma, fogonazo,
+		// sonido) porque espera que el cliente los reproduzca. Con cl_lw 0 los manda el servidor.
+		Cvar_DirectSet( &cl_lw, "0" );
+		Info_SetValueForKey( cls.userinfo, "cl_lw", "0", sizeof( cls.userinfo ));
+
+		// mas de 30 paquetes por segundo con ping alto dejaban los deltas sin confirmar
+		// ("delta frame is too old") y la prediccion se abortaba
+		if( cl_updaterate.value > 30.0f )
+		{
+			Cvar_DirectSet( &cl_updaterate, "30" );
+			Info_SetValueForKey( cls.userinfo, "cl_updaterate", "30", sizeof( cls.userinfo ));
+		}
+		if( cl_cmdrate.value > 30.0f )
+			Cvar_DirectSet( &cl_cmdrate, "30" );
+	}
+#endif
 
 	int input_devices = IN_CollectInputDevices();
 	IN_LockInputDevices( adrtype != NA_LOOPBACK ? true : false );
@@ -1828,7 +1876,7 @@ CL_LocalServers_f
 */
 static void CL_LocalServers_f( void )
 {
-	Con_Printf( "Scanning for servers on the local network area...\n" );
+	Con_DPrintf( "Scanning for servers on the local network area...\n" );
 	NET_Config( true, true ); // allow remote
 
 	for( int i = 0; i < 10; i++ )
@@ -2360,7 +2408,13 @@ qboolean CL_IsFromConnectingServer( netadr_t from )
 
 static void CL_HandleTestPacket( netadr_t from, sizebuf_t *msg )
 {
+#if XASH_OGC
+	// ver NET_QueuePacket: 32KB en la pila principal de 128KB de la Wii.
+	// Este paquete solo llega al unirse a un servidor (hilo principal).
+	static byte	recv_buf[NET_MAX_FRAGMENT];
+#else
 	byte	recv_buf[NET_MAX_FRAGMENT];
+#endif
 	dword	crcValue;
 	int	realsize;
 	dword	crcValue2 = 0;
@@ -3522,6 +3576,7 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_allow_upload );
 	Cvar_RegisterVariable( &cl_allow_download );
 	Cvar_RegisterVariable( &cl_download_ingame );
+	Cvar_RegisterVariable( &cl_customization );
 	Cvar_RegisterVariable( &cl_logofile );
 	Cvar_RegisterVariable( &cl_logocolor );
 	Cvar_RegisterVariable( &cl_logoext );
@@ -3586,6 +3641,9 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &hud_fontrender );
 	Cvar_RegisterVariable( &hud_scale );
 	Cvar_RegisterVariable( &hud_scale_minimal_width );
+	Cvar_RegisterVariable( &hud_margin_x );
+	Cvar_RegisterVariable( &hud_margin_y );
+	CL_SplitInit();
 	Cvar_RegisterVariable( &cl_showevents );
 	Cvar_Get( "lastdemo", "", FCVAR_ARCHIVE, "last played demo" );
 	Cvar_RegisterVariable( &ui_renderworld );
@@ -3738,6 +3796,10 @@ Host_ClientFrame
 */
 void Host_ClientFrame( void )
 {
+#if XASH_OGC
+	double tp = Platform_DoubleTime();
+#endif
+
 	// if client is not active, do nothing
 	if( !cls.initialized ) return;
 	if( cls.key_dest == key_game && cls.state == ca_active && !Con_Visible() )
@@ -3747,7 +3809,13 @@ void Host_ClientFrame( void )
 	// the incoming messages have been read
 	if( !SV_Active( )) CL_SendCommand ();
 
+#if XASH_OGC
+	double tq = Platform_DoubleTime();
+#endif
 	clgame.dllFuncs.pfnFrame( host.frametime );
+#if XASH_OGC
+	OGC_ProfAdd( 43, Platform_DoubleTime() - tq );
+#endif
 
 	// remember last received framenum
 	CL_SetLastUpdate ();
@@ -3763,7 +3831,13 @@ void Host_ClientFrame( void )
 	Voice_Idle( host.frametime );
 
 	// emit visible entities
+#if XASH_OGC
+	tq = Platform_DoubleTime();
+#endif
 	CL_EmitEntities ();
+#if XASH_OGC
+	OGC_ProfAdd( 44, Platform_DoubleTime() - tq );
+#endif
 
 	// in case we lost connection
 	CL_CheckForResend ();
@@ -3780,11 +3854,26 @@ void Host_ClientFrame( void )
 	// catch changes video settings
 	VID_CheckChanges();
 
+#if XASH_OGC
+	OGC_ProfAdd( 3, Platform_DoubleTime() - tp );
+	tp = Platform_DoubleTime();
+#endif
+
 	// update the screen
 	SCR_UpdateScreen ();
 
+#if XASH_OGC
+	OGC_ProfAdd( 4, Platform_DoubleTime() - tp );
+#endif
+
 	// update audio
+#if XASH_OGC
+	tp = Platform_DoubleTime();
+#endif
 	SND_UpdateSound ();
+#if XASH_OGC
+	OGC_ProfAdd( 6, Platform_DoubleTime() - tp );
+#endif
 
 	// play avi-files
 	SCR_RunCinematic ();

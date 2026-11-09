@@ -46,7 +46,12 @@ void R_ClearScreen( void )
 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
-	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+
+	// Seguimos en modo 2D: el HUD no debe pasar por el test de profundidad.
+	// Antes esto reactivaba el Z-test, y todo lo que el HUD dibujaba despues
+	// de un FillRGBA se comparaba con la profundidad del arma (que ocupa el
+	// primer 30% del rango) y quedaba tapado por ella.
+	GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 	R_Set2DMode( false );
 }
 
@@ -92,7 +97,9 @@ static void CL_FillRGBA( int rendermode, float _x, float _y, float _w, float _h,
 
 	GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
 	GX_SetTevOrder( GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0 );
-	GX_SetZMode( GX_TRUE, GX_LEQUAL, GX_TRUE );
+	/* seguimos en 2D: reactivar el Z-test aqui hacia que el texto del HUD dibujado
+	   despues quedara tapado por el arma (su profundidad es el primer 30%) */
+	GX_SetZMode( GX_FALSE, GX_ALWAYS, GX_FALSE );
 }
 
 static qboolean Mod_LooksLikeWaterTexture( const char *name )
@@ -403,8 +410,22 @@ static const char *R_GetConfigName( void )
 	return "opengl";
 }
 
+extern double gx_load_tex_time;
+extern int gx_load_tex_count;
+
 static void R_NewMap( void )
 {
+	/* config.cfg se ejecuta DESPUES de iniciar el renderer y trae r_dynamic 0
+	   (archivado). Sin r_dynamic no hay lightstyles ni luces dinamicas, asi que
+	   en el puerto Wii se fuerza a 1 en cada mapa. */
+	if( !r_dynamic->value )
+	{
+		GX_LOG( "r_dynamic estaba en 0 (config.cfg): forzado a 1\n" );
+		gEngfuncs.Cvar_SetValue( "r_dynamic", 1.0f );
+	}
+
+	double t_start = Platform_DoubleTime();
+	double t_lm, t_vbo;
 	tr.worldmodel = gp_cl->models[1];
 
 	R_ClearDecals();
@@ -433,15 +454,27 @@ static void R_NewMap( void )
 		tx->texturechain = NULL;
 	}
 
+	t_lm = Platform_DoubleTime();
 	GX_BuildLightmaps ();
+	t_lm = Platform_DoubleTime() - t_lm;
 
+	t_vbo = Platform_DoubleTime();
 	R_ClearVBO();
 	if( R_HasEnabledVBO( ))
 		R_GenerateVBO();
 	R_ResetRipples();
+	t_vbo = Platform_DoubleTime() - t_vbo;
 
 	if( gEngfuncs.drawFuncs->R_NewMap != NULL )
 		gEngfuncs.drawFuncs->R_NewMap();
+
+	/* diagnostico de tiempos de carga (siempre activo, una linea por mapa) */
+	GX_LOG( "[LOAD] R_NewMap=%.0fms (lightmaps+VBO=%.0fms, otros=%.0fms) | texturas desde el mapa anterior: %d cargas, %.0fms\n",
+		( Platform_DoubleTime() - t_start ) * 1000.0, ( t_lm + t_vbo ) * 1000.0,
+		( Platform_DoubleTime() - t_start - t_lm - t_vbo ) * 1000.0,
+		gx_load_tex_count, gx_load_tex_time * 1000.0 );
+	gx_load_tex_count = 0;
+	gx_load_tex_time = 0.0;
 }
 
 static void R_FillRenderAPI( render_api_t *api )
@@ -492,7 +525,7 @@ immediately failed (no software framebuffer) and killed the process.
 */
 qboolean GX_R_Init( void )
 {
-	Con_Printf( "[GX] GX_R_Init entered\n" );
+	
 	GL_InitRandomTable();
 
 	r_temppool = Mem_AllocPool( "Render Zone" );

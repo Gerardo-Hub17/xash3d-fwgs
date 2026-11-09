@@ -19,6 +19,9 @@ GNU General Public License for more details.
 #include "pm_local.h"
 #include "event_flags.h"
 #include "studio.h"
+#if XASH_OGC
+void OGC_FireLog( int server, double t, double t2, int ms );
+#endif
 
 static qboolean has_update = false;
 static void SV_GetTrueOrigin( sv_client_t *cl, int edictnum, vec3_t origin );
@@ -953,6 +956,11 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	clent->v.light_level = ucmd->lightlevel;
 	if( ucmd->impulse ) clent->v.impulse = ucmd->impulse;
 
+
+#if XASH_OGC
+	if( FBitSet( ucmd->buttons, IN_ATTACK ))
+		OGC_FireLog( 1, cl->timebase, host.realtime, ucmd->msec );
+#endif
 	svgame.globals->time = cl->timebase;
 	svgame.dllFuncs.pfnPlayerPreThink( clent );
 	SV_PlayerRunThink( clent, frametime, cl->timebase );

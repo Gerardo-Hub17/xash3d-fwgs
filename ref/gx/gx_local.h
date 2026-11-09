@@ -33,6 +33,12 @@ GNU General Public License for more details.
 #include <gccore.h>
 #include <ogc/gx.h>
 
+/* sin esta declaracion C asume que devuelve int y todos los tiempos del renderer salian 0 */
+extern double Platform_DoubleTime( void );
+extern void OGC_ProfAdd( int bucket, double dt );
+extern void OGC_ProfSetInterval( int interval );
+extern void OGC_ProfFrameInfo( int models, int studiotris, int worldtris, int particles );
+
 #ifndef offsetof
 #ifdef __GNUC__
 #define offsetof(s,m) __builtin_offsetof(s,m)
@@ -50,6 +56,8 @@ byte *GX_ResampleTexture( const byte *in, int inw, int inh, int outw, int outh, 
 #define BLOCK_SIZE		tr.block_size
 #define BLOCK_SIZE_DEFAULT	128
 #define BLOCK_SIZE_MAX 256
+#define GX_DLIGHT_RING	6	// split screen: textures the dynamic lightmaps take turns in (see LM_UploadDynamicBlock)
+int GX_DlightRingTexture( int i );
 
 #define MAX_TEXTURES 2048
 #define MAX_DETAIL_TEXTURES	256
@@ -211,6 +219,7 @@ typedef struct
 	int		dlightframecount;
 	int		realframecount;
 	int		framecount;
+	qboolean		split_newframe;	// split screen: the first view of an engine frame advances realframecount
 
 	qboolean		fCustomRendering;
 	qboolean		fResetVis;
@@ -265,6 +274,8 @@ extern ref_instance_t	RI;
 extern gl_globals_t	tr;
 
 extern float		gldepthmin, gldepthmax;
+void GX_SetDepthRange( float zmin, float zmax );
+void GX_RestoreViewScissor( void );
 #define r_numEntities	(tr.draw_list->num_solid_entities + tr.draw_list->num_trans_entities)
 #define r_numStatics	(r_stats.c_client_ents)
 #define Mod_AllowMaterials() (ref_host_allow_materials->value && !FBitSet( gp_host->features, ENGINE_DISABLE_HDTEXTURES ))
@@ -279,6 +290,17 @@ extern float gx_pending_texcoord[MAX_TEXTURE_UNITS][2];
 
 void GX_SaveProjectionMtx( const Mtx44 src, u8 type );
 void GX_ReloadProjectionMtx( float zbias );
+void GX_ResetEffectState( void );
+
+/*
+ * Con la prueba alfa activa el test de profundidad NO puede ir antes del
+ * texturizado: los texels transparentes descartados por el alfa escribian
+ * profundidad igualmente y dejaban rectangulos "fantasma" que tapaban lo que
+ * se dibuja detras (laseres, sprites, decals). GX_SetAlphaCompare ajusta
+ * GX_SetZCompLoc segun haya prueba alfa o no.
+ */
+void GX_SetAlphaCompareZ( u8 comp0, u8 ref0, u8 aop, u8 comp1, u8 ref1 );
+#define GX_SetAlphaCompare( c0, r0, op, c1, r1 ) GX_SetAlphaCompareZ(( c0 ), ( r0 ), ( op ), ( c1 ), ( r1 ))
 void Matrix4x4_ToMtx44( Mtx44 dst, const matrix4x4 src );
 void Matrix4x4_ToMtx( Mtx dst, const matrix4x4 src );
 
@@ -644,11 +666,17 @@ extern convar_t	gl_keeptjunctions;
 extern convar_t	gl_round_down;
 extern convar_t	gl_wireframe;
 extern convar_t	gl_polyoffset;
+extern convar_t	gx_decal_offset;
+extern convar_t	gx_beamdiag;
+extern convar_t	gx_lm_bias;
 extern convar_t	gl_polyoffset_bmodels;
+extern convar_t	gx_fx_reset;
+extern convar_t	gx_fx_noz;
 extern convar_t	gl_finish;
 extern convar_t	gl_nosort;
 extern convar_t	gl_test;
 extern convar_t	gl_msaa;
+extern convar_t	gx_split_lod;	// set by the engine: >= 2 while a split screen map is loaded (players)
 extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t gl_fog;
@@ -670,6 +698,9 @@ extern convar_t	r_vbo_overbrightmode;
 extern convar_t r_studio_sort_textures;
 extern convar_t r_studio_drawelements;
 extern convar_t r_studio_builtin_renderer;
+extern convar_t gx_studio_maxdist;
+extern convar_t gx_studio_flatdist;
+extern convar_t gx_studio_lightcache;
 extern convar_t r_shadows;
 extern convar_t r_ripple;
 extern convar_t r_ripple_updatetime;
