@@ -55,6 +55,7 @@ typedef struct
 	qboolean	fresh;		// the animation started on this frame (its first events run)
 	float		punch;		// pitch kick of the last shot, decays (the game's V_PunchAxis)
 	float		fpx, fpy;	// filtered pointer, for the lean
+	float		lasthealth;	// health last frame, to shake the controller when it drops
 
 	// controller
 	float		px, py;		// pointer inside the view, -1..1 (the last one seen while it points)
@@ -569,6 +570,36 @@ static float CL_SplitCvar( const char *name, float def )
 
 /*
 =============
+CL_SplitGunLimit
+
+The weapon follows the pointer by rotating about the eye, and it already sits low
+and to the right of the screen, so following the pointer all the way to a corner
+throws it out of the picture. Squeezes the angles (left, down: positive towards
+those sides, in degrees) with a soft limit that leaves small movements untouched
+and never lets the gun go further than wii_gun_edge of the half field of view
+(halfx, halfy in degrees), counting wii_gun_home as where the gun rests.
+=============
+*/
+void CL_SplitGunLimit( float *left, float *down, float halfx, float halfy )
+{
+	const float edge = CL_SplitCvar( "wii_gun_edge", 0.85f );
+	const float home = CL_SplitCvar( "wii_gun_home", 0.35f );
+	float lim;
+
+	if( edge <= 0.0f || halfx <= 0.0f || halfy <= 0.0f )
+		return;
+
+	// it rests to the right, so there is more room to the left
+	lim = halfx * bound( 0.1f, edge + ( *left >= 0.0f ? home : -home ), 2.0f );
+	*left = lim * tanhf( *left / lim );
+
+	// and it rests low, so there is more room upwards
+	lim = halfy * bound( 0.1f, edge + ( *down >= 0.0f ? -home * 1.3f : home * 1.3f ), 2.0f );
+	*down = lim * tanhf( *down / lim );
+}
+
+/*
+=============
 CL_SplitPickFireSeq
 
 The game plays the firing animation of a weapon from a client event, which a fake
@@ -780,6 +811,9 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		wname[0] = 0;
 		SV_SplitGetWeaponInfo( player, wname, sizeof( wname ), &a1, &a2 );
 		p->punch = CL_SplitKick( wname, alt );
+
+		// and the controller shakes like player 1's does
+		OGC_RumblePort( CL_SplitPortOf( player ), 0.7f, 0.12f );
 	}
 
 	// the kick wears off the way the game's view code does it
@@ -853,8 +887,14 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		if( fabsf( p->fpx ) < 0.001f ) p->fpx = 0.0f;
 		if( fabsf( p->fpy ) < 0.001f ) p->fpy = 0.0f;
 
-		view->angles[YAW]   += -RAD2DEG( atanf( p->fpx * tx ));
-		view->angles[PITCH] -= RAD2DEG( atanf( p->fpy * ty ));
+		{
+			float left = -RAD2DEG( atanf( p->fpx * tx ));
+			float down = RAD2DEG( atanf( p->fpy * ty ));
+
+			CL_SplitGunLimit( &left, &down, RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
+			view->angles[YAW]   += left;
+			view->angles[PITCH] -= down;
+		}
 		view->angles[PITCH] += p->tilt;
 		view->angles[ROLL]  += p->roll - p->fpx * sway;
 		view->angles[ROLL]   = bound( -90.0f, view->angles[ROLL], 90.0f );
@@ -911,6 +951,22 @@ void CL_SplitRenderView( void )
 
 		if( !SV_SplitGetView( player, origin, punch, &index, &health, NULL, NULL ))
 			continue;
+
+		// damage taken: same shake as player 1's
+		{
+			splitp_t *sp = &split.p[player];
+
+			if( sp->lasthealth > 0.0f && health < sp->lasthealth )
+			{
+				const float lost = bound( 1.0f, sp->lasthealth - health, 50.0f );
+
+				if( health <= 0.0f )
+					OGC_RumblePort( CL_SplitPortOf( player ), 1.0f, 0.8f );
+				else
+					OGC_RumblePort( CL_SplitPortOf( player ), 0.55f + lost * 0.009f, 0.15f + lost * 0.008f );
+			}
+			sp->lasthealth = health;
+		}
 
 		memset( &rvp, 0, sizeof( rvp ));
 		CL_SplitViewport( player, rvp.viewport );

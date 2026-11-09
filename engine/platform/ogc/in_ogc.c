@@ -49,6 +49,8 @@ static CVAR_DEFINE_AUTO( wii_ir_pitchspeed, "160", FCVAR_ARCHIVE, "degrees per s
 static CVAR_DEFINE_AUTO( wii_ir_gunsway, "7", FCVAR_ARCHIVE, "degrees the weapon rolls towards the pointer at the screen edge (0 = off, negative = inverted)" );
 static CVAR_DEFINE_AUTO( wii_gun_shift, "-7", FCVAR_ARCHIVE, "units the weapon slides sideways/vertically towards the pointer at the screen edge (0 = off)" );
 static CVAR_DEFINE_AUTO( wii_gun_smooth, "0", FCVAR_ARCHIVE, "how fast the weapon catches up with the pointer (higher = snappier, lower = heavier, 0 = no smoothing)" );
+static CVAR_DEFINE_AUTO( wii_gun_edge, "0.85", FCVAR_ARCHIVE, "how far towards the screen edge the weapon may follow the pointer, as a fraction of half the view (0 = no limit)" );
+static CVAR_DEFINE_AUTO( wii_gun_home, "0.35", FCVAR_ARCHIVE, "where the weapon rests, to the right and below the centre, as a fraction of half the view" );
 static CVAR_DEFINE_AUTO( wii_aspect, "0", FCVAR_ARCHIVE, "TV aspect ratio used to draw (0 = follow the Wii system setting, 1 = 4:3, 2 = 16:9)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
@@ -802,6 +804,8 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_ir_gunsway );
 	Cvar_RegisterVariable( &wii_gun_shift );
 	Cvar_RegisterVariable( &wii_gun_smooth );
+	Cvar_RegisterVariable( &wii_gun_edge );
+	Cvar_RegisterVariable( &wii_gun_home );
 	Cvar_RegisterVariable( &wii_ir_cursor );
 	Cvar_RegisterVariable( &wii_aspect );
 Cvar_RegisterVariable( &wii_nunchuk_sens );
@@ -1838,9 +1842,15 @@ void OGC_ApplyPointerToViewModel( cl_entity_t *view )
     if( f_yaw == 0.0f && f_pitch == 0.0f && f_px == 0.0f && f_py == 0.0f && droll == 0.0f && tpitch == 0.0f )
         return;
 
-    // Aplica el offset angular al arma
-    view->angles[YAW]   += f_yaw;
-    view->angles[PITCH] -= f_pitch;
+    // Aplica el offset angular al arma, con limite suave para que no salga de la pantalla
+    {
+        float left = f_yaw, down = f_pitch, tx, ty;
+
+        OGC_PointerTans( &tx, &ty );
+        CL_SplitGunLimit( &left, &down, RAD2DEG( atanf( tx )), RAD2DEG( atanf( ty )));
+        view->angles[YAW]   += left;
+        view->angles[PITCH] -= down;
+    }
     view->angles[PITCH] += tpitch;
 
     // Estilo CoD: ademas de apuntar, el arma se ladea al apuntar a un lado (la parte de
@@ -2168,6 +2178,83 @@ void OGC_Rumble( float power, float seconds )
 	}
 }
 
+/*
+Players 2 to 4 shake their own controller (the one in the port of the same number),
+with the same duty cycle. Which device that is (remote or GameCube pad) is looked up
+when the motor goes on and remembered until it goes off again.
+*/
+static double ogc_prumble_end[SPLIT_MAX_PLAYERS];
+static float ogc_prumble_power[SPLIT_MAX_PLAYERS];
+static qboolean ogc_prumble_on[SPLIT_MAX_PLAYERS];
+static int ogc_prumble_kind[SPLIT_MAX_PLAYERS];
+
+void OGC_RumblePort( int port, float power, float seconds )
+{
+	double now = host.realtime;
+
+	if( port <= 0 )
+	{
+		OGC_Rumble( power, seconds );
+		return;
+	}
+
+	if( port >= SPLIT_MAX_PLAYERS )
+		return;
+
+	power = bound( 0.0f, power * wii_rumble.value, 1.0f );
+	if( power <= 0.0f || seconds <= 0.0f )
+		return;
+
+	if( now < ogc_prumble_end[port] )
+	{
+		if( power > ogc_prumble_power[port] )
+			ogc_prumble_power[port] = power;
+		if( now + seconds > ogc_prumble_end[port] )
+			ogc_prumble_end[port] = now + seconds;
+	}
+	else
+	{
+		ogc_prumble_power[port] = power;
+		ogc_prumble_end[port] = now + seconds;
+	}
+}
+
+static void OGC_RumbleMotor( int port, int kind, qboolean on )
+{
+	if( kind == OGC_KIND_GC )
+		PAD_ControlMotor( port, on ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP_HARD );
+	else if( kind != OGC_KIND_NONE )
+		WPAD_Rumble( port, on ? 1 : 0 );
+}
+
+static void OGC_RumblePortsFrame( void )
+{
+	static unsigned tick[SPLIT_MAX_PLAYERS];
+	int port;
+
+	for( port = 1; port < SPLIT_MAX_PLAYERS; port++ )
+	{
+		const qboolean active = wii_rumble.value > 0.0f && host.realtime < ogc_prumble_end[port];
+		qboolean on = false;
+
+		if( active )
+		{
+			int duty = (int)( ogc_prumble_power[port] * 6.0f + 0.5f );
+			on = ( tick[port]++ % 6 ) < (unsigned)duty;
+		}
+		else tick[port] = 0;
+
+		if( on == ogc_prumble_on[port] )
+			continue;
+
+		if( on )
+			OGC_PortUI( port, &ogc_prumble_kind[port] );
+
+		OGC_RumbleMotor( port, ogc_prumble_kind[port], on );
+		ogc_prumble_on[port] = on;
+	}
+}
+
 static void OGC_RumbleFrame( void )
 {
 	static unsigned tick;
@@ -2213,6 +2300,8 @@ static void OGC_RumbleFrame( void )
 		PAD_ControlMotor( PAD_CHAN0, want_gc ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP_HARD );
 		ogc_rumble_gc_on = want_gc;
 	}
+
+	OGC_RumblePortsFrame( );
 }
 
 /*

@@ -1144,6 +1144,171 @@ static void Lobby_Stop( qboolean to_menu )
 		UI_SetActiveMenu( true );
 }
 
+/*
+============
+The lobby background
+
+The same picture the main menu has behind its buttons: the tiles of the Steam
+layout (resource/BackgroundLayout.txt, or the HD one when the game asks for it),
+or the single splash of the old WON menu. ui_prefer_won_background picks between
+them the way the menu does. Without either the lobby keeps its plain colour.
+============
+*/
+#define LOBBY_BG_MAX	32
+
+static struct
+{
+	int	tex, x, y, w, h;
+} lobby_bg[LOBBY_BG_MAX];
+static int lobby_bg_n, lobby_bg_w, lobby_bg_h;
+
+#if XASH_OGC
+static qboolean Lobby_LoadSteamBackground( void )
+{
+	static const char *files[2] = { "resource/HD_BackgroundLayout.txt", "resource/BackgroundLayout.txt" };
+	int f;
+
+	for( f = GI->hd_background ? 0 : 1; f < 2; f++ )
+	{
+		byte *buf = FS_LoadFile( files[f], NULL, false );
+		char *pfile = (char *)buf, token[256];
+		int n = 0, rw = 0, rh = 0;
+		qboolean ok = false;
+
+		if( !buf )
+			continue;
+
+		// "resolution W H" comes first, then "<tga> <scaled> <x> <y>" for every tile
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
+		if( !pfile || Q_strcmp( token, "resolution" ))
+			goto done;
+
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
+		if( !pfile ) goto done;
+		rw = Q_atoi( token );
+
+		pfile = COM_ParseFile( pfile, token, sizeof( token ));
+		if( !pfile ) goto done;
+		rh = Q_atoi( token );
+
+		while( n < LOBBY_BG_MAX && ( pfile = COM_ParseFile( pfile, token, sizeof( token ))) != NULL )
+		{
+			int tex;
+
+			if( !FS_FileExists( token, false ))
+				goto done;
+
+			tex = ref.dllFuncs.GL_LoadTexture( token, NULL, 0, TF_IMAGE | TF_NOFLIP_TGA );
+			if( tex <= 0 )
+				goto done;
+
+			lobby_bg[n].tex = tex;
+			R_GetTextureParms( &lobby_bg[n].w, &lobby_bg[n].h, tex );
+
+			pfile = COM_ParseFile( pfile, token, sizeof( token )); // "scaled", ignored like the menu does
+			if( !pfile ) goto done;
+
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
+			if( !pfile ) goto done;
+			lobby_bg[n].x = Q_atoi( token );
+
+			pfile = COM_ParseFile( pfile, token, sizeof( token ));
+			if( !pfile ) goto done;
+			lobby_bg[n].y = Q_atoi( token );
+
+			n++;
+		}
+
+		ok = n > 0;
+done:
+		Mem_Free( buf );
+
+		if( ok )
+		{
+			lobby_bg_n = n;
+			lobby_bg_w = rw;
+			lobby_bg_h = rh;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static qboolean Lobby_LoadWONBackground( void )
+{
+	int tex;
+
+	if( !FS_FileExists( "gfx/shell/splash.bmp", false ))
+		return false;
+
+	tex = ref.dllFuncs.GL_LoadTexture( "gfx/shell/splash.bmp", NULL, 0, TF_IMAGE );
+	if( tex <= 0 )
+		return false;
+
+	lobby_bg[0].tex = tex;
+	lobby_bg[0].x = lobby_bg[0].y = 0;
+	R_GetTextureParms( &lobby_bg[0].w, &lobby_bg[0].h, tex );
+	lobby_bg_n = 1;
+	lobby_bg_w = lobby_bg[0].w;
+	lobby_bg_h = lobby_bg[0].h;
+
+	return lobby_bg_w > 0 && lobby_bg_h > 0;
+}
+
+static void Lobby_LoadBackground( void )
+{
+	lobby_bg_n = 0;
+
+	if( Cvar_VariableValue( "ui_prefer_won_background" ) != 0.0f )
+	{
+		if( !Lobby_LoadWONBackground( ))
+			Lobby_LoadSteamBackground( );
+	}
+	else
+	{
+		if( !Lobby_LoadSteamBackground( ))
+			Lobby_LoadWONBackground( );
+	}
+
+	if( lobby_bg_w <= 0 || lobby_bg_h <= 0 )
+		lobby_bg_n = 0;
+}
+#endif // XASH_OGC
+
+// covers the screen with the menu picture, the way the menu fits it (no stretching, centred)
+static qboolean Lobby_DrawBackground( int W, int H )
+{
+	float scale;
+	int i, xoff, yoff;
+
+	if( lobby_bg_n <= 0 )
+		return false;
+
+	if( (float)W * lobby_bg_h > (float)H * lobby_bg_w )
+		scale = (float)W / lobby_bg_w;
+	else
+		scale = (float)H / lobby_bg_h;
+
+	xoff = (int)( ( W - lobby_bg_w * scale ) / 2 );
+	yoff = (int)( ( H - lobby_bg_h * scale ) / 2 );
+
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
+
+	for( i = 0; i < lobby_bg_n; i++ )
+	{
+		const int dx = (int)ceilf( lobby_bg[i].x * scale );
+		const int dy = (int)ceilf( lobby_bg[i].y * scale );
+		const int dw = (int)ceilf( lobby_bg[i].w * scale );
+		const int dh = (int)ceilf( lobby_bg[i].h * scale );
+
+		ref.dllFuncs.R_DrawStretchPic( xoff + dx, yoff + dy, dw, dh, 0, 0, 1, 1, lobby_bg[i].tex );
+	}
+
+	return true;
+}
+
 static void Lobby_Start_f( void )
 {
 #if XASH_OGC
@@ -1157,6 +1322,7 @@ static void Lobby_Start_f( void )
 
 	Lobby_ListModels();
 	Lobby_ListMaps();
+	Lobby_LoadBackground();
 
 	if( !lobby.nmaps )
 	{
@@ -1431,7 +1597,11 @@ void CL_SplitLobbyDraw( void )
 	if( !lobby.active )
 		return;
 
-	CL_SplitFill( 0, 0, W, H, 8, 10, 22, 255 );
+	if( Lobby_DrawBackground( W, H ))
+		CL_SplitFill( 0, 0, W, H, 0, 0, 0, 140 ); // dim it so the panels read
+	else
+		CL_SplitFill( 0, 0, W, H, 8, 10, 22, 255 );
+
 	CL_SplitFill( 0, 0, W, 4, 255, 160, 0, 255 );
 	UI_TextCenter( W / 2, 14, "PANTALLA DIVIDIDA", 255, 200, 40 );
 
