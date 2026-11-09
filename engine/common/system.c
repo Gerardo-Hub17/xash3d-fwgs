@@ -13,6 +13,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#if XASH_OGC
+#include <ogc/system.h>
+#endif
+
 #include "common.h"
 #include "xash3d_mathlib.h"
 #include "platform/platform.h"
@@ -458,8 +462,17 @@ Sys_Quit
 */
 void Sys_Quit( const char *reason )
 {
-	Host_ShutdownWithReason( reason );
-	Host_ExitInMain();
+    Host_ShutdownWithReason( reason );
+
+#if XASH_OGC
+    // En la Wii, el exit() estandar corrompe la memoria al cerrar los drivers de video/audio.
+    // Forzamos un reinicio inmediato del sistema para volver al menu de forma limpia.
+    Con_Printf( "Saliendo de Xash3D... volviendo al menu de la Wii.\n" );
+    usleep( 100000 ); // Dar tiempo a que se imprima el mensaje
+    SYS_ResetSystem( SYS_RETURNTOMENU, 0, 0 );
+#endif
+
+    exit( 0 );
 }
 
 /*
