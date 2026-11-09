@@ -1500,9 +1500,14 @@ static void R_StudioDrawPointsImpl( void )
 		&& !FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
 	{
 		vec3_t d;
+		float dist = gx_studio_flatdist.value;
+
+		// 3-4 views: the views are small, flat light starts much closer
+		if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RF_SPLIT_COUNT( RI.rvp.flags ) >= 3 )
+			dist = Q_min( dist, 250.0f );
 
 		VectorSubtract( RI.currententity->origin, RI.rvp.vieworigin, d );
-		lodflat = DotProduct( d, d ) > gx_studio_flatdist.value * gx_studio_flatdist.value;
+		lodflat = DotProduct( d, d ) > dist * dist;
 	}
 
 	int k = 0;

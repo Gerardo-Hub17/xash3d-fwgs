@@ -758,7 +758,7 @@ code does for player 1 (V_CalcNormalRefdef of the client dll); false when there
 is nothing to draw. angles are the camera's, without the punch of the recoil
 =============
 */
-static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const vec3_t angles )
+static qboolean CL_SplitSetupViewModel( int player, int entindex, const vec3_t origin, const vec3_t angles )
 {
 	splitp_t *p = &split.p[player];
 	cl_entity_t *view = &clgame.viewent;
@@ -829,7 +829,11 @@ static qboolean CL_SplitSetupViewModel( int player, const vec3_t origin, const v
 		sequence = p->fireseq;
 
 	memset( view, 0, sizeof( *view ));
-	view->index = view->curstate.number = cl.playernum + 1;
+	// The renderer copies the attachments of the weapon it draws into the entity it
+	// belongs to, and beams that start at one ("idx | 0x1000", like the Gluon Gun's)
+	// read them from there. With player 1's number on every lent weapon, player 1's
+	// beam started at the weapon of whichever view drew last. Use the player's own.
+	view->index = view->curstate.number = ( entindex > 0 && entindex <= cl.maxclients ) ? entindex : cl.playernum + 1;
 	view->model = mod;
 	view->curstate.modelindex = modelindex;
 	view->curstate.sequence = sequence;
@@ -984,7 +988,7 @@ void CL_SplitRenderView( void )
 		// holds player 1's. Lend it this player's weapon for the length of its view.
 		savedview = clgame.viewent;
 
-		if( health > 0.0f && CL_SplitSetupViewModel( player, origin, split.p[player].angles ))
+		if( health > 0.0f && CL_SplitSetupViewModel( player, index, origin, split.p[player].angles ))
 		{
 			rvp.flags = ( rvp.flags & ~RF_NO_VIEWMODEL ) | RF_SPLIT_VIEWMODEL;
 

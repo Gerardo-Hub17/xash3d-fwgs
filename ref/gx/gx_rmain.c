@@ -820,8 +820,8 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
 
     switch( R_SplitViews( ))
     {
-    case 3: range = 1800.0f; break;
-    case 4: range = 1300.0f; break;
+    case 3: range = 1300.0f; break;
+    case 4: range = 1000.0f; break;
     default: return false;
     }
 
