@@ -1,5 +1,5 @@
-# Exception (Program) al salir del juego (Quit)
-0x80643D30
-0x80237974
+# Crash al intentar salir o reiniciar la Wii
+0x80643D90
+0x802379A4
 0x80050400
 0x8004FC80
