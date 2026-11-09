@@ -559,10 +559,31 @@ qboolean GX_R_Init( void )
 	return true;
 }
 
+/*
+===============
+GX_R_Shutdown
+
+The renderer's own shutdown. The table below used to point at R_Shutdown, which
+this library does not define: with everything linked into one binary that name
+resolved to the ENGINE's R_Shutdown (engine/client/dll_int/ref_common.c), which
+calls R_UnloadProgs, which calls ref.dllFuncs.R_Shutdown... which is the engine's
+R_Shutdown again. Quitting recursed until the stack was garbage and the console
+died with "Exception (Program)" (R_Shutdown <-> R_UnloadProgs in the stack dump).
+
+Only what is safe to do twice is done here: the textures, the render pool and the
+video buffers are given back to the system when the console resets or returns to
+the menu, so they are left alone instead of risking a second crash on the way out.
+===============
+*/
+static void GX_R_Shutdown( void )
+{
+	gEngfuncs.Cmd_RemoveCommand( "texturelist" );
+}
+
 const ref_interface_t gReffuncs =
 {
 	GX_R_Init,
-	R_Shutdown,
+	GX_R_Shutdown,
 	R_GetConfigName,
 	R_SetDisplayTransform,
 
