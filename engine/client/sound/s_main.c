@@ -547,6 +547,52 @@ static void S_SpatializeChannel( short *left_vol, short *right_vol, int master_v
 
 /*
 =================
+split screen listeners
+
+Every player of a split screen game hears the same speakers. Player 1's view is
+the listener (snd.origin); the others are kept here. A sound is heard from the
+listener closest to it, and what a player does himself (his shots, his steps) is
+at full volume, like the sounds of player 1's own entity.
+=================
+*/
+#define SND_SPLIT_MAX	4
+
+static struct
+{
+	int	count;
+	qboolean	valid[SND_SPLIT_MAX];
+	int	entnum[SND_SPLIT_MAX];
+	vec3_t	origin[SND_SPLIT_MAX];
+	vec3_t	right[SND_SPLIT_MAX];
+} snd_split;
+
+void S_SplitListeners( int count )
+{
+	snd_split.count = bound( 0, count, SND_SPLIT_MAX );
+}
+
+void S_SplitListener( int slot, const vec3_t origin, const vec3_t angles, int entnum )
+{
+	vec3_t	forward, up;
+
+	if( slot < 1 || slot >= SND_SPLIT_MAX )
+		return;
+
+	if( !origin || !angles || entnum <= 0 )
+	{
+		snd_split.valid[slot] = false;
+		snd_split.entnum[slot] = 0;
+		return;
+	}
+
+	VectorCopy( origin, snd_split.origin[slot] );
+	AngleVectors( angles, forward, snd_split.right[slot], up );
+	snd_split.entnum[slot] = entnum;
+	snd_split.valid[slot] = true;
+}
+
+/*
+=================
 SND_Spatialize
 =================
 */
@@ -569,6 +615,21 @@ static void SND_Spatialize( channel_t *ch )
 		return;
 	}
 
+	// split screen: the same goes for the entity of every other player
+	if( snd_split.count > 1 && ch->entnum > 0 )
+	{
+		for( int i = 1; i < snd_split.count; i++ )
+		{
+			if( !snd_split.valid[i] || snd_split.entnum[i] != ch->entnum )
+				continue;
+
+			ch->leftvol = ch->master_vol;
+			ch->rightvol = ch->master_vol;
+			VOX_SetChanVol( ch );
+			return;
+		}
+	}
+
 	if( !FBitSet( ch->flags, FL_CHAN_STATIC_SOUND ))
 	{
 		if( !CL_GetEntitySpatialization( ch ))
@@ -582,11 +643,38 @@ static void SND_Spatialize( channel_t *ch )
 	// source_vec is vector from listener to sound source
 	// player sounds come from 1' in front of player
 	vec3_t source_vec;
+	const float *listener_right = snd.right;
+
 	VectorSubtract( ch->origin, snd.origin, source_vec );
+
+	// split screen: hear it from the closest player
+	if( snd_split.count > 1 )
+	{
+		float best = DotProduct( source_vec, source_vec );
+
+		for( int i = 1; i < snd_split.count; i++ )
+		{
+			vec3_t v;
+			float d;
+
+			if( !snd_split.valid[i] )
+				continue;
+
+			VectorSubtract( ch->origin, snd_split.origin[i], v );
+			d = DotProduct( v, v );
+
+			if( d < best )
+			{
+				best = d;
+				VectorCopy( v, source_vec );
+				listener_right = snd_split.right[i];
+			}
+		}
+	}
 
 	// normalize source_vec and get distance from listener to source
 	float dist = VectorNormalizeLength( source_vec );
-	float dot = DotProduct( snd.right, source_vec );
+	float dot = DotProduct( listener_right, source_vec );
 
 	if( !FBitSet( host.bugcomp, BUGCOMP_SPATIALIZE_SOUND_WITH_ATTN_NONE ))
 	{

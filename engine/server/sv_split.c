@@ -775,6 +775,65 @@ float SV_SplitAimThreshold( const edict_t *ent, float def )
 
 /*
 =============
+SV_SplitSeqName
+
+name of a sequence of the model of an edict
+=============
+*/
+static const char *SV_SplitSeqName( const edict_t *e, int seq )
+{
+	const studiohdr_t *hdr = (const studiohdr_t *)Mod_StudioExtradata( SV_ModelHandle( e->v.modelindex ));
+
+	if( !hdr || seq < 0 || seq >= hdr->numseq )
+		return "?";
+
+	return ((const mstudioseqdesc_t *)((const byte *)hdr + hdr->seqindex ))[seq].label;
+}
+
+/*
+=============
+SV_SplitPrintAnim
+
+what the game sets for the third person animation of a player (the client
+draws the character from these)
+=============
+*/
+static void SV_SplitPrintAnim( const char *tag, const edict_t *e )
+{
+	// the sequences the game looks up by name (CBasePlayer::SetAnimation): -1 = the model
+	// does not have it and the character falls back to sequence 0
+	static const char *names[] = { "ref_aim_crowbar", "ref_shoot_crowbar", "ref_aim_onehanded", "ref_shoot_onehanded", "deep_idle", "die_simple" };
+	const studiohdr_t *hdr = (const studiohdr_t *)Mod_StudioExtradata( SV_ModelHandle( e->v.modelindex ));
+	char found[160] = "";
+	size_t n = 0;
+
+	for( size_t k = 0; k < ARRAYSIZE( names ) && n < sizeof( found ); k++ )
+	{
+		int idx = -1;
+
+		for( int j = 0; hdr && j < hdr->numseq; j++ )
+		{
+			if( !Q_stricmp( ((const mstudioseqdesc_t *)((const byte *)hdr + hdr->seqindex ))[j].label, names[k] ))
+			{
+				idx = j;
+				break;
+			}
+		}
+
+		n += Q_snprintf( found + n, sizeof( found ) - n, "%s%s=%d", k ? " " : "", names[k], idx );
+	}
+
+	Con_Printf( "%s: model data %s, %d sequences; %s\n", tag, hdr ? "loaded" : "MISSING", hdr ? hdr->numseq : 0, found );
+	Con_Printf( "%s: model %s (index %d) seq %d \"%s\" gait %d \"%s\" frame %.1f framerate %.2f\n",
+		tag, STRING( e->v.model ), e->v.modelindex, e->v.sequence, SV_SplitSeqName( e, e->v.sequence ),
+		e->v.gaitsequence, SV_SplitSeqName( e, e->v.gaitsequence ), e->v.frame, e->v.framerate );
+	Con_Printf( "%s: animtime - sv.time = %.3f s, effects 0x%x, weaponmodel \"%s\", body %d, deadflag %d, health %.0f\n",
+		tag, e->v.animtime - sv.time, (unsigned)e->v.effects, STRING( e->v.weaponmodel ), e->v.body,
+		e->v.deadflag, e->v.health );
+}
+
+/*
+=============
 SV_SplitPrintInfo
 =============
 */
@@ -806,6 +865,13 @@ void SV_SplitPrintInfo( int player )
 	Con_Printf( "P%d: input fmove %.0f smove %.0f buttons 0x%x, %u frames run (last %d ms), moved %.1f of %u pushed frames\n",
 		w, p->fmove, p->smove, (unsigned)p->buttons, p->frames, p->lastmsec, p->moved, p->pushed );
 	Con_Printf( "P%d: weapon id %d clip %d\n", w, p->curweapon, p->clip );
+
+	{
+		char tag[8];
+
+		Q_snprintf( tag, sizeof( tag ), "P%d", w );
+		SV_SplitPrintAnim( tag, e );
+	}
 }
 
 // wii_split_info [player]
@@ -818,6 +884,10 @@ void SV_SplitInfo_f( void )
 		SV_SplitPrintInfo( bound( 1, Q_atoi( Cmd_Argv( 1 )) - 1, SPLIT_MAX_PLAYERS - 1 ));
 		return;
 	}
+
+	// player 1 is a normal client: the same values for comparison
+	if( sv.state == ss_active && svs.maxclients > 0 && SV_IsValidEdict( svs.clients[0].edict ))
+		SV_SplitPrintAnim( "P1", svs.clients[0].edict );
 
 	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
 	{

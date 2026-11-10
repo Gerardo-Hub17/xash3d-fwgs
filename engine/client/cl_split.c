@@ -17,6 +17,7 @@ GNU General Public License for more details.
 #include "client.h"
 #include "server.h"
 #include "platform/platform.h"
+#include "sound.h"
 
 /*
 Player 1 is the normal client. The others are fake clients of the listen
@@ -309,6 +310,7 @@ void CL_SplitFrame( void )
 	{
 		SV_SplitStopAll();
 		split.active = false;
+		S_SplitListeners( 0 );
 	}
 	else
 	{
@@ -995,7 +997,13 @@ void CL_SplitRenderView( void )
 	int player;
 
 	if( !split.active )
+	{
+		S_SplitListeners( 0 );
 		return;
+	}
+
+	// every player's view is also an ear (see SND_Spatialize)
+	S_SplitListeners( split.count );
 
 	for( player = 1; player < split.count; player++ )
 	{
@@ -1006,7 +1014,12 @@ void CL_SplitRenderView( void )
 		int index;
 
 		if( !SV_SplitGetView( player, origin, punch, &index, &health, NULL, NULL ))
+		{
+			S_SplitListener( player, NULL, NULL, 0 );
 			continue;
+		}
+
+		S_SplitListener( player, origin, split.p[player].angles, index );
 
 		// damage taken: same shake as player 1's
 		{
