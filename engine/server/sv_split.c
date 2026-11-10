@@ -825,10 +825,10 @@ static void SV_SplitPrintAnim( const char *tag, const edict_t *e )
 
 	Con_Printf( "%s: model data %s, %d sequences; %s\n", tag, hdr ? "loaded" : "MISSING", hdr ? hdr->numseq : 0, found );
 	Con_Printf( "%s: model %s (index %d) seq %d \"%s\" gait %d \"%s\" frame %.1f framerate %.2f\n",
-		tag, STRING( e->v.model ), e->v.modelindex, e->v.sequence, SV_SplitSeqName( e, e->v.sequence ),
+		tag, SV_GetString( e->v.model ), e->v.modelindex, e->v.sequence, SV_SplitSeqName( e, e->v.sequence ),
 		e->v.gaitsequence, SV_SplitSeqName( e, e->v.gaitsequence ), e->v.frame, e->v.framerate );
 	Con_Printf( "%s: animtime - sv.time = %.3f s, effects 0x%x, weaponmodel \"%s\", body %d, deadflag %d, health %.0f\n",
-		tag, e->v.animtime - sv.time, (unsigned)e->v.effects, STRING( e->v.weaponmodel ), e->v.body,
+		tag, e->v.animtime - sv.time, (unsigned)e->v.effects, SV_GetString( e->v.weaponmodel ), e->v.body,
 		e->v.deadflag, e->v.health );
 }
 
