@@ -1105,7 +1105,8 @@ void CL_SplitDrawHUD( void )
 		for( i = 0; i < split.count; i++ )
 			n += Q_snprintf( line + n, sizeof( line ) - n, "%sJ%d %.1f", i ? "  " : "", i + 1, split_view_ms[i] );
 
-		Q_snprintf( line + n, sizeof( line ) - n, "  |  cuadro %.1f ms", split_frame_ms );
+		Q_snprintf( line + n, sizeof( line ) - n, "  |  cuadro %.1f ms  detalle %.0f%%", split_frame_ms,
+			Cvar_VariableValue( "gx_split_detail" ) * 100.0f );
 
 		CL_SplitFill( 4, 4, CL_SplitTextWidth( line ) + 8, CL_SplitTextHeight() + 4, 0, 0, 0, 170 );
 		CL_SplitDrawText( 8, 6, line, 255, 255, 120, 255 );

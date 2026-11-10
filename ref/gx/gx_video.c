@@ -47,6 +47,9 @@ CVAR_DEFINE_AUTO( gl_nosort, "0", FCVAR_GLCONFIG, "disable sorting of translucen
 CVAR_DEFINE_AUTO( gl_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( gl_msaa, "0", FCVAR_GLCONFIG, "enable or disable the GX copy-filter antialiasing" );
 CVAR_DEFINE_AUTO( gx_split_lod, "0", 0, "split screen detail level (set by the engine, number of players)" );
+CVAR_DEFINE_AUTO( gx_split_auto, "1", FCVAR_GLCONFIG, "split screen: lower the detail (entity distance, light, far clip) while the frames take longer than the 30 fps budget, and raise it back when there is room (0 = off)" );
+CVAR_DEFINE_AUTO( gx_split_min, "0.35", FCVAR_GLCONFIG, "split screen: lowest detail level the automatic detail may reach (0.2 to 1)" );
+CVAR_DEFINE_AUTO( gx_split_detail, "1", 0, "split screen: current detail level, 1 = full (set by gx_split_auto; read only)" );
 CVAR_DEFINE_AUTO( gx_split_fps, "30", FCVAR_GLCONFIG, "split screen: 30 = lock the game to 30 fps (steady frame time), 0 = follow gx_vsync" );
 CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelformat stencil bits (0 - auto)" );
 CVAR_DEFINE_AUTO( gl_overbright, "0", FCVAR_GLCONFIG, "overbrights" );
@@ -246,6 +249,29 @@ void GX_Present( void )
 	VIDEO_WaitVSync();
 	
 	if( work < 0.1 ) OGC_ProfAdd( 24, work ); // trabajo real del cuadro, sin esperas
+
+	// split screen: automatic detail. The work of a frame is compared with the 30 fps budget
+	// (33 ms): over it the detail drops fast (what is drawn far away is skipped sooner), with
+	// room to spare it comes back slowly, so it does not go up and down every frame
+	{
+		float d = gx_split_detail.value;
+
+		if( gx_split_lod.value < 2.0f || gx_split_fps.value <= 0.0f || gx_split_auto.value <= 0.0f )
+			d = 1.0f;
+		else if( work < 0.15 ) // loads do not count
+		{
+			const float lo = Q_min( 1.0f, Q_max( 0.2f, gx_split_min.value ));
+
+			if( work > 0.030 ) d *= 0.94f;
+			else if( work > 0.027 ) d *= 0.99f;
+			else if( work < 0.023 ) d += 0.004f;
+
+			d = Q_min( 1.0f, Q_max( lo, d ));
+		}
+
+		if(( d > gx_split_detail.value ? d - gx_split_detail.value : gx_split_detail.value - d ) >= 0.01f )
+			gEngfuncs.Cvar_SetValue( "gx_split_detail", d );
+	}
 	OGC_ProfSetInterval( interval );
 	if( interval == 2 && ( Platform_DoubleTime() - last_end ) < 0.024 )
 	    VIDEO_WaitVSync(); // todavia no pasaron dos retrazos: esperar el segundo
@@ -446,6 +472,9 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_msaa );
 	gEngfuncs.Cvar_RegisterVariable( &gx_split_lod );
 	gEngfuncs.Cvar_RegisterVariable( &gx_split_fps );
+	gEngfuncs.Cvar_RegisterVariable( &gx_split_auto );
+	gEngfuncs.Cvar_RegisterVariable( &gx_split_min );
+	gEngfuncs.Cvar_RegisterVariable( &gx_split_detail );
 	gEngfuncs.Cvar_RegisterVariable( &gl_stencilbits );
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );

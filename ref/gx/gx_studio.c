@@ -1506,6 +1506,10 @@ static void R_StudioDrawPointsImpl( void )
 		if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ) && RF_SPLIT_COUNT( RI.rvp.flags ) >= 3 )
 			dist = Q_min( dist, 250.0f );
 
+		// automatic detail: when the frames are late the flat light starts closer
+		if( FBitSet( RI.rvp.flags, RF_SPLIT_VIEW ))
+			dist = Q_max( 100.0f, dist * Q_min( 1.0f, Q_max( 0.2f, gx_split_detail.value )));
+
 		VectorSubtract( RI.currententity->origin, RI.rvp.vieworigin, d );
 		lodflat = DotProduct( d, d ) > dist * dist;
 	}

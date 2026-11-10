@@ -371,6 +371,9 @@ static float R_GetFarClip( void )
         case 4: zfar = Q_min( zfar, 2500.0f ); break;
         }
 
+        if( R_SplitViews( ) >= 2 )
+            zfar *= 0.75f + 0.25f * Q_min( 1.0f, Q_max( 0.2f, gx_split_detail.value ));
+
         return zfar;
     }
     return 2048.0f;
@@ -829,8 +832,12 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
     if( !e->model || e->model->type == mod_brush || e->curstate.entityType == ET_BEAM )
         return false;
 
+    // automatic detail (gx_split_auto): far things go first, the players the last
+    const float detail = Q_min( 1.0f, Q_max( 0.2f, gx_split_detail.value ));
+
     if( e->player )
-        range *= 1.5f;
+        range *= 1.5f * ( 0.5f + 0.5f * detail );
+    else range *= detail;
 
     vec3_t d;
     VectorSubtract( e->origin, RI.rvp.vieworigin, d );
@@ -844,7 +851,7 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
     if( e->model->radius > 0.0f && !e->player && RI.rvp.viewport[3] > 0 && RI.rvp.fov_y > 1.0f )
     {
         const float px_per_unit_at_1 = ( RI.rvp.viewport[3] * 0.5f ) / tanf( DEG2RAD( RI.rvp.fov_y ) * 0.5f );
-        const float minpx = ( R_SplitViews( ) >= 3 ) ? 3.0f : 2.0f;
+        const float minpx = (( R_SplitViews( ) >= 3 ) ? 3.0f : 2.0f ) / detail;
         const float r = e->model->radius * Q_max( 1.0f, e->curstate.scale );
 
         // r * px_per_unit_at_1 / dist < minpx   ->   dist > r * px_per_unit_at_1 / minpx
