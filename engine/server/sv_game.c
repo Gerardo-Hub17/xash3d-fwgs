@@ -1307,15 +1307,11 @@ pfnModelIndex
 */
 static int GAME_EXPORT pfnModelIndex( const char *m )
 {
-// Bloqueo de seguridad extrema para la Wii: si el puntero es basura (fuera de la RAM), ignorar.
+// Bloqueo de seguridad extrema para la Wii: si el puntero es nulo o apunta fuera de la RAM, ignorar.
 if( !m || (unsigned int)m < 0x80000000 || (unsigned int)m >= 0x94000000 )
  0;
 
-	// Bloqueo de seguridad para la Wii: evitar crash si el puntero es nulo o corrupto
-	if( !m || !m[0] )
-		return 0;
-
-	char	name[MAX_QPATH];
+charname[MAX_QPATH];
 
 	if( COM_StringEmptyOrNULL( m ))
 		return 0;
