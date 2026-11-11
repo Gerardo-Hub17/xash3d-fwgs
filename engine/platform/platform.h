@@ -180,6 +180,8 @@ void OGC_EntProf( const char *classname, double dt );
 void OGC_LoadMark( int what );
 extern int ogc_usb_kbd_ok;
 extern int ogc_usb_mouse_ok;
+extern int ogc_usb_kbd_ret;
+extern int ogc_usb_mouse_ret;
 void OGC_ButtonsFrame( void );
 void OGC_GetPointer( float *x, float *y );
 qboolean OGC_AimIsPointer( void );

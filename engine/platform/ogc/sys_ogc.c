@@ -302,10 +302,14 @@ void OGC_Init( void )
 	WPAD_SetDataFormat( WPAD_CHAN_ALL, WPAD_FMT_BTNS_ACC_IR );
 
 	printf( "OGC_Init: USB keyboard\n" );
-	ogc_usb_kbd_ok = ( KEYBOARD_Init( NULL ) == 0 );
+	ogc_usb_kbd_ret = KEYBOARD_Init( NULL );
+	ogc_usb_kbd_ok = ( ogc_usb_kbd_ret == 0 );
+	printf( "OGC_Init: KEYBOARD_Init = %d\n", ogc_usb_kbd_ret );
 
 	printf( "OGC_Init: USB mouse\n" );
-	ogc_usb_mouse_ok = ( MOUSE_Init( NULL ) == 0 );
+	ogc_usb_mouse_ret = MOUSE_Init();
+	ogc_usb_mouse_ok = ( ogc_usb_mouse_ret == 0 );
+	printf( "OGC_Init: MOUSE_Init = %d, IOS %d rev %d\n", ogc_usb_mouse_ret, (int)IOS_GetVersion(), (int)IOS_GetRevision());
 
 	printf( "OGC_Init: done\n" );
 }

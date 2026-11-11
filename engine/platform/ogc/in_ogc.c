@@ -22,6 +22,8 @@ GNU General Public License for more details.
 #include <wiiuse/wpad.h>
 #include <ogc/pad.h>
 #include <ogc/conf.h>
+#include <ogc/ios.h>
+#include <ogc/usb.h>
 #include <ogc/usbmouse.h>
 #include <wiikeyboard/keyboard.h>
 
@@ -292,6 +294,8 @@ static float ogc_look_filt[2];
 // walk an uninitialised list
 int ogc_usb_kbd_ok;
 int ogc_usb_mouse_ok;
+int ogc_usb_kbd_ret = -99;	// lo que devolvio KEYBOARD_Init / MOUSE_Init (-99: aun no se llamo)
+int ogc_usb_mouse_ret = -99;
 
 // where the player is pointing, as -1..1 from the centre of the screen.
 // kept here so the view code can lean the weapon towards it.
@@ -823,6 +827,7 @@ static void OGC_FireStats_f( void )
 static void OGC_GetRemoteTilt( float *roll, float *pitch );
 static void OGC_KeyboardFrame( void );
 static void OGC_MouseFrame( void );
+static void OGC_UsbReport_f( void );
 
 void OGC_InputInit( void )
 {
@@ -852,6 +857,7 @@ void OGC_InputInit( void )
 Cvar_RegisterVariable( &wii_nunchuk_sens );
 	Cvar_RegisterVariable( &wii_buttons );
 	Cvar_RegisterVariable( &wii_showinput );
+	Cmd_AddCommand( "wii_usb", OGC_UsbReport_f, "list what is plugged in the USB ports and why the mouse is (not) detected" );
 	Cmd_AddCommand( "wii_firestats", OGC_FireStats_f, "show (and clear) the +attack usercmd log" );
 	Cmd_AddCommand( "wii_prof", OGC_Prof_f, "show (and reset) the frame / level load timing profile" );
 	Cvar_RegisterVariable( &wii_rumble );
@@ -2600,6 +2606,214 @@ static void OGC_KeyboardFrame( void )
 
 /*
 ============
+USB: diagnostico y deteccion por sondeo
+
+libogc avisa de que se enchufa un raton con una notificacion de IOS, y esa
+notificacion la piden tambien el teclado y el resto de drivers USB: si no
+llega, el raton que se enchufa despues de arrancar (o cuando otro driver se
+llevo el aviso) no se detecta nunca y nadie lo cuenta. Aqui se mira la lista de
+dispositivos USB cada par de segundos, se imprime lo que hay (vid/pid, clase,
+subclase y protocolo de cada interfaz) y, si hay un raton HID estandar sin
+conectar, se reinicia el driver de libogc para que lo busque.
+============
+*/
+#define OGC_USB_MAXDEV 8
+
+// recorre los dispositivos USB. dump imprime lo que hay; si open es falso solo
+// se lista (abrir un dispositivo que ya usa el driver del raton no conviene).
+// devuelve cuantos dispositivos hay (<0: error de IOS) y en *mice los
+// interfaces que libogc aceptaria como raton (HID, boot, protocolo raton)
+static int OGC_UsbScan( qboolean dump, qboolean open, int *mice )
+{
+	usb_device_entry list[OGC_USB_MAXDEV];
+	u8 cnt = 0;
+	s32 ret;
+	int i, n;
+
+	if( mice )
+		*mice = 0;
+
+	memset( list, 0, sizeof( list ));
+	ret = USB_GetDeviceList( list, OGC_USB_MAXDEV, 0, &cnt );
+	if( ret < 0 )
+	{
+		if( dump )
+			Con_Printf( "^1[USB]^7 USB_GetDeviceList fallo (%d): IOS no tiene USB disponible\n", (int)ret );
+		return (int)ret;
+	}
+
+	n = cnt > OGC_USB_MAXDEV ? OGC_USB_MAXDEV : cnt;
+
+	if( dump )
+		Con_Printf( "^3[USB]^7 %d dispositivo(s) en los puertos USB\n", n );
+
+	for( i = 0; i < n; i++ )
+	{
+		usb_devdesc dd;
+		s32 fd = -1;
+		int ic, ii, ie;
+
+		if( dump )
+			Con_Printf( "  vid %04x pid %04x\n", (unsigned)list[i].vid, (unsigned)list[i].pid );
+
+		if( !open )
+			continue;
+
+		if( USB_OpenDevice( list[i].device_id, list[i].vid, list[i].pid, &fd ) < 0 )
+		{
+			if( dump )
+				Con_Printf( "    no se pudo abrir (lo tiene otro driver?)\n" );
+			continue;
+		}
+
+		memset( &dd, 0, sizeof( dd ));
+		if( USB_GetDescriptors( fd, &dd ) < 0 )
+		{
+			if( dump )
+				Con_Printf( "    no se pudieron leer los descriptores\n" );
+			USB_CloseDevice( &fd );
+			continue;
+		}
+
+		for( ic = 0; ic < dd.bNumConfigurations; ic++ )
+		{
+			usb_configurationdesc *ucd = &dd.configurations[ic];
+
+			for( ii = 0; ii < ucd->bNumInterfaces; ii++ )
+			{
+				usb_interfacedesc *uid = &ucd->interfaces[ii];
+				qboolean mouse = uid->bInterfaceClass == USB_CLASS_HID &&
+					uid->bInterfaceSubClass == USB_SUBCLASS_BOOT &&
+					uid->bInterfaceProtocol == USB_PROTOCOL_MOUSE;
+
+				if( mouse && mice )
+					( *mice )++;
+
+				if( !dump )
+					continue;
+
+				Con_Printf( "    interfaz %d: clase %02x subclase %02x protocolo %02x%s\n",
+					(int)uid->bInterfaceNumber, (unsigned)uid->bInterfaceClass,
+					(unsigned)uid->bInterfaceSubClass, (unsigned)uid->bInterfaceProtocol,
+					mouse ? "  <- raton HID estandar" :
+					uid->bInterfaceClass == USB_CLASS_HID && uid->bInterfaceProtocol == USB_PROTOCOL_KEYBOARD ? "  <- teclado" : "" );
+
+				for( ie = 0; ie < uid->bNumEndpoints; ie++ )
+				{
+					usb_endpointdesc *ued = &uid->endpoints[ie];
+
+					Con_Printf( "      endpoint %02x tipo %d tamano %d\n",
+						(unsigned)ued->bEndpointAddress, (int)( ued->bmAttributes & 3 ), (int)ued->wMaxPacketSize );
+				}
+			}
+		}
+
+		USB_FreeDescriptors( &dd );
+		USB_CloseDevice( &fd );
+	}
+
+	return n;
+}
+
+static void OGC_UsbReport_f( void )
+{
+	qboolean connected = ogc_usb_mouse_ok && MOUSE_IsConnected();
+	int mice = 0;
+
+	Con_Printf( "^3[USB]^7 IOS %d rev %d; KEYBOARD_Init=%d MOUSE_Init=%d (0 = bien); raton conectado: %s\n",
+		(int)IOS_GetVersion(), (int)IOS_GetRevision(), ogc_usb_kbd_ret, ogc_usb_mouse_ret, connected ? "si" : "no" );
+
+	OGC_UsbScan( true, !connected, &mice );
+
+	if( !connected )
+	{
+		if( mice )
+			Con_Printf( "^3[USB]^7 hay %d raton(es) HID estandar: se reinicia el driver del raton\n", mice );
+		else
+			Con_Printf( "^3[USB]^7 ningun interfaz es un raton HID estandar (clase 03, subclase 01, protocolo 02)\n" );
+	}
+
+	// el informe manual tambien reinicia el driver si hay un raton sin conectar
+	if( !connected && mice )
+	{
+		MOUSE_Deinit();
+		ogc_usb_mouse_ret = MOUSE_Init();
+		ogc_usb_mouse_ok = ( ogc_usb_mouse_ret == 0 );
+		Con_Printf( "^3[USB]^7 MOUSE_Init = %d\n", ogc_usb_mouse_ret );
+	}
+}
+
+// cada 2 s mientras no haya raton conectado: si cambia la lista de dispositivos
+// la imprime (una sola vez por cambio, para no abrir los dispositivos sin parar)
+// y, si hay un raton HID estandar sin conectar, reinicia el driver de libogc
+// (maximo 4 veces por cada cambio de lista, separadas 4 s)
+static void OGC_UsbPoll( void )
+{
+	static double next, next_reinit;
+	static u32 last_sig = 0xffffffff;
+	static int tries, last_mice;
+	usb_device_entry list[OGC_USB_MAXDEV];
+	u32 sig = 0;
+	u8 cnt = 0;
+	int i, n;
+
+	if( host.realtime < next )
+		return;
+
+	next = host.realtime + 2.0;
+
+	// MOUSE_IsConnected solo es seguro si MOUSE_Init termino bien
+	if( ogc_usb_mouse_ok && MOUSE_IsConnected( ))
+	{
+		last_sig = 0xffffffff;
+		tries = 0;
+		last_mice = 0;
+		return;
+	}
+
+	memset( list, 0, sizeof( list ));
+	if( USB_GetDeviceList( list, OGC_USB_MAXDEV, 0, &cnt ) < 0 )
+		sig = 0xfffffffe;
+	else
+	{
+		n = cnt > OGC_USB_MAXDEV ? OGC_USB_MAXDEV : cnt;
+		sig = n;
+		for( i = 0; i < n; i++ )
+			sig = sig * 31 + list[i].vid * 7 + list[i].pid;
+	}
+
+	if( sig != last_sig )
+	{
+		last_sig = sig;
+		tries = 0;
+		next_reinit = 0.0;
+
+		Con_Printf( "^3[USB]^7 IOS %d rev %d; KEYBOARD_Init=%d MOUSE_Init=%d\n",
+			(int)IOS_GetVersion(), (int)IOS_GetRevision(), ogc_usb_kbd_ret, ogc_usb_mouse_ret );
+		OGC_UsbScan( true, true, &last_mice );
+
+		if( last_mice )
+			Con_Printf( "^3[USB]^7 hay %d raton(es) HID estandar sin conectar en libogc\n", last_mice );
+		else
+			Con_Printf( "^3[USB]^7 ningun interfaz es un raton HID estandar (clase 03, subclase 01, protocolo 02)\n" );
+	}
+
+	if( last_mice && tries < 4 && host.realtime >= next_reinit )
+	{
+		tries++;
+		next_reinit = host.realtime + 4.0;
+		Con_Printf( "^3[USB]^7 se reinicia el driver del raton (intento %d)\n", tries );
+
+		if( ogc_usb_mouse_ok )
+			MOUSE_Deinit();
+
+		ogc_usb_mouse_ret = MOUSE_Init();
+		ogc_usb_mouse_ok = ( ogc_usb_mouse_ret == 0 );
+	}
+}
+
+/*
+============
 USB mouse
 
 Motion is collected here and handed to the view code by OGC_MouseMove, the
@@ -2619,6 +2833,8 @@ static void OGC_MouseFrame( void )
 	mouse_event ev;
 	int guard = 0;
 
+	OGC_UsbPoll();
+
 	if( !ogc_usb_mouse_ok )
 	{
 		// si el USB no estaba listo al arrancar, se reintenta unas veces
@@ -2626,9 +2842,12 @@ static void OGC_MouseFrame( void )
 		{
 			next_retry = host.realtime + 3.0;
 			retries++;
-			ogc_usb_mouse_ok = ( MOUSE_Init() == 0 );
+			ogc_usb_mouse_ret = MOUSE_Init();
+			ogc_usb_mouse_ok = ( ogc_usb_mouse_ret == 0 );
 			if( ogc_usb_mouse_ok )
 				Con_Printf( "^2[MOUSE]^7 USB iniciado (intento %d)\n", retries );
+			else
+				Con_Printf( "^1[MOUSE]^7 MOUSE_Init fallo (%d), intento %d\n", ogc_usb_mouse_ret, retries );
 		}
 
 		if( !ogc_usb_mouse_ok )
