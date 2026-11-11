@@ -1,11 +1,8 @@
-# DSI en malloc (build 40707b4): PC, LR y cadena de la pila. DAR=0xB9E7B584 (lwz r4 desde el chunk 0xB9E7B580 de la lista libre: heap corrupto)
-0x8046C75C
-0x8046C3AC
-0x80468848
-0x800C8FA4
-0x800AE868
-0x800AF254
-0x800E52A4
-0x800AD4FC
-0x80130B34
-0x8013F394
+# Crash al cargar mapa en CS 1.6
+0x801A630C
+0x801C93D0
+0x801C5A64
+0x8010A258
+0x8010AED4
+0x800E77C4
+0x800EA9F8
