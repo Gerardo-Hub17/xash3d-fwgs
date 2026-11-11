@@ -1236,6 +1236,14 @@ void CL_SplitNoteMainTime( double ms );
 void CL_SplitDrawHUD( void );
 qboolean CL_SplitGrab( int player );
 void CL_SplitMenuToggle( int player );
+
+// menus por numero del servidor (ShowMenu) elegidos con el mando
+void CL_MenuPickMessage( const byte *buf, int size );
+qboolean CL_MenuPickActive( void );
+void CL_MenuPickAction( int act );
+void CL_MenuPickSetHint( const char *hint );
+void CL_MenuPickDraw( void );
+void CL_MenuPickClear( void );
 qboolean CL_SplitLobbyActive( void );
 HSPRITE CL_SplitLoadSprite( const char *name );
 const client_sprite_t *CL_SplitSpriteList( const char *file, int *count );

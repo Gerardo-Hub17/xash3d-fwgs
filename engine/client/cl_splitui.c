@@ -1725,3 +1725,172 @@ void CL_SplitUIInit( void )
 	UI_LoadCfg( 2 );
 	UI_LoadCfg( 3 );
 }
+
+/*
+=============
+Menus por numero del servidor (ShowMenu)
+
+Los servidores (AMX Mod X, el menu de equipos, votaciones...) piden "pulsa 1-9"
+con el mensaje ShowMenu y el cliente solo escucha slot1..slot10, o sea el
+teclado. Con un mando no habia forma de elegir. Aqui se lee el mismo mensaje
+(el HUD sigue pintando el texto) y se deja elegir la opcion con el mando: el
+dispositivo cambia su tabla de botones (in_ogc.c) mientras haya un menu y la
+opcion se manda como slotN, igual que si se pulsara la tecla.
+=============
+*/
+static struct
+{
+	int	valid;		// mascara: bit 0 = opcion 1 ... bit 9 = opcion 10
+	int	sel;		// opcion elegida (1..10)
+	double	shutoff;	// 0 = sin limite
+	qboolean	hidden;	// el jugador lo cerro con "cancelar"
+	char	hint[96];
+} menupick;
+
+static qboolean MenuPick_Valid( int n )
+{
+	return n >= 1 && n <= 10 && ( menupick.valid & ( 1 << ( n - 1 )));
+}
+
+void CL_MenuPickClear( void )
+{
+	menupick.valid = 0;
+	menupick.sel = 0;
+	menupick.shutoff = 0.0;
+	menupick.hidden = false;
+}
+
+void CL_MenuPickMessage( const byte *buf, int size )
+{
+	int valid, i;
+	int time;
+
+	// short validslots, char displaytime, byte needmore, string
+	if( size < 4 )
+		return;
+
+	valid = buf[0] | ( buf[1] << 8 );
+	time = (signed char)buf[2];
+
+	if( !( valid & 0x3ff ))
+	{
+		CL_MenuPickClear();
+		return;
+	}
+
+	menupick.valid = valid & 0x3ff;
+	menupick.shutoff = time > 0 ? host.realtime + time : 0.0;
+	menupick.hidden = false;
+
+	// primera opcion valida; un menu nuevo siempre empieza desde ahi
+	menupick.sel = 0;
+	for( i = 1; i <= 10; i++ )
+	{
+		if( MenuPick_Valid( i ))
+		{
+			menupick.sel = i;
+			break;
+		}
+	}
+}
+
+qboolean CL_MenuPickActive( void )
+{
+	if( !menupick.valid || menupick.hidden )
+		return false;
+
+	if( cls.state != ca_active || ( menupick.shutoff > 0.0 && host.realtime > menupick.shutoff ))
+	{
+		CL_MenuPickClear();
+		return false;
+	}
+
+	return true;
+}
+
+void CL_MenuPickSetHint( const char *hint )
+{
+	Q_strncpy( menupick.hint, hint ? hint : "", sizeof( menupick.hint ));
+}
+
+// 0 anterior, 1 siguiente, 2 aceptar, 3 cancelar
+void CL_MenuPickAction( int act )
+{
+	int i, n;
+
+	if( !CL_MenuPickActive( ))
+		return;
+
+	switch( act )
+	{
+	case 0:
+	case 1:
+		n = menupick.sel;
+		for( i = 0; i < 10; i++ )
+		{
+			n += act ? 1 : -1;
+			if( n > 10 ) n = 1;
+			if( n < 1 ) n = 10;
+
+			if( MenuPick_Valid( n ))
+			{
+				menupick.sel = n;
+				break;
+			}
+		}
+		break;
+
+	case 2:
+		n = menupick.sel;
+		if( !MenuPick_Valid( n ))
+			break;
+
+		// slotN pasa por el cliente del juego, que cierra su menu y manda menuselect
+		if( n <= 9 )
+			Cbuf_AddText( va( "slot%d\n", n ));
+		else
+			Cbuf_AddText( "slot10\n" );
+
+		CL_MenuPickClear();
+		break;
+
+	case 3:
+		if( MenuPick_Valid( 10 ))
+		{
+			Cbuf_AddText( "slot10\n" );
+			CL_MenuPickClear();
+		}
+		else menupick.hidden = true;	// vuelve con el siguiente menu
+		break;
+	}
+}
+
+void CL_MenuPickDraw( void )
+{
+	const int W = refState.width, H = refState.height;
+	char line[128], tmp[16];
+	int th, tw, x, y, i, bw;
+
+	if( !CL_MenuPickActive( ) || W <= 0 || H <= 0 )
+		return;
+
+	line[0] = 0;
+	for( i = 1; i <= 10; i++ )
+	{
+		if( !MenuPick_Valid( i ))
+			continue;
+
+		Q_snprintf( tmp, sizeof( tmp ), i == menupick.sel ? "[%d] " : " %d  ", i == 10 ? 0 : i );
+		Q_strncat( line, tmp, sizeof( line ));
+	}
+
+	th = CL_SplitTextHeight();
+	tw = Q_max( CL_SplitTextWidth( line ), CL_SplitTextWidth( menupick.hint ));
+	bw = tw + 24;
+	x = ( W - bw ) / 2;
+	y = H - th * 2 - 28;
+
+	CL_SplitFill( x, y, bw, th * 2 + 14, 0, 0, 0, 190 );
+	CL_SplitDrawText( ( W - CL_SplitTextWidth( line )) / 2, y + 4, line, 255, 220, 80, 255 );
+	CL_SplitDrawText( ( W - CL_SplitTextWidth( menupick.hint )) / 2, y + 8 + th, menupick.hint, 190, 190, 190, 255 );
+}

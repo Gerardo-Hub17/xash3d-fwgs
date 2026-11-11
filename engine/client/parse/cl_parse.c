@@ -2294,6 +2294,9 @@ void CL_ParseUserMessage( sizebuf_t *msg, int svc_num, connprotocol_t proto )
 			clgame.msg[i].name, iSize, clgame.msg[i].number );
 	}
 
+	if( !Q_strcmp( clgame.msg[i].name, "ShowMenu" ))
+		CL_MenuPickMessage( pbuf, iSize );
+
 	if( clgame.msg[i].func )
 	{
 		clgame.msg[i].func( clgame.msg[i].name, iSize, pbuf );

@@ -80,6 +80,9 @@ static CVAR_DEFINE_AUTO( cl_dlmax, "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "max allow
 static CVAR_DEFINE_AUTO( cl_upmax, "508", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
 
 CVAR_DEFINE_AUTO( cl_lw, "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
+#if XASH_OGC
+static CVAR_DEFINE_AUTO( wii_online_lw, "1", FCVAR_ARCHIVE, "Wii: predecir el disparo (arma, sonido, efectos) en servidores remotos; 0 = esperar al servidor" );
+#endif
 CVAR_DEFINE_AUTO( cl_charset, "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
 CVAR_DEFINE_AUTO( cl_trace_consistency, "0", 0, "enable consistency info tracing (good for developers)" );
 CVAR_DEFINE_AUTO( cl_trace_stufftext, "0", 0, "enable stufftext (server-to-client console commands) tracing (good for developers)" );
@@ -1274,14 +1277,19 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 	if( adr.port == 0 ) adr.port = MSG_BigShort( PORT_SERVER );
 
 #if XASH_OGC
+	{
+		// El cliente de Wii lleva la prediccion de armas (CLIENT_WEAPONS): con cl_lw 1 el arma, el
+		// sonido y el fogonazo salen en el momento de disparar y el servidor no repite el evento al
+		// tirador. En local (un jugador / pantalla dividida) no hace falta, el servidor esta en la
+		// misma consola, asi que alli va con cl_lw 0 y no se predice nada.
+		const char *lw = ( adrtype != NA_LOOPBACK && wii_online_lw.value ) ? "1" : "0";
+
+		Cvar_DirectSet( &cl_lw, lw );
+		Info_SetValueForKey( cls.userinfo, "cl_lw", lw, sizeof( cls.userinfo ));
+	}
+
 	if( adrtype != NA_LOOPBACK )
 	{
-		// El cliente de Wii no incluye la prediccion de armas (CLIENT_WEAPONS). Con cl_lw 1 el
-		// servidor no le manda al tirador sus propios eventos (animacion del arma, fogonazo,
-		// sonido) porque espera que el cliente los reproduzca. Con cl_lw 0 los manda el servidor.
-		Cvar_DirectSet( &cl_lw, "0" );
-		Info_SetValueForKey( cls.userinfo, "cl_lw", "0", sizeof( cls.userinfo ));
-
 		// mas de 30 paquetes por segundo con ping alto dejaban los deltas sin confirmar
 		// ("delta frame is too old") y la prediccion se abortaba
 		if( cl_updaterate.value > 30.0f )
@@ -3619,6 +3627,9 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &topcolor );
 	Cvar_RegisterVariable( &bottomcolor );
 	Cvar_RegisterVariable( &cl_lw );
+#if XASH_OGC
+	Cvar_RegisterVariable( &wii_online_lw );
+#endif
 	Cvar_Get( "cl_lc", "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable lag compensation" );
 	Cvar_Get( "password", "", FCVAR_USERINFO, "server password" );
 	Cvar_Get( "team", "", FCVAR_USERINFO, "player team" );

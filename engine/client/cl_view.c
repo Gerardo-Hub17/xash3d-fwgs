@@ -634,6 +634,7 @@ void V_PostRender( void )
 		Con_DrawDebug(); // must be last
 		Touch_Draw();
 		OSK_Draw();
+		CL_MenuPickDraw();
 
 		S_ExtraUpdate();
 		PT_END( 42 );

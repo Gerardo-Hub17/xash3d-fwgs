@@ -1,6 +1,21 @@
 
 #The works in this specific manner
 add_library(cl_dll STATIC
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/crossbow.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/crowbar.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/egon.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/gauss.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/handgrenade.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/hornetgun.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/mp5.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/python.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/rpg.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/satchel.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/shotgun.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/squeakgrenade.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/tripmine.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/glock.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_baseentity.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/ev_hldm.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_events.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/hl/hl_objects.cpp
@@ -50,7 +65,7 @@ add_library(cl_dll STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/link_helper.cpp
 )
 target_compile_definitions(cl_dll PRIVATE
--DXASH_OGC -DCLIENT_DLL -DNO_VOICEGAMEMGR -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf
+-DXASH_OGC -DCLIENT_DLL -DCLIENT_WEAPONS -DNO_VOICEGAMEMGR -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf
 )
 target_compile_options(cl_dll PRIVATE
 -fno-exceptions -fpermissive -MMD -MP
@@ -70,6 +85,17 @@ target_include_directories(cl_dll PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/external
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/utils/fake_vgui/include
+)
+
+# Con la prediccion de armas el cliente compila sus propias CBasePlayerWeapon, CBaseEntity,
+# gpGlobals... con el mismo nombre que las del servidor (hl). Se renombran todos los simbolos
+# de la libreria del cliente salvo lib_cl_dll_exports para que no se mezclen al enlazar.
+if(NOT CMAKE_NM OR NOT CMAKE_OBJCOPY)
+	message(FATAL_ERROR "cl_isolate: hacen falta nm y objcopy del toolchain (CMAKE_NM=${CMAKE_NM} CMAKE_OBJCOPY=${CMAKE_OBJCOPY})")
+endif()
+add_custom_command(TARGET cl_dll POST_BUILD
+	COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cl_isolate.sh ${CMAKE_NM} ${CMAKE_OBJCOPY} $<TARGET_FILE:cl_dll>
+	VERBATIM
 )
 
 add_library(hl STATIC
@@ -180,7 +206,7 @@ add_library(hl STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public/safe_snprintf.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/link_helper.cpp
 )
-target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
+target_compile_definitions(hl PRIVATE -DXASH_OGC -DCLIENT_WEAPONS -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
 target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
 -fno-rtti
 #-fno-lto

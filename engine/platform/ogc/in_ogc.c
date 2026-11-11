@@ -110,6 +110,10 @@ enum
 	OGC_ACT_QUICKSAVE,		// savequick
 	OGC_ACT_CHAT,			// messagemode
 	OGC_ACT_HOME,			// toque corto: ESC, mantenido: consola
+	OGC_ACT_PICK_PREV,		// menu numerico del servidor: opcion anterior
+	OGC_ACT_PICK_NEXT,		// ... siguiente
+	OGC_ACT_PICK_OK,		// ... aceptar (manda slotN)
+	OGC_ACT_PICK_CANCEL,		// ... cancelar (slot10 o cerrar)
 	OGC_OSK_BASE,			// + OSK_ACT_*
 };
 
@@ -230,8 +234,41 @@ static const ogc_btn_t ogc_osk_gamecube[] =
         { PAD_BUTTON_START,  OGC_ACT_HOME                 },
 };
 
+/*
+Menus por numero del servidor (ShowMenu). Mientras hay uno abierto estos
+botones pasan a elegir opcion; el resto sigue con la tabla normal, asi no se
+pierde el control del jugador. "Cancelar" cierra la seleccion y devuelve todo.
+*/
+static const ogc_btn_t ogc_pick_wiimote[] =
+{
+    { WPAD_BUTTON_LEFT,      OGC_ACT_PICK_PREV   },
+    { WPAD_BUTTON_RIGHT,     OGC_ACT_PICK_NEXT   },
+    { WPAD_BUTTON_A,         OGC_ACT_PICK_OK     },
+    { WPAD_BUTTON_2,         OGC_ACT_PICK_OK     },
+    { WPAD_BUTTON_UP,        OGC_ACT_PICK_CANCEL },
+};
+
+static const ogc_btn_t ogc_pick_classic[] =
+{
+    { WPAD_CLASSIC_BUTTON_LEFT,  OGC_ACT_PICK_PREV   },
+    { WPAD_CLASSIC_BUTTON_RIGHT, OGC_ACT_PICK_NEXT   },
+    { WPAD_CLASSIC_BUTTON_A,     OGC_ACT_PICK_OK     },
+    { WPAD_CLASSIC_BUTTON_B,     OGC_ACT_PICK_OK     },
+    { WPAD_CLASSIC_BUTTON_UP,    OGC_ACT_PICK_CANCEL },
+};
+
+static const ogc_btn_t ogc_pick_gamecube[] =
+{
+    { PAD_BUTTON_LEFT,   OGC_ACT_PICK_PREV   },
+    { PAD_BUTTON_RIGHT,  OGC_ACT_PICK_NEXT   },
+    { PAD_BUTTON_A,      OGC_ACT_PICK_OK     },
+    { PAD_BUTTON_B,      OGC_ACT_PICK_OK     },
+    { PAD_BUTTON_UP,     OGC_ACT_PICK_CANCEL },
+};
+
 // estado por mando: lo que estaba apretado, lo que se mando como "pulsado" y la tabla en uso
-typedef struct { u32 prev; u32 active; qboolean osk; } ogc_dev_t;
+// mode: 0 tabla normal, 1 teclado en pantalla, 2 menu numerico (tabla normal + pick)
+typedef struct { u32 prev; u32 active; int mode; } ogc_dev_t;
 static ogc_dev_t ogc_dev_wii, ogc_dev_classic, ogc_dev_gc;
 
 /*
@@ -951,6 +988,14 @@ static void OGC_SendAction( int act, qboolean down )
 		}
 		break;
 
+	case OGC_ACT_PICK_PREV:
+	case OGC_ACT_PICK_NEXT:
+	case OGC_ACT_PICK_OK:
+	case OGC_ACT_PICK_CANCEL:
+		if( down )
+			CL_MenuPickAction( act - OGC_ACT_PICK_PREV );
+		break;
+
 	default:
 		if( act >= OGC_OSK_BASE )
 			OSK_Action( act - OGC_OSK_BASE, down );
@@ -993,29 +1038,57 @@ static void OGC_HomeFrame( void )
 	}
 }
 
-static void OGC_EmitButtons( const ogc_btn_t *map, int count, const ogc_btn_t *oskmap, int oskcount,
-	u32 held, ogc_dev_t *dev, int src )
+// tecla (o accion) que corresponde a un boton segun el modo; -1 si no hace nada
+static int OGC_KeyFor( int mode, const ogc_btn_t *map, int count, const ogc_btn_t *oskmap, int oskcount,
+	const ogc_btn_t *pickmap, int pickcount, u32 mask )
 {
-	qboolean osk = OSK_IsVisible();
-	const ogc_btn_t *cur = dev->osk ? oskmap : map;
-	int ncur = dev->osk ? oskcount : count;
-	u32 changed;
 	int i;
 
-	// el teclado aparecio o se cerro: soltar lo que se habia pulsado con la
-	// tabla anterior; lo que sigue apretado no cuenta hasta soltarlo y volver a pulsar
-	if( osk != dev->osk )
+	if( mode == 1 )
 	{
-		for( i = 0; i < ncur; i++ )
+		for( i = 0; i < oskcount; i++ )
+			if( oskmap[i].mask == mask )
+				return oskmap[i].key;
+		return -1;
+	}
+
+	if( mode == 2 )
+	{
+		for( i = 0; i < pickcount; i++ )
+			if( pickmap[i].mask == mask )
+				return pickmap[i].key;
+	}
+
+	for( i = 0; i < count; i++ )
+		if( map[i].mask == mask )
+			return map[i].key;
+
+	return -1;
+}
+
+static void OGC_EmitButtons( const ogc_btn_t *map, int count, const ogc_btn_t *oskmap, int oskcount,
+	const ogc_btn_t *pickmap, int pickcount, u32 held, ogc_dev_t *dev, int src )
+{
+	int mode = OSK_IsVisible() ? 1 : ( CL_MenuPickActive() ? 2 : 0 );
+	u32 changed;
+	int i, key;
+
+	// el teclado o el menu aparecio o se cerro: soltar lo que se habia pulsado con la
+	// tabla anterior; lo que sigue apretado no cuenta hasta soltarlo y volver a pulsar
+	if( mode != dev->mode )
+	{
+		for( i = 0; i < 32; i++ )
 		{
-			if( dev->active & cur[i].mask )
-				OGC_SendKey( cur[i].key, false );
+			if( !( dev->active & ( 1u << i )))
+				continue;
+
+			key = OGC_KeyFor( dev->mode, map, count, oskmap, oskcount, pickmap, pickcount, 1u << i );
+			if( key >= 0 )
+				OGC_SendKey( key, false );
 		}
 
 		dev->active = 0;
-		dev->osk = osk;
-		cur = osk ? oskmap : map;
-		ncur = osk ? oskcount : count;
+		dev->mode = mode;
 	}
 
 	changed = held ^ dev->prev;
@@ -1028,20 +1101,28 @@ static void OGC_EmitButtons( const ogc_btn_t *map, int count, const ogc_btn_t *o
 	OGC_SetSource( src );
 	OSK_SetSuspended( false );
 
-	for( i = 0; i < ncur; i++ )
+	for( i = 0; i < 32; i++ )
 	{
-		if( !( changed & cur[i].mask ))
+		u32 mask = 1u << i;
+
+		if( !( changed & mask ))
 			continue;
 
-		if( held & cur[i].mask )
+		key = OGC_KeyFor( mode, map, count, oskmap, oskcount, pickmap, pickcount, mask );
+
+		if( held & mask )
 		{
-			dev->active |= cur[i].mask;
-			OGC_SendKey( cur[i].key, true );
+			if( key < 0 )
+				continue;
+
+			dev->active |= mask;
+			OGC_SendKey( key, true );
 		}
-		else if( dev->active & cur[i].mask )
+		else if( dev->active & mask )
 		{
-			dev->active &= ~cur[i].mask;
-			OGC_SendKey( cur[i].key, false );
+			dev->active &= ~mask;
+			if( key >= 0 )
+				OGC_SendKey( key, false );
 		}
 	}
 }
@@ -1050,6 +1131,19 @@ static void OGC_EmitButtons( const ogc_btn_t *map, int count, const ogc_btn_t *o
 Teclado en pantalla: el Wiimote elige tecla con el puntero IR, el raton USB con
 su cursor; Classic y GameCube con la cruceta. Tambien dice que boton hace que.
 */
+static void OGC_PickFrame( void )
+{
+	if( !CL_MenuPickActive( ))
+		return;
+
+	if( ogc_src == OGC_SRC_CLASSIC )
+		CL_MenuPickSetHint( "Izq/Der: elegir   A o B: aceptar   Arriba: cancelar" );
+	else if( ogc_src == OGC_SRC_GC )
+		CL_MenuPickSetHint( "Izq/Der: elegir   A o B: aceptar   Arriba: cancelar" );
+	else
+		CL_MenuPickSetHint( "Izq/Der: elegir   A o 2: aceptar   Arriba: cancelar" );
+}
+
 static void OGC_OskFrame( void )
 {
 	static const char *hint_wii = "A/B: escribir  2: borrar  1: mayus  -: espacio  +: enviar  Home: salir";
@@ -1293,21 +1387,25 @@ OGC_PollNunchuk();
 	{
 		OGC_EmitButtons( ogc_map_classic, ARRAYSIZE( ogc_map_classic ),
 			ogc_osk_classic, ARRAYSIZE( ogc_osk_classic ),
+			ogc_pick_classic, ARRAYSIZE( ogc_pick_classic ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_dev_classic, OGC_SRC_CLASSIC );
 	}
 	else
 	{
 		OGC_EmitButtons( ogc_map_wiimote, ARRAYSIZE( ogc_map_wiimote ),
 			ogc_osk_wiimote, ARRAYSIZE( ogc_osk_wiimote ),
+			ogc_pick_wiimote, ARRAYSIZE( ogc_pick_wiimote ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_dev_wii, OGC_SRC_WII );
 	}
 
 	OGC_EmitButtons( ogc_map_gamecube, ARRAYSIZE( ogc_map_gamecube ),
 		ogc_osk_gamecube, ARRAYSIZE( ogc_osk_gamecube ),
+		ogc_pick_gamecube, ARRAYSIZE( ogc_pick_gamecube ),
 		PAD_ButtonsHeld( PAD_CHAN0 ), &ogc_dev_gc, OGC_SRC_GC );
 
 	OGC_HomeFrame();
 	OGC_OskFrame();
+	OGC_PickFrame();
 
         // Sticks del Classic Controller y del GameCube (el del Nunchuk va aparte)
         OGC_PollSticks( type );
