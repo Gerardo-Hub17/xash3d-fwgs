@@ -1307,6 +1307,10 @@ pfnModelIndex
 */
 static int GAME_EXPORT pfnModelIndex( const char *m )
 {
+	// Bloqueo de seguridad para la Wii: evitar crash si el puntero es nulo o corrupto
+	if( !m || !m[0] )
+		return 0;
+
 	char	name[MAX_QPATH];
 
 	if( COM_StringEmptyOrNULL( m ))
