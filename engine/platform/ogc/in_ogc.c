@@ -2663,6 +2663,11 @@ static int OGC_UsbScan( qboolean dump, qboolean open, int *mice )
 		{
 			if( dump )
 				Con_Printf( "    no se pudo abrir (lo tiene otro driver?)\n" );
+				// Si el VID es 0, la Wii aun esta inicializando el dispositivo.
+				// Asumimos que podria ser el raton para forzar el reinicio del driver
+				if( mice && list[i].vid == 0 )
+					( *mice )++;
+
 			continue;
 		}
 
