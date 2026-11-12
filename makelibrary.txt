@@ -21,58 +21,12 @@ list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SR
         ${CS_STUDIO_SRC} ${CS_PM_SRC} ${CS_INPUT_SRC} ${CS_GAMSH_SRC} ${MINIUTL_SRC}
         ${CS_PARTICLEMAN_SRC})
 
-add_library(cl_dll STATIC ${CS_CLIENT_SRC})
+# Archivos del cliente de CS 1.6 (Velaron, ubicado en cs16/cl_dll)
+file(GLOB CS16_CLIENT ${CMAKE_CURRENT_SOURCE_DIR}/cs16/cl_dll/*.cpp)
 
-target_include_directories(cl_dll PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/hud
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/studio
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/math
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll
-        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/common
-        ${CMAKE_CURRENT_SOURCE_DIR}/engine
-        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared
-        ${CMAKE_CURRENT_SOURCE_DIR}/dlls
-        ${CMAKE_CURRENT_SOURCE_DIR}/game_shared
-        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public
-        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/dlls
-        ${CMAKE_CURRENT_SOURCE_DIR}/public/cl_dll
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/controls
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/menus
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/miniutl
-        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/particleman)
-
-target_compile_definitions(cl_dll PRIVATE
-        CS16_CLIENT CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
-        LINUX _LINUX
-        stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
-        _snprintf=snprintf _vsnprintf=vsnprintf
-        uint32=uint32_t _inline=inline __inline=inline
-        XASH_WII GEKKO HW_RVL __BYTE_ORDER__=__ORDER_BIG_ENDIAN__)
-
-target_compile_options(cl_dll PRIVATE
-        -fpermissive -fno-exceptions -fno-rtti -fms-extensions
-        -Wno-write-strings -ffunction-sections
-        -fno-unwind-tables -fno-asynchronous-unwind-tables
-        -fvisibility=hidden)
-
-set_target_properties(cl_dll PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN YES)
-
-# Buscamos automáticamente todos los archivos .cpp de CS 1.6
-file(GLOB CS16_DLLS ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/*.cpp)
-file(GLOB CS16_SHARED ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/game_shared/*.cpp)
-file(GLOB CS16_PM ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/*.cpp)
-file(GLOB CS16_ENGINE ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/engine/*.cpp)
-
-add_library(hl STATIC
-${CS16_DLLS}
-${CS16_SHARED}
-${CS16_PM}
-${CS16_ENGINE}
-${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/link_helper.cpp
+add_library(cl_dll STATIC
+${CS16_CLIENT}
+${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/game_shared/*.cpp
 )
 target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
 target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
