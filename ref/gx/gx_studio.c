@@ -3019,6 +3019,29 @@ static void pfnStudioDynamicLight( cl_entity_t *ent, alight_t *plight )
     OGC_ProfAdd( 37, Platform_DoubleTime() - t0 );
 }
 
+// Estas tres las llama el cliente de CS 1.6 (el de HL no) y estaban a NULL en la tabla
+// que se le entrega: al dibujar el viewmodel saltaba a la direccion 0 (excepcion ISI).
+static void R_StudioSetRenderamt( int iRenderamt )
+{
+	if( !RI.currententity )
+		return;
+
+	RI.currententity->curstate.renderamt = iRenderamt;
+	tr.blend = CL_FxBlend( RI.currententity ) / 255.0f;
+}
+
+static void R_StudioSetCullState( int cull )
+{
+	// el culling de los modelos studio ya lo lleva GX_StudioSetRenderMode / el estado de dibujo
+	( void )cull;
+}
+
+static void R_StudioRenderShadow( int isprite, float *p1, float *p2, float *p3, float *p4 )
+{
+	// la sombra del jugador se dibuja con GL_StudioDrawShadow; aqui no se pinta nada
+	( void )isprite; ( void )p1; ( void )p2; ( void )p3; ( void )p4;
+}
+
 qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefaultDraw )
 {
 	cl_righthand = gEngfuncs.pfnGetCvarPointer( "cl_righthand" );
@@ -3054,8 +3077,9 @@ qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefau
 	api->SetChromeOrigin         = R_StudioSetChromeOrigin;
 	api->GL_StudioDrawShadow     = GX_StudioDrawShadow;
 	api->GL_SetRenderMode        = GX_StudioSetRenderMode;
-	api->StudioSetCullState = NULL;
-	api->StudioRenderShadow = NULL;
+	api->StudioSetRenderamt      = R_StudioSetRenderamt;
+	api->StudioSetCullState      = R_StudioSetCullState;
+	api->StudioRenderShadow      = R_StudioRenderShadow;
 
 	pDefaultDraw->version         = STUDIO_INTERFACE_VERSION;
 	pDefaultDraw->StudioDrawModel  = R_StudioDrawModel;
