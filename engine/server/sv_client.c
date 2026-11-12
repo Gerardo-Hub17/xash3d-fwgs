@@ -3186,6 +3186,13 @@ SV_ExecuteUserCommand
 */
 static void SV_ExecuteClientCommand( sv_client_t *cl, const char *s )
 {
+// Bloqueo de seguridad para la Wii: el comando puede venir sin terminador nulo y causar crash en strcmp
+char safe_cmd[256];
+if( !s ) return;
+Q_strncpy( safe_cmd, s, sizeof( safe_cmd ) - 1 );
+safe_cmd[sizeof( safe_cmd ) - 1] = ' ';
+s = safe_cmd;
+
 	int i;
 
 	Cmd_TokenizeString( s );
