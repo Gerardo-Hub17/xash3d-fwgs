@@ -835,9 +835,15 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
     // automatic detail (gx_split_auto): far things go first, the players the last
     const float detail = Q_min( 1.0f, Q_max( 0.2f, gx_split_detail.value ));
 
+    // temporary entities (index 0: muzzle flashes, smoke puffs, sparks, shells, gibs) are the
+    // shot effects: small and cheap, they keep the full range and never go by "too small to
+    // see", otherwise a fight a few hundred units away loses its flashes and impacts
+    const qboolean effect = e->index <= 0 && !e->player;
+
     if( e->player )
         range *= 1.5f * ( 0.5f + 0.5f * detail );
-    else range *= detail;
+    else if( !effect )
+        range *= detail;
 
     vec3_t d;
     VectorSubtract( e->origin, RI.rvp.vieworigin, d );
@@ -848,7 +854,7 @@ static qboolean R_SplitCullEntity( const cl_entity_t *e )
 
     // too small to see: a view is a few hundred pixels tall, so what would cover only a
     // couple of them (its radius seen from where it is) is not worth the transform + draw
-    if( e->model->radius > 0.0f && !e->player && RI.rvp.viewport[3] > 0 && RI.rvp.fov_y > 1.0f )
+    if( e->model->radius > 0.0f && !e->player && !effect && RI.rvp.viewport[3] > 0 && RI.rvp.fov_y > 1.0f )
     {
         const float px_per_unit_at_1 = ( RI.rvp.viewport[3] * 0.5f ) / tanf( DEG2RAD( RI.rvp.fov_y ) * 0.5f );
         const float minpx = (( R_SplitViews( ) >= 3 ) ? 3.0f : 2.0f ) / detail;

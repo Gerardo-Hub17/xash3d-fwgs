@@ -315,6 +315,25 @@ static qboolean SV_CheckClientVisiblity( sv_client_t *cl, const byte *mask )
 	if( CHECKVISBIT( mask, leaf->cluster ))
 		return true; // visible from player view or camera view
 
+	// split screen: the local client also hears and sees through the other local players,
+	// so what happens near them (shots, steps, reloads) must reach it too
+	if( !FBitSet( cl->flags, FCL_FAKECLIENT ) && NET_IsLocalAddress( cl->netchan.remote_address ))
+	{
+		for( int i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+		{
+			edict_t *other = SV_SplitEdict( i );
+
+			if( !other )
+				continue;
+
+			VectorAdd( other->v.origin, other->v.view_ofs, vieworg );
+			leaf = Mod_PointInLeaf( vieworg, sv.worldmodel->nodes, sv.worldmodel );
+
+			if( CHECKVISBIT( mask, leaf->cluster ))
+				return true;
+		}
+	}
+
 	// now check all the portal cameras
 	for( int i = 0; i < cl->num_viewents; i++ )
 	{
