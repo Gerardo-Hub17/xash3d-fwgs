@@ -1,15 +1,11 @@
-#include "mathlib.h"
-#include "const.h"
-#include <math.h>
-/*
-* Globals initialization
-*/
-float vec3_origin[] = {0, 0, 0};
-int nanmask = 255<<23;
+#include "precompiled.h"
+
+vec3_t vec3_origin = { 0, 0, 0 };
+const int nanmask = 255 << 23;
 
 float anglemod(float a)
 {
-	a = (360.0 / 65536) * ((int)(a  *(65536 / 360.0)) & 65535);
+	a = (360.0 / 65536) * (int(a  *(65536 / 360.0)) & 65535);
 	return a;
 }
 
@@ -17,20 +13,20 @@ void AngleVectors(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up)
 {
 	float sr, sp, sy, cr, cp;
 
-	float cy;
-	float angle;
+	real_t cy;
+	real_t angle;
 
-	angle = (float)(angles[YAW] * (M_PI * 2 / 360));
-	sy = sin(angle);
-	cy = cos(angle);
+	angle = real_t(angles[YAW] * (M_PI * 2 / 360));
+	sy = Q_sin(angle);
+	cy = Q_cos(angle);
 
-	angle = (float)(angles[PITCH] * (M_PI * 2 / 360));
-	sp = sin(angle);
-	cp = cos(angle);
+	angle = real_t(angles[PITCH] * (M_PI * 2 / 360));
+	sp = Q_sin(angle);
+	cp = Q_cos(angle);
 
-	angle = (float)(angles[ROLL] * (M_PI * 2 / 360));
-	sr = sin(angle);
-	cr = cos(angle);
+	angle = real_t(angles[ROLL] * (M_PI * 2 / 360));
+	sr = Q_sin(angle);
+	cr = Q_cos(angle);
 
 	if (forward)
 	{
@@ -58,14 +54,14 @@ void AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, ve
 	float sr, sp, sy, cr, cp, cy;
 
 	angle = angles[YAW] * (M_PI * 2 / 360);
-	sy = sin(angle);
-	cy = cos(angle);
+	sy = Q_sin(angle);
+	cy = Q_cos(angle);
 	angle = angles[PITCH] * (M_PI * 2 / 360);
-	sp = sin(angle);
-	cp = cos(angle);
+	sp = Q_sin(angle);
+	cp = Q_cos(angle);
 	angle = angles[ROLL] * (M_PI * 2 / 360);
-	sr = sin(angle);
-	cr = cos(angle);
+	sr = Q_sin(angle);
+	cr = Q_cos(angle);
 
 	if (forward)
 	{
@@ -89,20 +85,20 @@ void AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, ve
 
 void AngleMatrix(const vec_t *angles, float (*matrix)[4])
 {
-	float angle;
-	float  sr, sp, sy, cr, cp, cy;
+	real_t angle;
+	real_t  sr, sp, sy, cr, cp, cy;
 
-	angle = (float)(angles[ROLL] * (M_PI * 2 / 360));
-	sy = sin(angle);
-	cy = cos(angle);
+	angle = real_t(angles[ROLL] * (M_PI * 2 / 360));
+	sy = Q_sin(angle);
+	cy = Q_cos(angle);
 
-	angle = (float)(angles[YAW] * (M_PI * 2 / 360));
-	sp = sin(angle);
-	cp = cos(angle);
+	angle = real_t(angles[YAW] * (M_PI * 2 / 360));
+	sp = Q_sin(angle);
+	cp = Q_cos(angle);
 
-	angle = (float)(angles[PITCH] * (M_PI * 2 / 360));
-	sr = sin(angle);
-	cr = cos(angle);
+	angle = real_t(angles[PITCH] * (M_PI * 2 / 360));
+	sr = Q_sin(angle);
+	cr = Q_cos(angle);
 
 	matrix[0][0] = cr * cp;
 	matrix[1][0] = cr * sp;
@@ -127,14 +123,14 @@ void AngleIMatrix(const vec_t *angles, float (*matrix)[4])
 	float sr, sp, sy, cr, cp, cy;
 
 	angle = angles[YAW] * (M_PI * 2 / 360);
-	sy = sin(angle);
-	cy = cos(angle);
+	sy = Q_sin(angle);
+	cy = Q_cos(angle);
 	angle = angles[PITCH] * (M_PI * 2 / 360);
-	sp = sin(angle);
-	cp = cos(angle);
+	sp = Q_sin(angle);
+	cp = Q_cos(angle);
 	angle = angles[ROLL] * (M_PI * 2 / 360);
-	sr = sin(angle);
-	cr = cos(angle);
+	sr = Q_sin(angle);
+	cr = Q_cos(angle);
 
 	// matrix = (YAW * PITCH) * ROLL
 	matrix[0][0] = cp * cy;
@@ -153,9 +149,8 @@ void AngleIMatrix(const vec_t *angles, float (*matrix)[4])
 
 void NormalizeAngles(float *angles)
 {
-	int i;
 	// Normalize angles
-	for (i = 0; i < 3; ++i)
+	for (int i = 0; i < 3; i++)
 	{
 		if (angles[i] > 180.0)
 		{
@@ -171,7 +166,6 @@ void NormalizeAngles(float *angles)
 // Interpolate Euler angles.
 // FIXME:  Use Quaternions to avoid discontinuities
 // Frac is 0.0 to 1.0 (i.e., should probably be clamped, but doesn't have to be)
-
 void InterpolateAngles(float *start, float *end, float *output, float frac)
 {
 	int i;
@@ -181,7 +175,7 @@ void InterpolateAngles(float *start, float *end, float *output, float frac)
 	NormalizeAngles(start);
 	NormalizeAngles(end);
 
-	for (i = 0; i < 3; ++i)
+	for (i = 0; i < 3; i++)
 	{
 		ang1 = start[i];
 		ang2 = end[i];
@@ -211,7 +205,7 @@ float AngleBetweenVectors(const vec_t *v1, const vec_t *v2)
 	if (!l1 || !l2)
 		return 0.0f;
 
-	angle = acos(DotProduct(v1, v2)) / (l1 * l2);
+	angle = Q_acos(DotProduct(v1, v2)) / (l1 * l2);
 	angle = (angle * 180.0f) / M_PI;
 
 	return angle;
@@ -226,8 +220,7 @@ void VectorTransform(const vec_t *in1, float (*in2)[4], vec_t *out)
 
 int VectorCompare(const vec_t *v1, const vec_t *v2)
 {
-	int i;
-	for (i = 0; i < 3; ++i)
+	for (int i = 0; i < 3; i++)
 	{
 		if (v1[i] != v2[i])
 			return 0;
@@ -243,7 +236,7 @@ void VectorMA(const vec_t *veca, float scale, const vec_t *vecb, vec_t *vecc)
 	vecc[2] = veca[2] + scale * vecb[2];
 }
 
-float _DotProduct(const vec_t *v1, const vec_t *v2)
+real_t _DotProduct(const vec_t *v1, const vec_t *v2)
 {
 	return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
@@ -276,15 +269,14 @@ void CrossProduct(const vec_t *v1, const vec_t *v2, vec_t *cross)
 	cross[2] = v1[0] * v2[1] - v1[1] * v2[0];
 }
 
-float Length(const vec_t *v)
+real_t Length(const vec_t *v)
 {
-	int i;
-	float length = 0.0f;
+	real_t length = 0.0f;
 
-	for (i = 0; i < 3; ++i)
+	for (int i = 0; i < 3; i++)
 		length += v[i] * v[i];
 
-	return sqrt(length);
+	return Q_sqrt(length);
 }
 
 float Distance(const vec_t *v1, const vec_t *v2)
@@ -294,12 +286,12 @@ float Distance(const vec_t *v1, const vec_t *v2)
 	return Length(d);
 }
 
-float VectorNormalize(vec_t *v)
+real_t VectorNormalize(vec_t *v)
 {
-	float length;
-	float ilength;
+	real_t length;
+	real_t ilength;
 
-	length = sqrt((float)(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
+	length = Q_sqrt(real_t(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
 
 	if (length)
 	{
@@ -331,7 +323,7 @@ int Q_log2(int val)
 {
 	int answer = 0;
 	while (val >>= 1)
-		++answer;
+		answer++;
 
 	return answer;
 }
@@ -376,12 +368,12 @@ void VectorAngles(const vec_t *forward, vec_t *angles)
 	}
 	else
 	{
-		yaw = (atan2(forward[1], forward[0]) * 180 / M_PI);
+		yaw = (Q_atan2(forward[1], forward[0]) * 180 / M_PI);
 		if (yaw < 0)
 			yaw += 360;
 
-		tmp = sqrt (forward[0] * forward[0] + forward[1] * forward[1]);
-		pitch = (atan2(forward[2], tmp) * 180 / M_PI);
+		tmp = Q_sqrt(forward[0] * forward[0] + forward[1] * forward[1]);
+		pitch = (Q_atan2(forward[2], tmp) * 180 / M_PI);
 		if (pitch < 0)
 			pitch += 360;
 	}

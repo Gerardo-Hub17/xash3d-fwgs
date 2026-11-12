@@ -1,52 +1,6 @@
-#include <assert.h>
-#include "mathlib.h"
-#include "const.h"
-#include "usercmd.h"
-#include "pm_defs.h"
-#include "pm_shared.h"
-#include "pm_movevars.h"
-#include "pm_materials.h"
-#include "pm_debug.h"
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include "com_model.h"
+#include "precompiled.h"
 
-#ifndef min
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#endif
-
-#ifndef max
-#define max(a, b) ((a) > (b) ? (a) : (b))
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-const int MAX_TEXTURES           = 1024; // max number of textures loaded
-const int MAX_TEXTURENAME_LENGHT = 17;   // only load first n chars of name
-const float HalfHumanHeight = 36.0f;
-
-#ifdef CLIENT_DLL
-	int iJumpSpectator;
-	float vJumpOrigin[3];
-	float vJumpAngles[3];
-#endif
-
-#define REGAMEDLL_ADD
-#define REGAMEDLL_FIXES
-
-/*
-* Globals initialization
-*/
-int pm_shared_initialized = FALSE;
+BOOL pm_shared_initialized = FALSE;
 
 vec3_t rgv3tStuckTable[54];
 int rgStuckLast[MAX_CLIENTS][2];
@@ -56,24 +10,34 @@ char pm_grgszTextureName[MAX_TEXTURES][MAX_TEXTURENAME_LENGHT];
 char pm_grgchTextureType[MAX_TEXTURES];
 
 playermove_t *pmove = nullptr;
-int g_onladder = FALSE;
+BOOL g_onladder = FALSE;
+
+#ifdef REGAMEDLL_API
+static CCSPlayer *pmoveplayer = nullptr;
+#endif
+
+#ifdef CLIENT_DLL
+	int iJumpSpectator;
+	float vJumpOrigin[3];
+	float vJumpAngles[3];
+#endif
 
 void PM_SwapTextures(int i, int j)
 {
 	char chTemp;
 	char szTemp[MAX_TEXTURENAME_LENGHT];
 
-	strcpy(szTemp, pm_grgszTextureName[i]);
+	Q_strlcpy(szTemp, pm_grgszTextureName[i]);
 	chTemp = pm_grgchTextureType[i];
 
-	strcpy(pm_grgszTextureName[i], pm_grgszTextureName[j]);
+	Q_strcpy_s(pm_grgszTextureName[i], pm_grgszTextureName[j]);
 	pm_grgchTextureType[i] = pm_grgchTextureType[j];
 
-	strcpy(pm_grgszTextureName[j], szTemp);
+	Q_strlcpy(pm_grgszTextureName[j], szTemp);
 	pm_grgchTextureType[j] = chTemp;
 }
 
-qboolean PM_IsThereGrassTexture()
+NOXREF qboolean PM_IsThereGrassTexture()
 {
 	for (int i = 0; i < pm_gcTextures; i++)
 	{
@@ -92,7 +56,7 @@ void PM_SortTextures()
 	{
 		for (j = i + 1; j < pm_gcTextures; j++)
 		{
-			if (stricmp(pm_grgszTextureName[i], pm_grgszTextureName[j]) > 0)
+			if (Q_stricmp(pm_grgszTextureName[i], pm_grgszTextureName[j]) > 0)
 			{
 				// Swap
 				PM_SwapTextures(i, j);
@@ -112,11 +76,11 @@ void PM_InitTextureTypes()
 	if (bTextureTypeInit)
 		return;
 
-	memset(&(pm_grgszTextureName[0][0]), 0, sizeof(pm_grgszTextureName));
-	memset(pm_grgchTextureType, 0, sizeof(pm_grgchTextureType));
+	Q_memset(&(pm_grgszTextureName[0][0]), 0, sizeof(pm_grgszTextureName));
+	Q_memset(pm_grgchTextureType, 0, sizeof(pm_grgchTextureType));
 
 	pm_gcTextures = 0;
-	memset(buffer, 0, sizeof(buffer));
+	Q_memset(buffer, 0, sizeof(buffer));
 
 	pMemFile = pmove->COM_LoadFile("sound/materials.txt", 5, &fileSize);
 	if (!pMemFile)
@@ -156,10 +120,10 @@ void PM_InitTextureTypes()
 			continue;
 
 		// null-terminate name and save in sentences array
-		j = min(j, MAX_TEXTURENAME_LENGHT - 1 + i);
+		j = Q_min(j, MAX_TEXTURENAME_LENGHT - 1 + i);
 		buffer[j] = '\0';
 
-		strcpy(&(pm_grgszTextureName[pm_gcTextures++][0]), &(buffer[i]));
+		Q_strlcpy(pm_grgszTextureName[pm_gcTextures++], &(buffer[i]));
 	}
 
 	// Must use engine to free since we are in a .dll
@@ -169,13 +133,13 @@ void PM_InitTextureTypes()
 	bTextureTypeInit = true;
 }
 
-char PM_FindTextureType(char *name)
+char EXT_FUNC PM_FindTextureType(char *name)
 {
 	int left, right, pivot;
 	int val;
-#if 0 // Velaron: TODO commented out until the issue is resolved
-	assert(pm_shared_initialized);
-#endif
+
+	DbgAssert(pm_shared_initialized);
+
 	left = 0;
 	right = pm_gcTextures - 1;
 
@@ -183,7 +147,7 @@ char PM_FindTextureType(char *name)
 	{
 		pivot = (left + right) / 2;
 
-		val = strnicmp(name, pm_grgszTextureName[pivot], MAX_TEXTURENAME_LENGHT - 1);
+		val = Q_strnicmp(name, pm_grgszTextureName[pivot], MAX_TEXTURENAME_LENGHT - 1);
 
 		if (val == 0)
 		{
@@ -202,7 +166,9 @@ char PM_FindTextureType(char *name)
 	return CHAR_TEX_CONCRETE;
 }
 
-void PM_PlayStepSound(int step, float fvol)
+LINK_HOOK_VOID_CHAIN(PM_PlayStepSound, (int step, float fvol), step, fvol)
+
+void EXT_FUNC __API_HOOK(PM_PlayStepSound)(int step, float fvol)
 {
 	static int iSkipStep = 0;
 	int irand;
@@ -299,12 +265,12 @@ void PM_PlayStepSound(int step, float fvol)
 	case STEP_SLOSH:
 		switch (irand)
 		{
-			// right foot
-			case 0: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh1.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
-			case 1: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh3.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
-			// left foot
-			case 2: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh2.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
-			case 3: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh4.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
+		// right foot
+		case 0: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh1.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
+		case 1: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh3.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
+		// left foot
+		case 2: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh2.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
+		case 3: pmove->PM_PlaySound(CHAN_BODY, "player/pl_slosh4.wav", fvol, ATTN_NORM, 0, PITCH_NORM); break;
 		}
 		break;
 	case STEP_WADE:
@@ -398,14 +364,15 @@ void PM_CatagorizeTextureType()
 	if (*pTextureName == '{' || *pTextureName == '!' || *pTextureName == '~' || *pTextureName == ' ')
 		pTextureName++;
 
-	strcpy(pmove->sztexturename, pTextureName);
-	pmove->sztexturename[MAX_TEXTURENAME_LENGHT - 1] = '\0';
+	Q_strlcpy(pmove->sztexturename, pTextureName, MAX_TEXTURENAME_LENGHT);
 
 	// get texture type
 	pmove->chtexturetype = PM_FindTextureType(pmove->sztexturename);
 }
 
-void PM_UpdateStepSound()
+LINK_HOOK_VOID_CHAIN2(PM_UpdateStepSound)
+
+void EXT_FUNC __API_HOOK(PM_UpdateStepSound)()
 {
 	float fvol;
 	vec3_t knee;
@@ -595,8 +562,8 @@ void PM_CheckVelocity()
 int PM_ClipVelocity(vec_t *in, vec_t *normal, vec_t *out, float overbounce)
 {
 	float change;
-	float angle;
-	float backoff;
+	real_t angle;
+	real_t backoff;
 	int i, blocked;
 
 	angle = normal[2];
@@ -638,7 +605,7 @@ int PM_ClipVelocity(vec_t *in, vec_t *normal, vec_t *out, float overbounce)
 
 void PM_AddCorrectGravity()
 {
-	float ent_gravity;
+	real_t ent_gravity;
 
 	if (pmove->waterjumptime)
 		return;
@@ -660,7 +627,7 @@ void PM_AddCorrectGravity()
 
 void PM_FixupGravityVelocity()
 {
-	float ent_gravity;
+	real_t ent_gravity;
 
 	if (pmove->waterjumptime)
 		return;
@@ -674,9 +641,184 @@ void PM_FixupGravityVelocity()
 	pmove->velocity[2] -= (pmove->movevars->gravity * pmove->frametime * ent_gravity * 0.5);
 	PM_CheckVelocity();
 }
+#ifdef REGAMEDLL_ADD
+int PM_FlyMove_New()
+{
+	int			bumpcount, numbumps;
+	vec3_t		dir;
+	float		d;
+	int			numplanes;
+	vec3_t		planes[MAX_CLIP_PLANES];
+	vec3_t		primal_velocity;
+	vec3_t		clipVelocity;
+	int			i, j, k;
+	pmtrace_t	trace;
+	vec3_t		end;
+	float		time_left;
+	float		into;
+	vec3_t		endVelocity;
+	vec3_t		endClipVelocity;
+	int blocked;
 
+	numbumps = 4;
+
+	VectorCopy(pmove->velocity, primal_velocity);
+
+
+	time_left = pmove->frametime;
+
+	numplanes = 0;
+	blocked = 0x00;	// Assume not blocked
+
+	// never turn against original velocity
+	VectorCopy(pmove->velocity, planes[numplanes]);
+	VectorNormalize(planes[numplanes]);
+	numplanes++;
+
+	for (bumpcount = 0; bumpcount < numbumps; bumpcount++) {
+
+		// calculate position we are trying to move to
+		VectorMA(pmove->origin, time_left, pmove->velocity, end);
+
+		// see if we can make it there
+		trace = pmove->PM_PlayerTrace(pmove->origin, end, PM_NORMAL, -1);
+
+		if (trace.allsolid) {
+			// entity is completely trapped in another solid
+			pmove->velocity[2] = 0;	// don't build up falling damage, but allow sideways acceleration
+			return 4;
+		}
+
+		if (trace.fraction > 0) {
+			// actually covered some distance
+			VectorCopy(trace.endpos, pmove->origin);
+		}
+
+		if (trace.fraction == 1) {
+			break;		// moved the entire distance
+		}
+
+		// save entity for contact
+		PM_AddToTouched(trace, pmove->velocity);
+
+		// If the plane we hit has a high z component in the normal, then
+		// it's probably a floor
+		if (trace.plane.normal[2] > 0.7f)
+		{
+			// floor
+			blocked |= 0x01;
+		}
+
+		// If the plane has a zero z component in the normal, then it's a
+		// step or wall
+		if (!trace.plane.normal[2])
+		{
+			// step / wall
+			blocked |= 0x02;
+		}
+
+		time_left -= time_left * trace.fraction;
+
+		if (numplanes >= MAX_CLIP_PLANES) {
+			// this shouldn't really happen
+			VectorClear(pmove->velocity);
+			break;
+		}
+
+		//
+		// if this is the same plane we hit before, nudge velocity
+		// out along it, which fixes some epsilon issues with
+		// non-axial planes
+		//
+		for (i = 0; i < numplanes; i++) {
+			if (DotProduct(trace.plane.normal, planes[i]) > 0.99) {
+				VectorAdd(trace.plane.normal, pmove->velocity, pmove->velocity);
+				break;
+			}
+		}
+		if (i < numplanes) {
+			continue;
+		}
+		VectorCopy(trace.plane.normal, planes[numplanes]);
+		numplanes++;
+
+		//
+		// modify velocity so it parallels all of the clip planes
+		//
+
+		// find a plane that it enters
+		for (i = 0; i < numplanes; i++) {
+			into = DotProduct(pmove->velocity, planes[i]);
+			if (into >= 0.1) {
+				continue;		// move doesn't interact with the plane
+			}
+
+			// slide along the plane
+			PM_ClipVelocity(pmove->velocity, planes[i], clipVelocity, 1);
+
+			// slide along the plane
+			PM_ClipVelocity(endVelocity, planes[i], endClipVelocity, 1);
+
+			// see if there is a second plane that the new move enters
+			for (j = 0; j < numplanes; j++) {
+				if (j == i) {
+					continue;
+				}
+				if (DotProduct(clipVelocity, planes[j]) >= 0.1) {
+					continue;		// move doesn't interact with the plane
+				}
+
+				// try clipping the move to the plane
+				PM_ClipVelocity(clipVelocity, planes[j], clipVelocity, 1);
+				PM_ClipVelocity(endClipVelocity, planes[j], endClipVelocity, 1);
+
+				// see if it goes back into the first clip plane
+				if (DotProduct(clipVelocity, planes[i]) >= 0) {
+					continue;
+				}
+
+				// slide the original velocity along the crease
+				CrossProduct(planes[i], planes[j], dir);
+				VectorNormalize(dir);
+				d = DotProduct(dir, pmove->velocity);
+				VectorScale(dir, d, clipVelocity);
+
+				CrossProduct(planes[i], planes[j], dir);
+				VectorNormalize(dir);
+				d = DotProduct(dir, endVelocity);
+				VectorScale(dir, d, endClipVelocity);
+
+				// see if there is a third plane the the new move enters
+				for (k = 0; k < numplanes; k++) {
+					if (k == i || k == j) {
+						continue;
+					}
+					if (DotProduct(clipVelocity, planes[k]) >= 0.1) {
+						continue;		// move doesn't interact with the plane
+					}
+
+					// stop dead at a tripple plane interaction
+					VectorClear(pmove->velocity);
+					return 4;
+				}
+			}
+
+			// if we have fixed all interactions, try another move
+			VectorCopy(clipVelocity, pmove->velocity);
+			VectorCopy(endClipVelocity, endVelocity);
+			break;
+		}
+	}
+
+	return blocked;
+}
+#endif
 int PM_FlyMove()
 {
+#ifdef REGAMEDLL_ADD
+	if (flymove_method.value)
+		return PM_FlyMove_New();
+#endif
 	int bumpcount, numbumps;
 	vec3_t dir;
 	float d;
@@ -709,7 +851,7 @@ int PM_FlyMove()
 		// end point.
 		for (i = 0; i < 3; i++)
 		{
-			float flScale = time_left * pmove->velocity[i];
+			real_t flScale = time_left * pmove->velocity[i];
 
 			end[i] = pmove->origin[i] + flScale;
 		}
@@ -853,13 +995,13 @@ int PM_FlyMove()
 	return blocked;
 }
 
-void PM_Accelerate(vec_t *wishdir, float wishspeed, float accel)
+void PM_Accelerate(vec_t *wishdir, real_t wishspeed, float accel)
 {
 	int i;
 	float addspeed;
 
-	float currentspeed;
-	float accelspeed;
+	real_t currentspeed;
+	real_t accelspeed;
 
 	// Dead player's don't accelerate
 	if (pmove->dead)
@@ -901,10 +1043,10 @@ void PM_WalkMove()
 	int i;
 
 	vec3_t wishvel;
-	float spd;
-	float fmove, smove;
+	real_t spd;
+	float fmove, smove, maxspeed;
 	vec3_t wishdir;
-	float wishspeed;
+	real_t wishspeed;
 
 	//vec3_t start;	// TODO: unused
 	vec3_t dest;
@@ -914,9 +1056,22 @@ void PM_WalkMove()
 
 	pmtrace_t trace;
 
+	// jump penalty
 	if (pmove->fuser2 > 0.0)
 	{
-		float flRatio = (100 - pmove->fuser2 * 0.001 * 19) * 0.01;
+		real_t flRatio = (100 - pmove->fuser2 * 0.001 * 19) * 0.01;
+
+#ifdef REGAMEDLL_ADD
+		// change stamina restoration speed by fps reference
+		if (stamina_restore_rate.value > 0.0f)
+		{
+			real_t flReferenceFrametime = 1.0f / stamina_restore_rate.value;
+
+			float flFrametimeRatio = pmove->frametime / flReferenceFrametime;
+
+			flRatio = pow(flRatio, flFrametimeRatio);
+		}
+#endif
 
 		pmove->velocity[0] *= flRatio;
 		pmove->velocity[1] *= flRatio;
@@ -925,6 +1080,17 @@ void PM_WalkMove()
 	// Copy movement amounts
 	fmove = pmove->cmd.forwardmove;
 	smove = pmove->cmd.sidemove;
+	maxspeed = pmove->maxspeed;
+
+#ifdef REGAMEDLL_ADD
+	// Player can speed up the run if '+speed' button is pressed
+	if ((pmove->cmd.buttons & IN_RUN) && pmove->fuser3 > 0)
+	{
+		fmove *= pmove->fuser3;
+		smove *= pmove->fuser3;
+		maxspeed *= 2.0f; // increase speed cap to x2 when running
+	}
+#endif
 
 	// Zero out z components of movement vectors
 	pmove->forward[2] = 0;
@@ -948,10 +1114,10 @@ void PM_WalkMove()
 	wishspeed = VectorNormalize(wishdir);
 
 	// Clamp to server defined max speed
-	if (wishspeed > pmove->maxspeed)
+	if (wishspeed > maxspeed)
 	{
-		VectorScale(wishvel, pmove->maxspeed / wishspeed, wishvel);
-		wishspeed = pmove->maxspeed;
+		VectorScale(wishvel, maxspeed / wishspeed, wishvel);
+		wishspeed = maxspeed;
 	}
 
 	// Set pmove velocity
@@ -1086,7 +1252,7 @@ void PM_Friction()
 {
 	float *vel;
 	float speed;
-	float newspeed, control, friction, drop;
+	real_t newspeed, control, friction, drop;
 	vec3_t newvel;
 
 	// If we are in water jump cycle, don't apply friction
@@ -1097,7 +1263,7 @@ void PM_Friction()
 	vel = pmove->velocity;
 
 	// Calculate speed
-	speed =  sqrt(float(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]));
+	speed = Q_sqrt(real_t(vel[0] * vel[0] + vel[1] * vel[1] + vel[2] * vel[2]));
 
 	// If too slow, return
 	if (speed < 0.1f)
@@ -1165,14 +1331,16 @@ void PM_Friction()
 	VectorCopy(newvel, pmove->velocity);
 }
 
-void PM_AirAccelerate(vec_t *wishdir, float wishspeed, float accel)
+LINK_HOOK_VOID_CHAIN(PM_AirAccelerate, (vec_t *wishdir, float wishspeed, float accel), wishdir, wishspeed, accel)
+
+void EXT_FUNC __API_HOOK(PM_AirAccelerate)(vec_t *wishdir, float wishspeed, float accel)
 {
 	int i;
 	float addspeed;
 	float wishspd = wishspeed;
 
-	float currentspeed;
-	float accelspeed;
+	real_t currentspeed;
+	real_t accelspeed;
 
 	if (pmove->dead || pmove->waterjumptime)
 		return;
@@ -1214,7 +1382,7 @@ void PM_WaterMove()
 	vec3_t temp;
 	pmtrace_t trace;
 
-	float speed, accelspeed, wishspeed;
+	real_t speed, accelspeed, wishspeed;
 	float newspeed, addspeed;
 
 	// user intentions
@@ -1312,7 +1480,14 @@ void PM_WaterMove()
 	PM_FlyMove();
 }
 
-void PM_AirMove()
+LINK_HOOK_VOID_CHAIN(PM_AirMove, (int playerIndex = 0), pmove->player_index + 1)
+
+void EXT_FUNC __API_HOOK(PM_AirMove)(int playerIndex)
+{
+	PM_AirMove_internal();
+}
+
+void PM_AirMove_internal()
 {
 	int i;
 	vec3_t wishvel;
@@ -1368,26 +1543,26 @@ qboolean PM_InWater()
 // Sets pmove->waterlevel and pmove->watertype values.
 qboolean PM_CheckWater()
 {
-#ifdef REGAMEDLL_FIXES
-	// do not check for dead
-	if (pmove->dead || pmove->deadflag != DEAD_NO)
-		return FALSE;
-#endif
-
 	vec3_t point;
 	int cont;
 	int truecont;
 	float height;
 	float heightover2;
 
+	// Assume that we are not in water at all.
+	pmove->waterlevel = 0;
+	pmove->watertype = CONTENTS_EMPTY;
+
+#ifdef REGAMEDLL_FIXES
+	// do not check for dead
+	if (pmove->dead || pmove->deadflag != DEAD_NO)
+		return FALSE;
+#endif
+
 	// Pick a spot just above the players feet.
 	point[0] = pmove->origin[0] + (pmove->player_mins[pmove->usehull][0] + pmove->player_maxs[pmove->usehull][0]) * 0.5f;
 	point[1] = pmove->origin[1] + (pmove->player_mins[pmove->usehull][1] + pmove->player_maxs[pmove->usehull][1]) * 0.5f;
 	point[2] = pmove->origin[2] + pmove->player_mins[pmove->usehull][2] + 1;
-
-	// Assume that we are not in water at all.
-	pmove->waterlevel = 0;
-	pmove->watertype = CONTENTS_EMPTY;
 
 	// Grab point contents.
 	cont = pmove->PM_PointContents(point, &truecont);
@@ -1459,6 +1634,15 @@ void PM_CategorizePosition()
 	// water on each call, and the converse case will correct itself if called twice.
 	PM_CheckWater();
 
+	// Do not stick to the ground of an OBSERVER or NOCLIP mode
+#ifdef REGAMEDLL_FIXES
+	if (pmoveplayer->m_MovementVersion.IsAtLeast(1, 0) && (pmove->movetype == MOVETYPE_NOCLIP || pmove->movetype == MOVETYPE_NONE))
+	{
+		pmove->onground = -1;
+		return;
+	}
+#endif
+
 	point[0] = pmove->origin[0];
 	point[1] = pmove->origin[1];
 	point[2] = pmove->origin[2] - 2;
@@ -1511,12 +1695,9 @@ void PM_CategorizePosition()
 int PM_GetRandomStuckOffsets(int nIndex, int server, vec_t *offset)
 {
 	// Last time we did a full
-	int idx;
-	idx = rgStuckLast[nIndex][server]++;
-
-	VectorCopy(rgv3tStuckTable[idx % 54], offset);
-
-	return (idx % 54);
+	int idx = rgStuckLast[nIndex][server]++;
+	VectorCopy(rgv3tStuckTable[idx % ARRAYSIZE(rgv3tStuckTable)], offset);
+	return (idx % ARRAYSIZE(rgv3tStuckTable));
 }
 
 void PM_ResetStuckOffsets(int nIndex, int server)
@@ -1534,7 +1715,7 @@ qboolean PM_CheckStuck()
 	vec3_t test;
 	int hitent;
 	int idx;
-	float fTime;
+	real_t fTime;
 	int i;
 	pmtrace_t traceresult;
 
@@ -1573,7 +1754,7 @@ qboolean PM_CheckStuck()
 
 				nReps++;
 			}
-			while (nReps < 54);
+			while (nReps < ARRAYSIZE(rgv3tStuckTable));
 		}
 	}
 
@@ -1602,7 +1783,7 @@ qboolean PM_CheckStuck()
 	{
 		PM_ResetStuckOffsets(pmove->player_index, pmove->server);
 
-		if (i >= 27)
+		if (i >= (ARRAYSIZE(rgv3tStuckTable) / 2))
 		{
 			VectorCopy(test, pmove->origin);
 		}
@@ -1647,15 +1828,15 @@ qboolean PM_CheckStuck()
 
 void PM_SpectatorMove()
 {
-	float speed, drop, friction;
-	float control, newspeed;
+	real_t speed, drop, friction;
+	real_t control, newspeed;
 	float currentspeed, addspeed;
-	float accelspeed;
+	real_t accelspeed;
 	int i;
 	vec3_t wishvel;
-	float fmove, smove;
+	float fmove, smove, spectatormaxspeed;
 	vec3_t wishdir;
-	float wishspeed;
+	real_t wishspeed;
 
 	// this routine keeps track of the spectators psoition
 	// there a two different main move types : track player or moce freely (OBS_ROAMING)
@@ -1705,6 +1886,19 @@ void PM_SpectatorMove()
 		fmove = pmove->cmd.forwardmove;
 		smove = pmove->cmd.sidemove;
 
+		spectatormaxspeed = pmove->movevars->spectatormaxspeed;
+
+#ifdef REGAMEDLL_ADD
+		// Observer can accelerate in air if '+speed' button is pressed
+		if (pmove->cmd.buttons & IN_RUN)
+		{
+			float flAirAccelerate = (pmove->fuser3 > 0.0f) ? pmove->fuser3 : max(pmove->movevars->airaccelerate / 100.0f, 7.0f);
+			fmove *= flAirAccelerate;
+			smove *= flAirAccelerate;
+			spectatormaxspeed *= 2.0f; // increase speed cap to x2 when accelerating
+		}
+#endif
+
 		VectorNormalize(pmove->forward);
 		VectorNormalize(pmove->right);
 
@@ -1719,29 +1913,36 @@ void PM_SpectatorMove()
 		wishspeed = VectorNormalize(wishdir);
 
 		// clamp to server defined max speed
-		if (wishspeed > pmove->movevars->spectatormaxspeed)
+		if (wishspeed > spectatormaxspeed)
 		{
-			VectorScale(wishvel, pmove->movevars->spectatormaxspeed / wishspeed, wishvel);
-			wishspeed = pmove->movevars->spectatormaxspeed;
+			VectorScale(wishvel, spectatormaxspeed / wishspeed, wishvel);
+			wishspeed = spectatormaxspeed;
 		}
 
 		currentspeed = DotProduct(pmove->velocity, wishdir);
 
 		addspeed = wishspeed - currentspeed;
+
 		if (addspeed <= 0)
 		{
-			return;
+#ifdef REGAMEDLL_FIXES
+			if (pmoveplayer->m_MovementVersion.IsLessThan(1, 0))
+#endif
+				return;
 		}
 
-		accelspeed = pmove->movevars->accelerate * pmove->frametime * wishspeed;
-		if (accelspeed > addspeed)
+		if (addspeed > 0)
 		{
-			accelspeed = addspeed;
-		}
+			accelspeed = pmove->movevars->accelerate * pmove->frametime * wishspeed;
+			if (accelspeed > addspeed)
+			{
+				accelspeed = addspeed;
+			}
 
-		for (i = 0; i < 3; i++)
-		{
-			pmove->velocity[i] += accelspeed * wishdir[i];
+			for (i = 0; i < 3; i++)
+			{
+				pmove->velocity[i] += accelspeed * wishdir[i];
+			}
 		}
 
 		// move
@@ -1779,7 +1980,7 @@ void PM_SpectatorMove()
 // Used by ducking code.
 float PM_SplineFraction(float value, float scale)
 {
-	float valueSquared;
+	real_t valueSquared;
 
 	value = scale * value;
 	valueSquared = value * value;
@@ -1788,7 +1989,7 @@ float PM_SplineFraction(float value, float scale)
 	return 3 * valueSquared - 2 * valueSquared * value;
 }
 
-float PM_SimpleSpline(float value)
+NOXREF float PM_SimpleSpline(float value)
 {
 	float valueSquared;
 
@@ -1803,7 +2004,7 @@ void PM_FixPlayerCrouchStuck(int direction)
 	int i;
 	vec3_t test;
 
-	hitent = pmove->PM_TestPlayerPosition (pmove->origin, nullptr);
+	hitent = pmove->PM_TestPlayerPosition(pmove->origin, nullptr);
 
 	if (hitent == -1)
 	{
@@ -1827,8 +2028,27 @@ void PM_FixPlayerCrouchStuck(int direction)
 	VectorCopy(test, pmove->origin);
 }
 
-void PM_UnDuck()
+LINK_HOOK_VOID_CHAIN2(PM_UnDuck)
+
+void EXT_FUNC __API_HOOK(PM_UnDuck)()
 {
+#ifdef REGAMEDLL_ADD
+	if (unduck_method.value || (pmove->iuser3 & PLAYER_PREVENT_DDUCK))
+#endif
+	{
+#ifdef REGAMEDLL_FIXES
+		// if ducking isn't finished yet, so don't unduck
+		if (pmove->bInDuck || !(pmove->flags & FL_DUCKING))
+		{
+			pmove->usehull = 0;
+			pmove->flDuckTime = 0;
+			pmove->bInDuck = FALSE;
+			pmove->view_ofs[2] = PM_VEC_VIEW;
+			return;
+		}
+#endif // #ifdef REGAMEDLL_FIXES
+	}
+
 	pmtrace_t trace;
 	vec3_t newOrigin;
 
@@ -1880,7 +2100,9 @@ void PM_UnDuck()
 	}
 }
 
-void PM_Duck()
+LINK_HOOK_VOID_CHAIN2(PM_Duck)
+
+void EXT_FUNC __API_HOOK(PM_Duck)()
 {
 	int buttonsChanged = (pmove->oldbuttons ^ pmove->cmd.buttons);	// These buttons have changed this frame
 	int nButtonPressed =  buttonsChanged & pmove->cmd.buttons;		// The changed ones still down are "pressed"
@@ -1897,10 +2119,9 @@ void PM_Duck()
 		pmove->oldbuttons &= ~IN_DUCK;
 	}
 
-#ifdef REGAMEDLL_FIXES
-#define PLAYER_PREVENT_DUCK     (1 << 4)
-	// Prevent ducking if the iuser3 variable is contain PLAYER_PREVENT_DUCK
-	if ((pmove->iuser3 & PLAYER_PREVENT_DUCK) == PLAYER_PREVENT_DUCK)
+#ifdef REGAMEDLL_ADD
+	if ((pmove->iuser3 & PLAYER_PREVENT_DUCK) == PLAYER_PREVENT_DUCK       // Prevent ducking if the iuser3 variable is contain PLAYER_PREVENT_DUCK
+	|| (freezetime_duck.value == 0.0f && CSGameRules()->IsFreezePeriod())) // Prevent ducking during freezetime if the freezetime_duck cvar is 0
 	{
 		// Try to unduck
 		if (pmove->flags & FL_DUCKING)
@@ -1917,9 +2138,16 @@ void PM_Duck()
 		return;
 	}
 
-	pmove->cmd.forwardmove *= PLAYER_DUCKING_MULTIPLIER;
-	pmove->cmd.sidemove *= PLAYER_DUCKING_MULTIPLIER;
-	pmove->cmd.upmove *= PLAYER_DUCKING_MULTIPLIER;
+	real_t mult = PLAYER_DUCKING_MULTIPLIER;
+
+#ifdef REGAMEDLL_API
+	if (pmoveplayer->m_flDuckSpeedMultiplier > 0.0)
+		mult = pmoveplayer->m_flDuckSpeedMultiplier;
+#endif
+
+	pmove->cmd.forwardmove *= mult;
+	pmove->cmd.sidemove *= mult;
+	pmove->cmd.upmove *= mult;
 
 	if (pmove->cmd.buttons & IN_DUCK)
 	{
@@ -1960,8 +2188,8 @@ void PM_Duck()
 			}
 			else
 			{
-				float duckFraction = PM_VEC_VIEW;
-				float time = (1.0 - pmove->flDuckTime / 1000.0);
+				real_t duckFraction = PM_VEC_VIEW;
+				real_t time = (1.0 - pmove->flDuckTime / 1000.0);
 
 				// Calc parametric time
 				if (time >= 0.0) {
@@ -1985,7 +2213,9 @@ void PM_Duck()
 	}
 }
 
-void PM_LadderMove(physent_t *pLadder)
+LINK_HOOK_VOID_CHAIN(PM_LadderMove, (physent_t *pLadder), pLadder)
+
+void EXT_FUNC __API_HOOK(PM_LadderMove)(physent_t *pLadder)
 {
 	vec3_t ladderCenter;
 	trace_t trace;
@@ -2031,7 +2261,16 @@ void PM_LadderMove(physent_t *pLadder)
 
 		if (pmove->flags & FL_DUCKING)
 		{
-			flSpeed *= PLAYER_DUCKING_MULTIPLIER;
+#ifdef REGAMEDLL_API
+			if (pmoveplayer->m_flDuckSpeedMultiplier > 0.0)
+			{
+				flSpeed *= pmoveplayer->m_flDuckSpeedMultiplier;
+			}
+			else
+#endif
+			{
+				flSpeed *= PLAYER_DUCKING_MULTIPLIER;
+			}
 		}
 
 		if (pmove->cmd.buttons & IN_BACK)
@@ -2135,7 +2374,9 @@ physent_t *PM_Ladder()
 	return nullptr;
 }
 
-void PM_WaterJump()
+LINK_HOOK_VOID_CHAIN2(PM_WaterJump)
+
+void EXT_FUNC __API_HOOK(PM_WaterJump)()
 {
 	if (pmove->waterjumptime > 10000)
 	{
@@ -2311,6 +2552,16 @@ void PM_NoClip()
 	fmove = pmove->cmd.forwardmove;
 	smove = pmove->cmd.sidemove;
 
+#ifdef REGAMEDLL_ADD
+	// Player with noclip can accelerate in air if '+speed' button is pressed
+	if ((pmove->cmd.buttons & IN_RUN) && pmove->fuser3 > 0)
+	{
+		float flAirAccelerate = pmove->fuser3;
+		fmove *= flAirAccelerate;
+		smove *= flAirAccelerate;
+	}
+#endif
+
 	VectorNormalize(pmove->forward);
 	VectorNormalize(pmove->right);
 
@@ -2336,7 +2587,7 @@ void PM_NoClip()
 void PM_PreventMegaBunnyJumping()
 {
 	// Current player speed
-	float spd;
+	real_t spd;
 	// If we have to crop, apply this cropping fraction to velocity
 	float fraction;
 	// Speed at which bunny jumping is limited
@@ -2360,7 +2611,28 @@ void PM_PreventMegaBunnyJumping()
 	VectorScale(pmove->velocity, fraction, pmove->velocity);
 }
 
-void PM_Jump()
+inline real_t PM_JumpHeight(bool longjump)
+{
+#ifdef REGAMEDLL_API
+	if (longjump)
+	{
+		if (pmoveplayer->m_flLongJumpHeight > 0.0)
+			return pmoveplayer->m_flLongJumpHeight;
+	}
+	else if (pmoveplayer->m_flJumpHeight > 0.0)
+		return pmoveplayer->m_flJumpHeight;
+#endif
+
+#ifdef REGAMEDLL_ADD
+	return Q_sqrt(2.0 * 800.0f * (longjump ? 56.0f : Q_max(jump_height.value, 0.0f)));
+#else
+	return Q_sqrt(2.0 * 800.0f * (longjump ? 56.0f : 45.0f));
+#endif
+}
+
+LINK_HOOK_VOID_CHAIN2(PM_Jump)
+
+void EXT_FUNC __API_HOOK(PM_Jump)()
 {
 	if (pmove->dead)
 	{
@@ -2418,9 +2690,17 @@ void PM_Jump()
 		return;
 	}
 
+#ifdef REGAMEDLL_ADD
+	if ((pmove->iuser3 & PLAYER_PREVENT_JUMP) == PLAYER_PREVENT_JUMP       // Prevent jumping if the iuser3 variable is contain PLAYER_PREVENT_JUMP
+	|| (freezetime_jump.value == 0.0f && CSGameRules()->IsFreezePeriod())) // Prevent jumping during freezetime if the freezetime_jump cvar is 0
+	{
+		return;
+	}
+#endif
+
 	// No more effect
 	// in air, so no effect
-	if (pmove->onground == -1)
+ 	if (pmove->onground == -1)
 	{
 		// Flag that we jumped.
 		// don't jump again until released
@@ -2429,7 +2709,14 @@ void PM_Jump()
 	}
 
 	// don't pogo stick
-	if (pmove->oldbuttons & IN_JUMP)
+	if (pmove->oldbuttons & IN_JUMP
+#ifdef REGAMEDLL_ADD
+		&& sv_autobunnyhopping.value <= 0.0
+#ifdef REGAMEDLL_API
+		&& !pmoveplayer->m_bAutoBunnyHopping
+#endif
+#endif
+		)
 	{
 		return;
 	}
@@ -2444,9 +2731,18 @@ void PM_Jump()
 	// In the air now.
 	pmove->onground = -1;
 
-	PM_PreventMegaBunnyJumping();
+#ifdef REGAMEDLL_ADD
+	if (sv_enablebunnyhopping.value <= 0.0
+#ifdef REGAMEDLL_API
+		&& !pmoveplayer->m_bMegaBunnyJumping
+#endif
+		)
+#endif
+	{
+		PM_PreventMegaBunnyJumping();
+	}
 
-	float fvel = Length(pmove->velocity);
+	real_t fvel = Length(pmove->velocity);
 	float fvol = 1.0f;
 
 	if (fvel >= 150.0f)
@@ -2466,31 +2762,58 @@ void PM_Jump()
 		// UNDONE: note this should be based on forward angles, not current velocity.
 		if (cansuperjump && (pmove->cmd.buttons & IN_DUCK) && pmove->flDuckTime > 0 && Length(pmove->velocity) > 50)
 		{
-			pmove->punchangle[0] = -5.0f;
-
-			for (int i  = 0; i < 2; i++)
+#ifdef REGAMEDLL_ADD
+			if (pmove->fuser4 > 0.0f)
 			{
-				pmove->velocity[i] = pmove->forward[i] * PLAYER_LONGJUMP_SPEED * 1.6f;
+				pmove->velocity[2] = PM_JumpHeight(false);
 			}
+			else
+#endif
+			{
+				pmove->punchangle[0] = -5.0f;
 
-			pmove->velocity[2] =  sqrt(2 * 800 * 56.0f);
+#ifdef REGAMEDLL_API
+				if (pmoveplayer->m_flLongJumpForce > 0.0)
+				{
+					fvel = pmoveplayer->m_flLongJumpForce;
+				}
+				else
+#endif
+				{
+					fvel = PLAYER_LONGJUMP_SPEED * 1.6f;
+				}
+
+				for (int i = 0; i < 2; i++)
+				{
+					pmove->velocity[i] = pmove->forward[i] * fvel;
+				}
+
+				pmove->velocity[2] = PM_JumpHeight(true);
+#ifdef REGAMEDLL_ADD
+				if (longjump_cooldown.value > 0.0f)
+				{
+					pmove->fuser4 = longjump_cooldown.value * 1000.0f;
+				}
+#endif
+			}
 		}
 		else
 		{
-			pmove->velocity[2] =  sqrt(2 * 800 * 45.0f);
+			pmove->velocity[2] = PM_JumpHeight(false);
 		}
 	}
 	else
 #endif
 	{
 		// NOTE: don't do it in .f (float)
-		pmove->velocity[2] =  sqrt(2.0 * 800.0f * 45.0f);
+		pmove->velocity[2] = PM_JumpHeight(false);
 	}
 
 	if (pmove->fuser2 > 0.0f)
 	{
 		// NOTE: don't do it in .f (float)
-		float flRatio = (100.0 - pmove->fuser2 * 0.001 * 19.0) * 0.01;
+		real_t flRatio = (100.0 - pmove->fuser2 * 0.001 * 19.0) * 0.01;
+
 		pmove->velocity[2] *= flRatio;
 	}
 
@@ -2504,7 +2827,9 @@ void PM_Jump()
 	pmove->oldbuttons |= IN_JUMP;
 }
 
-void PM_CheckWaterJump()
+LINK_HOOK_VOID_CHAIN2(PM_CheckWaterJump)
+
+void EXT_FUNC __API_HOOK(PM_CheckWaterJump)()
 {
 	vec3_t vecStart, vecEnd;
 	vec3_t flatforward;
@@ -2556,7 +2881,7 @@ void PM_CheckWaterJump()
 	tr = pmove->PM_PlayerTrace(vecStart, vecEnd, PM_NORMAL, -1);
 
 	// Facing a near vertical wall?
-	if (tr.fraction < 1.0f && fabs(float(tr.plane.normal[2])) < 0.1f)
+	if (tr.fraction < 1.0f && Q_fabs(real_t(tr.plane.normal[2])) < 0.1f)
 	{
 		vecStart[2] += pmove->player_maxs[savehull][2] - WJ_HEIGHT;
 
@@ -2653,7 +2978,7 @@ void PM_PlayWaterSounds()
 float PM_CalcRoll(vec_t *angles, vec_t *velocity, float rollangle, float rollspeed)
 {
 	float sign;
-	float side;
+	real_t side;
 	float value;
 	vec3_t forward, right, up;
 
@@ -2661,7 +2986,7 @@ float PM_CalcRoll(vec_t *angles, vec_t *velocity, float rollangle, float rollspe
 
 	side = DotProduct(velocity, right);
 	sign = side < 0 ? -1 : 1;
-	side = fabs(side);
+	side = Q_fabs(side);
 
 	value = rollangle;
 
@@ -2679,33 +3004,36 @@ float PM_CalcRoll(vec_t *angles, vec_t *velocity, float rollangle, float rollspe
 
 void PM_DropPunchAngle(vec_t *punchangle)
 {
-	float len;
+	real_t len;
 
 	len = VectorNormalize(punchangle);
 	len -= (10.0 + len * 0.5) * pmove->frametime;
-	len = max(len, 0.0f);
-
+#ifdef PLAY_GAMEDLL
+	len = Q_max(len, 0.0);
+#else
+	len = Q_max(len, 0.0f);
+#endif
 	VectorScale(punchangle, len, punchangle);
 }
 
 void PM_CheckParameters()
 {
 	float spd;
-	float maxspeed;
+	real_t maxspeed;
 	vec3_t v_angle;
 
-	spd =  sqrt(float(pmove->cmd.sidemove * pmove->cmd.sidemove + pmove->cmd.forwardmove * pmove->cmd.forwardmove + pmove->cmd.upmove * pmove->cmd.upmove));
+	spd = Q_sqrt(real_t(pmove->cmd.sidemove * pmove->cmd.sidemove + pmove->cmd.forwardmove * pmove->cmd.forwardmove + pmove->cmd.upmove * pmove->cmd.upmove));
 
 	maxspeed = pmove->clientmaxspeed;
 
 	if (maxspeed != 0.0f)
 	{
-		pmove->maxspeed = min(maxspeed, float(pmove->maxspeed));
+		pmove->maxspeed = Q_min(maxspeed, real_t(pmove->maxspeed));
 	}
 
-	if (spd != 0.0f && spd > float(pmove->maxspeed))
+	if (spd != 0.0f && spd > real_t(pmove->maxspeed))
 	{
-		float fRatio = pmove->maxspeed / spd;
+		real_t fRatio = pmove->maxspeed / spd;
 
 		pmove->cmd.forwardmove *= fRatio;
 		pmove->cmd.sidemove *= fRatio;
@@ -2740,11 +3068,13 @@ void PM_CheckParameters()
 	// Set dead player view_offset
 	if (pmove->dead)
 	{
+#ifdef REGAMEDLL_FIXES
 		if (pmove->bInDuck)
 		{
 			PM_UnDuck();
 			pmove->bInDuck = FALSE;
 		}
+#endif
 
 		pmove->view_ofs[2] = PM_DEAD_VIEWHEIGHT;
 	}
@@ -2797,6 +3127,18 @@ void PM_ReduceTimers()
 			pmove->fuser2 = 0;
 		}
 	}
+
+#ifdef REGAMEDLL_ADD
+	if (pmove->fuser4 > 0.0)
+	{
+		pmove->fuser4 -= pmove->cmd.msec;
+
+		if (pmove->fuser4 < 0.0)
+		{
+			pmove->fuser4 = 0;
+		}
+	}
+#endif
 }
 
 qboolean PM_ShouldDoSpectMode()
@@ -2807,7 +3149,6 @@ qboolean PM_ShouldDoSpectMode()
 // Returns with origin, angles, and velocity modified in place.
 // Numtouch and touchindex[] will be set if any of the physents
 // were contacted during the move.
-
 void PM_PlayerMove(qboolean server)
 {
 	physent_t *pLadder = nullptr;
@@ -2866,7 +3207,11 @@ void PM_PlayerMove(qboolean server)
 	g_onladder = FALSE;
 
 	// Don't run ladder code if dead or on a train
-	if (!pmove->dead && !(pmove->flags & FL_ONTRAIN))
+	if (!pmove->dead && !(pmove->flags & FL_ONTRAIN)
+#ifdef REGAMEDLL_ADD
+		&& !(pmove->iuser3 & PLAYER_PREVENT_CLIMB)
+#endif
+		)
 	{
 		pLadder = PM_Ladder();
 
@@ -3066,7 +3411,7 @@ void PM_CreateStuckTable()
 	int i;
 	float zi[3];
 
-	memset(rgv3tStuckTable, 0, sizeof(rgv3tStuckTable));
+	Q_memset(rgv3tStuckTable, 0, sizeof(rgv3tStuckTable));
 
 	idx = 0;
 
@@ -3189,17 +3534,21 @@ void PM_CreateStuckTable()
 	}
 }
 
+LINK_HOOK_VOID_CHAIN(PM_Move, (struct playermove_s *ppmove, int server), ppmove, server)
+
 // This module implements the shared player physics code between any particular game and
 // the engine. The same PM_Move routine is built into the game .dll and the client .dll and is
 // invoked by each side as appropriate. There should be no distinction, internally, between server
 // and client. This will ensure that prediction behaves appropriately.
-
-void PM_Move(playermove_t *ppmove, int server)
+void EXT_FUNC __API_HOOK(PM_Move)(struct playermove_s *ppmove, int server)
 {
-#if 0
-	assert(pm_shared_initialized);
-#endif
+	DbgAssert(pm_shared_initialized);
+
 	pmove = ppmove;
+
+#ifdef REGAMEDLL_API
+	pmoveplayer = UTIL_PlayerByIndex(pmove->player_index + 1)->CSPlayer();
+#endif
 
 	PM_PlayerMove((server != 0) ? TRUE : FALSE);
 
@@ -3212,9 +3561,14 @@ void PM_Move(playermove_t *ppmove, int server)
 	{
 		pmove->friction = 1.0f;
 	}
+
+#ifdef REGAMEDLL_API
+	// save the last usercmd
+	pmoveplayer->SetLastUserCommand(pmove->cmd);
+#endif
 }
 
-int PM_GetVisEntInfo(int ent)
+NOXREF int PM_GetVisEntInfo(int ent)
 {
 	if (ent >= 0 && ent <= pmove->numvisent)
 	{
@@ -3224,7 +3578,7 @@ int PM_GetVisEntInfo(int ent)
 	return -1;
 }
 
-int PM_GetPhysEntInfo(int ent)
+NOXREF int PM_GetPhysEntInfo(int ent)
 {
 	if (ent >= 0 && ent <= pmove->numphysent)
 	{
@@ -3234,15 +3588,21 @@ int PM_GetPhysEntInfo(int ent)
 	return -1;
 }
 
-void PM_Init( playermove_t *ppmove)
+LINK_HOOK_VOID_CHAIN(PM_Init, (struct playermove_s *ppmove), ppmove)
+
+void EXT_FUNC __API_HOOK(PM_Init)(struct playermove_s *ppmove)
 {
-#if 0
-	assert(!pm_shared_initialized);
-#endif
+	DbgAssert(!pm_shared_initialized);
+
 	pmove = ppmove;
 
 	PM_CreateStuckTable();
 	PM_InitTextureTypes();
 
 	pm_shared_initialized = TRUE;
+}
+
+const char *PM_ServerVersion()
+{
+	return PM_VERSION_STRING(PM_VERSION_MAJOR, PM_VERSION_MINOR, PM_VERSION_PATCH);
 }

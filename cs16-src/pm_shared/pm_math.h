@@ -26,47 +26,41 @@
 *
 */
 
-#ifndef PM_MATH_H
-#define PM_MATH_H
-#ifdef _WIN32
 #pragma once
-#endif
 
-#define PITCH	0	// up/down
-#define YAW	1	// left/right
-#define ROLL	2	// fall over
+#define PITCH 0	// up/down
+#define YAW   1 // left/right
+#define ROLL  2 // fall over
 
-extern float vec3_origin[3];
-extern int nanmask;
+extern vec3_t vec3_origin;
+extern const int nanmask;
 
 #define IS_NAN(x)	((*reinterpret_cast<int *>(&(x)) & nanmask) == nanmask)
 
 float anglemod(float a);
-void  AngleVectors(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up);
-void  AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up);
-void  AngleMatrix(const vec_t *angles, float (*matrix)[4]);
-void  AngleIMatrix(const vec_t *angles, float (*matrix)[4]);
-void  NormalizeAngles(float *angles);
-void  InterpolateAngles(float *start, float *end, float *output, float frac);
+void AngleVectors(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up);
+void AngleVectorsTranspose(const vec_t *angles, vec_t *forward, vec_t *right, vec_t *up);
+void AngleMatrix(const vec_t *angles, float (*matrix)[4]);
+void AngleIMatrix(const vec_t *angles, float (*matrix)[4]);
+void NormalizeAngles(float *angles);
+void InterpolateAngles(float *start, float *end, float *output, float frac);
 float AngleBetweenVectors(const vec_t *v1, const vec_t *v2);
-void VectorTransform(const vec_t *in1, float (*in2)[4], vec_t *out);
-int   VectorCompare(const vec_t *v1, const vec_t *v2);
-void  VectorMA(const vec_t *veca, float scale, const vec_t *vecb, vec_t *vecc);
+void VectorTransform(const vec_t *in1, float *in2, vec_t *out);
+int VectorCompare(const vec_t *v1, const vec_t *v2);
+void VectorMA(const vec_t *veca, float scale, const vec_t *vecb, vec_t *vecc);
 
-float _DotProduct(const vec_t *v1, const vec_t *v2);
-void  _VectorSubtract(vec_t *veca, vec_t *vecb, vec_t *out);
-void  _VectorAdd(vec_t *veca, vec_t *vecb, vec_t *out);
-void  _VectorCopy(vec_t *in, vec_t *out);
-void  CrossProduct(const vec_t *v1, const vec_t *v2, vec_t *cross);
+real_t _DotProduct(const vec_t *v1, const vec_t *v2);
+void _VectorSubtract(vec_t *veca, vec_t *vecb, vec_t *out);
+void _VectorAdd(vec_t *veca, vec_t *vecb, vec_t *out);
+void _VectorCopy(vec_t *in, vec_t *out);
+void CrossProduct(const vec_t *v1, const vec_t *v2, vec_t *cross);
 
-float Length(const vec_t *v);
+real_t Length(const vec_t *v);
 float Distance(const vec_t *v1, const vec_t *v2);
-float VectorNormalize(vec_t *v);
+real_t VectorNormalize(vec_t *v);
 
-void  VectorInverse(vec_t *v);
-void  VectorScale(const vec_t *in, vec_t scale, vec_t *out);
-int   Q_log2(int val);
-void  VectorMatrix(vec_t *forward, vec_t *right, vec_t *up);
-void  VectorAngles(const vec_t *forward, vec_t *angles);
-
-#endif // PM_MATH_H
+void VectorInverse(vec_t *v);
+void VectorScale(const vec_t *in, vec_t scale, vec_t *out);
+int Q_log2(int val);
+void VectorMatrix(vec_t *forward, vec_t *right, vec_t *up);
+void VectorAngles(const vec_t *forward, vec_t *angles);
