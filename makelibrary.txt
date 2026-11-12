@@ -24,9 +24,14 @@ list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SR
 # Archivos del cliente de CS 1.6 (Velaron, ubicado en cs16/cl_dll)
 file(GLOB CS16_CLIENT ${CMAKE_CURRENT_SOURCE_DIR}/cs16/cl_dll/*.cpp)
 
-add_library(cl_dll STATIC
+# Creamos la libreria cl_dll con un archivo dummy
+add_library(cl_dll STATIC ${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/link_helper.cpp)
+
+# Buscamos y añadimos los archivos del cliente de Velaron
+file(GLOB CS16_CLIENT ${CMAKE_CURRENT_SOURCE_DIR}/cs16/cl_dll/*.cpp)
+
+target_sources(cl_dll PRIVATE
 ${CS16_CLIENT}
-${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/game_shared/*.cpp
 )
 target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
 target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
