@@ -61,113 +61,18 @@ set_target_properties(cl_dll PROPERTIES
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN YES)
 
+# Buscamos automáticamente todos los archivos .cpp de CS 1.6
+file(GLOB CS16_DLLS ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/*.cpp)
+file(GLOB CS16_SHARED ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/game_shared/*.cpp)
+file(GLOB CS16_PM ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/*.cpp)
+file(GLOB CS16_ENGINE ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/engine/*.cpp)
+
 add_library(hl STATIC
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/agrunt.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/airtank.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/aflock.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/animating.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/animation.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/apache.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/barnacle.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/barney.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/bigmomma.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/bloater.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/bmodels.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/bullsquid.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/buttons.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/cbase.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/client.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/combat.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/controller.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/crossbow.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/crowbar.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/defaultai.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/doors.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/effects.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/egon.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/explode.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/flyingmonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/func_break.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/func_tank.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/game.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/gamerules.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/gargantua.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/gauss.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/genericmonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/ggrenade.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/globals.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/glock.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/gman.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/h_ai.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/h_battery.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/h_cine.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/h_cycler.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/h_export.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/handgrenade.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/hassassin.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/headcrab.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/healthkit.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/hgrunt.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/hornet.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/hornetgun.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/houndeye.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/ichthyosaur.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/islave.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/items.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/leech.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/lights.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/maprules.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/monstermaker.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/monsters.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/monsterstate.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/mortar.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/mp5.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/multiplay_gamerules.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/nihilanth.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/nodes.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/observer.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/osprey.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/pathcorner.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/plane.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/plats.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/player.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/playermonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/python.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/rat.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/roach.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/rpg.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/satchel.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/schedule.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/scientist.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/scripted.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/shotgun.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/singleplay_gamerules.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/skill.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/sound.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/soundent.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/spectator.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/squadmonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/squeakgrenade.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/subs.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/talkmonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/teamplay_gamerules.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/tempmonster.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/tentacle.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/triggers.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/tripmine.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/turret.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/util.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/vehicle.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/weapons.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/world.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/xen.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/zombie.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared/vcs_info.c
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/pm_debug.c
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/pm_math.c
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared/pm_shared.c
-	${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/safe_snprintf.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/dlls/link_helper.cpp
+${CS16_DLLS}
+${CS16_SHARED}
+${CS16_PM}
+${CS16_ENGINE}
+${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/link_helper.cpp
 )
 target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
 target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
