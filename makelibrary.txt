@@ -65,7 +65,7 @@ add_library(cl_dll STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/link_helper.cpp
 )
 target_compile_definitions(cl_dll PRIVATE
--DXASH_OGC -DCLIENT_DLL -DCLIENT_WEAPONS -DNO_VOICEGAMEMGR -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf
+-DXASH_OGC -DCLIENT_DLL  -DNO_VOICEGAMEMGR -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf -D_vsnprintf=vsnprintf
 )
 target_compile_options(cl_dll PRIVATE
 -fno-exceptions -fpermissive -MMD -MP
@@ -206,7 +206,7 @@ add_library(hl STATIC
 	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public/safe_snprintf.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/link_helper.cpp
 )
-target_compile_definitions(hl PRIVATE -DXASH_OGC -DCLIENT_WEAPONS -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
+target_compile_definitions(hl PRIVATE -DXASH_OGC  -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
 target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
 -fno-rtti
 #-fno-lto
