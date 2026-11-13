@@ -17,7 +17,9 @@
 
 #ifndef _WIN32
 
+#ifndef GEKKO
 #include <dlfcn.h> // dlopen, dlclose, et al
+#endif
 #include <unistd.h>
 
 #define HMODULE void *

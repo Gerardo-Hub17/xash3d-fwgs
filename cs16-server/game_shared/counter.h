@@ -38,7 +38,7 @@
 	#include <sys/types.h>
 	#include <fcntl.h>
 	#include <unistd.h>
-	#ifdef OSX
+	#if defined(OSX) || defined(GEKKO)
 		#include <limits.h>
 	#else
 		#include <linux/limits.h>
