@@ -26,6 +26,12 @@
 *
 */
 
+#ifndef PM_INFO_H
+#define PM_INFO_H
+#ifdef _WIN32
 #pragma once
+#endif
 
-const int MAX_PHYSINFO_STRING = 256;
+#define MAX_PHYSINFO_STRING 256
+
+#endif // PM_INFO_H

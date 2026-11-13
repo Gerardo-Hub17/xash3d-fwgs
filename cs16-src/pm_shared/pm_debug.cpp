@@ -1,9 +1,16 @@
-#include "precompiled.h"
+#include "mathlib.h"
+#include "const.h"
+#include "usercmd.h"
+#include "pm_defs.h"
+#include "pm_shared.h"
+#include "pm_movevars.h"
+#include "pm_debug.h"
 
+#include <string.h>
 #undef vec3_t
 
 // Expand debugging BBOX particle hulls by this many units.
-const float BOX_GAP = 0.0f;
+#define BOX_GAP 0.0f
 
 int PM_boxpnt[6][4] =
 {
@@ -38,7 +45,7 @@ void PM_ShowClipBox()
 		int i;
 		for (i = 0; i < pmove->numphysent; i++)
 		{
-			if (pmove->physents[i].info >= 1 && pmove->physents[i].info <= 4)
+			if (pmove->physents[ i ].info >= 1 && pmove->physents[ i ].info <= 4)
 			{
 			 	PM_DrawBBox(pmove->player_mins[pmove->usehull], pmove->player_maxs[pmove->usehull], pmove->physents[i].origin, 132, 0.1);
 			}
@@ -65,7 +72,7 @@ void PM_ParticleLine(vec3_t start, vec3_t end, int pcolor, float life, float ver
 	curdist = 0;
 	while (curdist <= len)
 	{
-		for (i = 0; i < 3; i++)
+		for (i = 0; i < 3; ++i)
 			curpos[i] = start[i] + curdist * diff[i];
 
 		pmove->PM_Particle(curpos, pcolor, life, 0, vert);
@@ -101,7 +108,7 @@ void PM_DrawPhysEntBBox(int num, int pcolor, float life)
 		VectorCopy(pe->origin, org);
 
 		pmove->PM_GetModelBounds(pe->model, modelmins, modelmaxs);
-		for (j = 0; j < 8; j++)
+		for (j = 0; j < 8; ++j)
 		{
 			tmp[0] = (j & 1) ? modelmins[0] - gap : modelmaxs[0] + gap;
 			tmp[1] = (j & 2) ? modelmins[1] - gap : modelmaxs[1] + gap;
@@ -116,7 +123,7 @@ void PM_DrawPhysEntBBox(int num, int pcolor, float life)
 			vec3_t forward, right, up;
 
 			AngleVectorsTranspose(pe->angles, forward, right, up);
-			for (j = 0; j < 8; j++)
+			for (j = 0; j < 8; ++j)
 			{
 				VectorCopy(p[j], tmp);
 				p[j][0] = DotProduct(tmp, forward);
@@ -126,10 +133,10 @@ void PM_DrawPhysEntBBox(int num, int pcolor, float life)
 		}
 
 		// Offset by entity origin, if any.
-		for (j = 0; j < 8; j++)
+		for (j = 0; j < 8; ++j)
 			VectorAdd(p[j], org, p[j]);
 
-		for (j = 0; j < 6; j++)
+		for (j = 0; j < 6; ++j)
 		{
 			PM_DrawRectangle(
 				p[PM_boxpnt[j][1]],
@@ -141,7 +148,7 @@ void PM_DrawPhysEntBBox(int num, int pcolor, float life)
 	}
 	else
 	{
-		for (j = 0; j < 8; j++)
+		for (j = 0; j < 8; ++j)
 		{
 			tmp[0] = (j & 1) ? pe->mins[0] : pe->maxs[0];
 			tmp[1] = (j & 2) ? pe->mins[1] : pe->maxs[1];
@@ -151,7 +158,7 @@ void PM_DrawPhysEntBBox(int num, int pcolor, float life)
 			VectorCopy(tmp, p[j]);
 		}
 
-		for (j = 0; j < 6; j++)
+		for (j = 0; j < 6; ++j)
 		{
 			PM_DrawRectangle(
 				p[PM_boxpnt[j][1]],
@@ -171,7 +178,7 @@ void PM_DrawBBox(vec3_t mins, vec3_t maxs, vec3_t origin, int pcolor, float life
 	vec3_t p[8];
 	float gap = BOX_GAP;
 
-	for (j = 0; j < 8; j++)
+	for (j = 0; j < 8; ++j)
 	{
 		tmp[0] = (j & 1) ? mins[0] - gap : maxs[0] + gap;
 		tmp[1] = (j & 2) ? mins[1] - gap : maxs[1] + gap;
@@ -181,7 +188,7 @@ void PM_DrawBBox(vec3_t mins, vec3_t maxs, vec3_t origin, int pcolor, float life
 		VectorCopy(tmp, p[j]);
 	}
 
-	for (j = 0; j < 6; j++)
+	for (j = 0; j < 6; ++j)
 	{
 		PM_DrawRectangle(
 			p[PM_boxpnt[j][1]],
@@ -195,6 +202,7 @@ void PM_DrawBBox(vec3_t mins, vec3_t maxs, vec3_t origin, int pcolor, float life
 // Shows a particle trail from player to entity in crosshair.
 // Shows particles at that entities bbox
 // Tries to shoot a ray out by about 128 units.
+
 void PM_ViewEntity()
 {
 	vec3_t forward, right, up;
@@ -231,13 +239,7 @@ void PM_ViewEntity()
 	if (trace.ent > 0)
 	{
 		pcolor = 111;
-	}
-
-	// Draw the hull or bbox.
-#ifndef REGAMEDLL_FIXES
-	if (trace.ent > 0)
-#endif
-	{
+		// Draw the hull or bbox.
 		PM_DrawPhysEntBBox(trace.ent, pcolor, 0.3f);
 	}
 }
