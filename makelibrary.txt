@@ -21,38 +21,272 @@ list(APPEND CS_CLIENT_SRC ${CS_EV_SRC} ${CS_WPN_SRC} ${CS_WPNSH_SRC} ${CS_HUD_SR
         ${CS_STUDIO_SRC} ${CS_PM_SRC} ${CS_INPUT_SRC} ${CS_GAMSH_SRC} ${MINIUTL_SRC}
         ${CS_PARTICLEMAN_SRC})
 
-# Archivos del cliente de CS 1.6 (Velaron, ubicado en cs16/cl_dll)
-file(GLOB CS16_CLIENT ${CMAKE_CURRENT_SOURCE_DIR}/cs16/cl_dll/*.cpp)
+add_library(cl_dll STATIC ${CS_CLIENT_SRC})
 
-# Creamos la libreria cl_dll con un archivo dummy
-add_library(cl_dll STATIC ${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/cl_dll/link_helper.cpp)
+target_include_directories(cl_dll PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/hud
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/studio
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/include/math
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/engine
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/pm_shared
+        ${CMAKE_CURRENT_SOURCE_DIR}/dlls
+        ${CMAKE_CURRENT_SOURCE_DIR}/game_shared
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public
+        ${CMAKE_CURRENT_SOURCE_DIR}/cs16-src/public/dlls
+        ${CMAKE_CURRENT_SOURCE_DIR}/public/cl_dll
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/controls
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/menus
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mainui/miniutl
+        ${CMAKE_CURRENT_SOURCE_DIR}/cl_dll/particleman)
 
-# Buscamos y añadimos los archivos del cliente de Velaron
-file(GLOB CS16_CLIENT ${CMAKE_CURRENT_SOURCE_DIR}/cs16/cl_dll/*.cpp)
+target_compile_definitions(cl_dll PRIVATE
+        CS16_CLIENT CLIENT_WEAPONS CLIENT_DLL XASH_OGC STDINT_H=<cstdint>
+        LINUX _LINUX
+        stricmp=strcasecmp strnicmp=strncasecmp _strnicmp=strncasecmp
+        _snprintf=snprintf _vsnprintf=vsnprintf
+        uint32=uint32_t _inline=inline __inline=inline
+        XASH_WII GEKKO HW_RVL __BYTE_ORDER__=__ORDER_BIG_ENDIAN__)
 
-target_sources(cl_dll PRIVATE
-${CS16_CLIENT}
+target_compile_options(cl_dll PRIVATE
+        -fpermissive -fno-exceptions -fno-rtti -fms-extensions
+        -Wno-write-strings -ffunction-sections
+        -fno-unwind-tables -fno-asynchronous-unwind-tables
+        -fvisibility=hidden)
+
+set_target_properties(cl_dll PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES)
+
+# El cliente compila sus propias CBasePlayerWeapon, CBaseEntity, CAK47, pm_shared...
+# con el mismo nombre que las del servidor (hl = ReGameDLL) pero con otro contenido
+# (#ifdef CLIENT_DLL) y otro layout. Con --allow-multiple-definition el enlazador las
+# mezclaria y el servidor acabaria llamando a las versiones del cliente. Se renombra todo
+# simbolo global de la libreria del cliente salvo lib_cl_dll_exports (la tabla que lee el motor).
+if(NOT CMAKE_NM OR NOT CMAKE_OBJCOPY)
+	message(FATAL_ERROR "cl_isolate: hacen falta nm y objcopy del toolchain (CMAKE_NM=${CMAKE_NM} CMAKE_OBJCOPY=${CMAKE_OBJCOPY})")
+endif()
+add_custom_command(TARGET cl_dll POST_BUILD
+	COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cl_isolate.sh ${CMAKE_NM} ${CMAKE_OBJCOPY} $<TARGET_FILE:cl_dll>
+	VERBATIM
 )
-target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
-target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
--fno-rtti
-#-fno-lto
--fno-unwind-tables -fno-asynchronous-unwind-tables
-# -G0
+
+# ------------------------------------------------------------------------------
+# Servidor
+#   CS16_SERVER=ON  (por defecto): ReGameDLL_CS (cs16-server), el servidor real de CS 1.6
+#                   -> menu de equipo/personaje, economia, bomba, rondas...
+#   CS16_SERVER=OFF: el servidor de Half-Life de ../hlsdk-portable (el de antes).
+# ------------------------------------------------------------------------------
+option(CS16_SERVER "build the real CS 1.6 server (ReGameDLL_CS in cs16-server) instead of the HL one" ON)
+
+if(CS16_SERVER)
+set(RG ${CMAKE_CURRENT_SOURCE_DIR}/cs16-server)
+
+add_library(hl STATIC
+	${RG}/engine/unicode_strtools.cpp
+	${RG}/game_shared/shared_util.cpp
+	${RG}/game_shared/voice_gamemgr.cpp
+	${RG}/game_shared/bot/bot.cpp
+	${RG}/game_shared/bot/bot_manager.cpp
+	${RG}/game_shared/bot/bot_profile.cpp
+	${RG}/game_shared/bot/bot_util.cpp
+	${RG}/game_shared/bot/nav_area.cpp
+	${RG}/game_shared/bot/nav_file.cpp
+	${RG}/game_shared/bot/nav_node.cpp
+	${RG}/game_shared/bot/nav_path.cpp
+	${RG}/pm_shared/pm_debug.cpp
+	${RG}/pm_shared/pm_math.cpp
+	${RG}/pm_shared/pm_shared.cpp
+	${RG}/regamedll/regamedll.cpp
+	${RG}/regamedll/precompiled.cpp
+	${RG}/regamedll/hookchains_impl.cpp
+	${RG}/regamedll/link_helper.cpp
+	${RG}/public/FileSystem.cpp
+	${RG}/public/interface.cpp
+	${RG}/public/MemPool.cpp
+	${RG}/public/tier0/dbg.cpp
+	${RG}/public/tier0/platform_posix.cpp
+	${RG}/dlls/airtank.cpp
+	${RG}/dlls/ammo.cpp
+	${RG}/dlls/animating.cpp
+	${RG}/dlls/animation.cpp
+	${RG}/dlls/basemonster.cpp
+	${RG}/dlls/bmodels.cpp
+	${RG}/dlls/buttons.cpp
+	${RG}/dlls/career_tasks.cpp
+	${RG}/dlls/cbase.cpp
+	${RG}/dlls/client.cpp
+	${RG}/dlls/cmdhandler.cpp
+	${RG}/dlls/combat.cpp
+	${RG}/dlls/debug.cpp
+	${RG}/dlls/doors.cpp
+	${RG}/dlls/effects.cpp
+	${RG}/dlls/explode.cpp
+	${RG}/dlls/func_break.cpp
+	${RG}/dlls/func_tank.cpp
+	${RG}/dlls/game.cpp
+	${RG}/dlls/gamerules.cpp
+	${RG}/dlls/ggrenade.cpp
+	${RG}/dlls/gib.cpp
+	${RG}/dlls/globals.cpp
+	${RG}/dlls/h_battery.cpp
+	${RG}/dlls/h_cycler.cpp
+	${RG}/dlls/h_export.cpp
+	${RG}/dlls/healthkit.cpp
+	${RG}/dlls/hintmessage.cpp
+	${RG}/dlls/items.cpp
+	${RG}/dlls/lights.cpp
+	${RG}/dlls/mapinfo.cpp
+	${RG}/dlls/maprules.cpp
+	${RG}/dlls/mortar.cpp
+	${RG}/dlls/multiplay_gamerules.cpp
+	${RG}/dlls/observer.cpp
+	${RG}/dlls/pathcorner.cpp
+	${RG}/dlls/plats.cpp
+	${RG}/dlls/player.cpp
+	${RG}/dlls/revert_saved.cpp
+	${RG}/dlls/saverestore.cpp
+	${RG}/dlls/singleplay_gamerules.cpp
+	${RG}/dlls/skill.cpp
+	${RG}/dlls/sound.cpp
+	${RG}/dlls/soundent.cpp
+	${RG}/dlls/spectator.cpp
+	${RG}/dlls/subs.cpp
+	${RG}/dlls/training_gamerules.cpp
+	${RG}/dlls/triggers.cpp
+	${RG}/dlls/tutor.cpp
+	${RG}/dlls/tutor_base_states.cpp
+	${RG}/dlls/tutor_base_tutor.cpp
+	${RG}/dlls/tutor_cs_states.cpp
+	${RG}/dlls/tutor_cs_tutor.cpp
+	${RG}/dlls/util.cpp
+	${RG}/dlls/vehicle.cpp
+	${RG}/dlls/weapons.cpp
+	${RG}/dlls/weapontype.cpp
+	${RG}/dlls/world.cpp
+	${RG}/dlls/API/CAPI_Impl.cpp
+	${RG}/dlls/API/CSEntity.cpp
+	${RG}/dlls/API/CSPlayer.cpp
+	${RG}/dlls/API/CSPlayerItem.cpp
+	${RG}/dlls/API/CSPlayerWeapon.cpp
+	${RG}/dlls/addons/item_airbox.cpp
+	${RG}/dlls/addons/point_command.cpp
+	${RG}/dlls/addons/trigger_random.cpp
+	${RG}/dlls/addons/trigger_setorigin.cpp
+	${RG}/dlls/wpn_shared/wpn_ak47.cpp
+	${RG}/dlls/wpn_shared/wpn_aug.cpp
+	${RG}/dlls/wpn_shared/wpn_awp.cpp
+	${RG}/dlls/wpn_shared/wpn_c4.cpp
+	${RG}/dlls/wpn_shared/wpn_deagle.cpp
+	${RG}/dlls/wpn_shared/wpn_elite.cpp
+	${RG}/dlls/wpn_shared/wpn_famas.cpp
+	${RG}/dlls/wpn_shared/wpn_fiveseven.cpp
+	${RG}/dlls/wpn_shared/wpn_flashbang.cpp
+	${RG}/dlls/wpn_shared/wpn_g3sg1.cpp
+	${RG}/dlls/wpn_shared/wpn_galil.cpp
+	${RG}/dlls/wpn_shared/wpn_glock18.cpp
+	${RG}/dlls/wpn_shared/wpn_hegrenade.cpp
+	${RG}/dlls/wpn_shared/wpn_knife.cpp
+	${RG}/dlls/wpn_shared/wpn_m3.cpp
+	${RG}/dlls/wpn_shared/wpn_m4a1.cpp
+	${RG}/dlls/wpn_shared/wpn_m249.cpp
+	${RG}/dlls/wpn_shared/wpn_mac10.cpp
+	${RG}/dlls/wpn_shared/wpn_mp5navy.cpp
+	${RG}/dlls/wpn_shared/wpn_p90.cpp
+	${RG}/dlls/wpn_shared/wpn_p228.cpp
+	${RG}/dlls/wpn_shared/wpn_scout.cpp
+	${RG}/dlls/wpn_shared/wpn_sg550.cpp
+	${RG}/dlls/wpn_shared/wpn_sg552.cpp
+	${RG}/dlls/wpn_shared/wpn_smokegrenade.cpp
+	${RG}/dlls/wpn_shared/wpn_tmp.cpp
+	${RG}/dlls/wpn_shared/wpn_ump45.cpp
+	${RG}/dlls/wpn_shared/wpn_usp.cpp
+	${RG}/dlls/wpn_shared/wpn_xm1014.cpp
+	${RG}/dlls/bot/cs_bot.cpp
+	${RG}/dlls/bot/cs_bot_chatter.cpp
+	${RG}/dlls/bot/cs_bot_event.cpp
+	${RG}/dlls/bot/cs_bot_init.cpp
+	${RG}/dlls/bot/cs_bot_learn.cpp
+	${RG}/dlls/bot/cs_bot_listen.cpp
+	${RG}/dlls/bot/cs_bot_manager.cpp
+	${RG}/dlls/bot/cs_bot_nav.cpp
+	${RG}/dlls/bot/cs_bot_pathfind.cpp
+	${RG}/dlls/bot/cs_bot_radio.cpp
+	${RG}/dlls/bot/cs_bot_statemachine.cpp
+	${RG}/dlls/bot/cs_bot_update.cpp
+	${RG}/dlls/bot/cs_bot_vision.cpp
+	${RG}/dlls/bot/cs_bot_weapon.cpp
+	${RG}/dlls/bot/cs_gamestate.cpp
+	${RG}/dlls/bot/states/cs_bot_attack.cpp
+	${RG}/dlls/bot/states/cs_bot_buy.cpp
+	${RG}/dlls/bot/states/cs_bot_defuse_bomb.cpp
+	${RG}/dlls/bot/states/cs_bot_escape_from_bomb.cpp
+	${RG}/dlls/bot/states/cs_bot_fetch_bomb.cpp
+	${RG}/dlls/bot/states/cs_bot_follow.cpp
+	${RG}/dlls/bot/states/cs_bot_hide.cpp
+	${RG}/dlls/bot/states/cs_bot_hunt.cpp
+	${RG}/dlls/bot/states/cs_bot_idle.cpp
+	${RG}/dlls/bot/states/cs_bot_investigate_noise.cpp
+	${RG}/dlls/bot/states/cs_bot_move_to.cpp
+	${RG}/dlls/bot/states/cs_bot_plant_bomb.cpp
+	${RG}/dlls/bot/states/cs_bot_use_entity.cpp
+	${RG}/dlls/hostage/hostage.cpp
+	${RG}/dlls/hostage/hostage_improv.cpp
+	${RG}/dlls/hostage/hostage_localnav.cpp
+	${RG}/dlls/hostage/states/hostage_animate.cpp
+	${RG}/dlls/hostage/states/hostage_escape.cpp
+	${RG}/dlls/hostage/states/hostage_follow.cpp
+	${RG}/dlls/hostage/states/hostage_idle.cpp
+	${RG}/dlls/hostage/states/hostage_retreat.cpp
 )
+
+# OJO al orden: public/ va ANTES que common/. common/ trae un interface.h de Xash
+# que choca con public/interface.h de ReGameDLL (IBaseInterface redefinida).
+target_include_directories(hl PRIVATE
+	${RG}
+	${RG}/public
+	${RG}/public/regamedll
+	${RG}/engine
+	${RG}/common
+	${RG}/dlls
+	${RG}/game_shared
+	${RG}/pm_shared
+	${RG}/regamedll
+)
+
+target_compile_definitions(hl PRIVATE
+	REGAMEDLL_FIXES REGAMEDLL_API REGAMEDLL_ADD UNICODE_FIXES BUILD_LATEST
+	CLIENT_WEAPONS USE_QSTRING
+	_LINUX LINUX NDEBUG
+	BUILD_STATIC_LIBSTDC     # no incluir stdc++compat.cpp (trucos de glibc)
+	GEKKO HW_RVL             # ramas de Wii en osconfig.h / interface.* / FileSystem.cpp
+	_stricmp=strcasecmp _strnicmp=strncasecmp _strdup=strdup _unlink=unlink
+	_snprintf=snprintf _vsnprintf=vsnprintf _write=write _close=close
+	_access=access _vsnwprintf=vswprintf
+)
+
+# -fsigned-char: en PowerPC "char" es sin signo y ReGameDLL (x86) da por hecho que lleva signo.
+# No se usa -fno-rtti: cbase.cpp tiene dynamic_cast.
+target_compile_options(hl PRIVATE
+	$<$<COMPILE_LANGUAGE:CXX>:-std=gnu++14>
+	-fpermissive -fno-exceptions -fno-threadsafe-statics -fsigned-char
+	-ffunction-sections -fdata-sections -fvisibility=hidden
+	-fno-unwind-tables -fno-asynchronous-unwind-tables
+	-Wno-delete-non-virtual-dtor -Wno-invalid-offsetof -Wno-write-strings
+	-Wno-unused-variable -Wno-unused-value -Wno-unused-function -Wno-switch
+	-Wno-sign-compare -Wno-format -Wno-strict-aliasing
+)
+
 set_target_properties(hl PROPERTIES
 	CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN YES
+	VISIBILITY_INLINES_HIDDEN YES
 )
-
-target_include_directories(hl PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/common
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/engine
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared
-	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public
-)
+else()
+include(${CMAKE_CURRENT_LIST_DIR}/makelibrary_hlserver.txt)
+endif()
 
 file(GLOB MENU_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../mainui_cpp/*

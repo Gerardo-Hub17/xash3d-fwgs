@@ -1,0 +1,129 @@
+# Servidor de Half-Life (hlsdk-portable). Se usa con -DCS16_SERVER=OFF.
+add_library(hl STATIC
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/agrunt.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/airtank.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/aflock.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/animating.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/animation.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/apache.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/barnacle.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/barney.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/bigmomma.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/bloater.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/bmodels.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/bullsquid.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/buttons.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/cbase.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/client.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/combat.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/controller.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/crossbow.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/crowbar.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/defaultai.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/doors.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/effects.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/egon.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/explode.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/flyingmonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/func_break.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/func_tank.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/game.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/gamerules.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/gargantua.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/gauss.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/genericmonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/ggrenade.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/globals.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/glock.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/gman.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/h_ai.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/h_battery.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/h_cine.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/h_cycler.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/h_export.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/handgrenade.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/hassassin.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/headcrab.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/healthkit.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/hgrunt.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/hornet.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/hornetgun.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/houndeye.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/ichthyosaur.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/islave.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/items.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/leech.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/lights.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/maprules.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/monstermaker.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/monsters.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/monsterstate.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/mortar.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/mp5.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/multiplay_gamerules.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/nihilanth.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/nodes.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/observer.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/osprey.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/pathcorner.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/plane.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/plats.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/player.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/playermonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/python.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/rat.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/roach.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/rpg.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/satchel.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/schedule.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/scientist.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/scripted.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/shotgun.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/singleplay_gamerules.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/skill.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/sound.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/soundent.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/spectator.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/squadmonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/squeakgrenade.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/subs.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/talkmonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/teamplay_gamerules.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/tempmonster.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/tentacle.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/triggers.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/tripmine.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/turret.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/util.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/vehicle.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/weapons.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/world.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/xen.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/zombie.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared/vcs_info.c
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared/pm_debug.c
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared/pm_math.c
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared/pm_shared.c
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public/safe_snprintf.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls/link_helper.cpp
+)
+target_compile_definitions(hl PRIVATE -DXASH_OGC -Dstricmp=strcasecmp -Dstrnicmp=strncasecmp -D_snprintf=snprintf  -DNO_VOICEGAMEMGR)
+target_compile_options(hl PRIVATE -fpermissive -fno-exceptions -MMD -MP -fno-threadsafe-statics -Wno-invalid-offsetof -fvisibility=hidden
+-fno-rtti
+#-fno-lto
+-fno-unwind-tables -fno-asynchronous-unwind-tables
+# -G0
+)
+set_target_properties(hl PROPERTIES
+	CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
+)
+
+target_include_directories(hl PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/dlls
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/common
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/engine
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/pm_shared
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/game_shared
+	${CMAKE_CURRENT_SOURCE_DIR}/../hlsdk-portable/public
+)

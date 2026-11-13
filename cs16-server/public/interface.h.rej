@@ -1,0 +1,12 @@
+--- cs16-src/public/interface.h
++++ cs16-server/public/interface.h
+@@ -17,7 +17,9 @@
+ 
+ #ifndef _WIN32
+ 
++#ifndef GEKKO
+ #include <dlfcn.h> // dlopen, dlclose, et al
++#endif
+ #include <unistd.h>
+ 
+ #define HMODULE void *
