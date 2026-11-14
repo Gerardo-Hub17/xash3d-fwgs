@@ -99,9 +99,32 @@ enum
 	ROW_STICK_SENS,
 	ROW_IR_SENS,
 	ROW_AUTOAIM,
+	ROW_XH_SIZE,	// crosshair size, percent
+	ROW_XH_COLOR,	// crosshair colour, index in ui_xh_colors
 	ROW_CLOSE,
 	ROW_COUNT
 };
+
+#define ROW_CFG_COUNT	ROW_CLOSE	// the rows that are saved
+
+// the colours of the crosshair (0 keeps the one of the weapon)
+static const struct
+{
+	const char	*name;
+	byte		r, g, b;
+} ui_xh_colors[] =
+{
+	{ "Normal",	255, 255, 255 },
+	{ "Rojo",	255,  40,  40 },
+	{ "Verde",	 60, 255,  60 },
+	{ "Azul",	 80, 140, 255 },
+	{ "Amarillo",	255, 230,  40 },
+	{ "Cian",	 40, 240, 255 },
+	{ "Magenta",	255,  70, 255 },
+	{ "Naranja",	255, 150,   0 },
+};
+
+#define UI_XH_COLORS	( sizeof( ui_xh_colors ) / sizeof( ui_xh_colors[0] ))
 
 static const struct
 {
@@ -114,13 +137,19 @@ static const struct
 	{ "Sensibilidad palanca",	50, 200, 10 },
 	{ "Sensibilidad puntero",	50, 200, 10 },
 	{ "Autoapuntado",		0,  100, 10 },
+	{ "Tamano de la mira",		50, 300, 10 },
+	{ "Color de la mira",		0,  7,   1 },
 	{ "Cerrar",			0,  0,   0 },
 };
 
-// players 2-4 keep their settings in a saved cvar: "ir_dz stick_dz stick_sens ir_sens autoaim" in percent
-static CVAR_DEFINE_AUTO( wii_split_set1, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 2 settings (internal)" );
-static CVAR_DEFINE_AUTO( wii_split_set2, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 3 settings (internal)" );
-static CVAR_DEFINE_AUTO( wii_split_set3, "35 16 100 100 35", FCVAR_ARCHIVE, "split screen player 4 settings (internal)" );
+// player 1 keeps the crosshair in cvars
+static CVAR_DEFINE_AUTO( wii_xhair_size, "100", FCVAR_ARCHIVE, "crosshair size in percent (split screen menu)" );
+static CVAR_DEFINE_AUTO( wii_xhair_color, "0", FCVAR_ARCHIVE, "crosshair colour, 0 = the weapon's own (split screen menu)" );
+
+// players 2-4 keep their settings in a saved cvar: "ir_dz stick_dz stick_sens ir_sens autoaim xh_size xh_color" in percent
+static CVAR_DEFINE_AUTO( wii_split_set1, "35 16 100 100 35 100 0", FCVAR_ARCHIVE, "split screen player 2 settings (internal)" );
+static CVAR_DEFINE_AUTO( wii_split_set2, "35 16 100 100 35 100 0", FCVAR_ARCHIVE, "split screen player 3 settings (internal)" );
+static CVAR_DEFINE_AUTO( wii_split_set3, "35 16 100 100 35 100 0", FCVAR_ARCHIVE, "split screen player 4 settings (internal)" );
 
 static convar_t *const ui_cfgvars[] = { NULL, &wii_split_set1, &wii_split_set2, &wii_split_set3 };
 
@@ -128,13 +157,13 @@ static int ui_cfg[SPLIT_MAX_PLAYERS][ROW_COUNT]; // percent, for players 2-4
 
 static void UI_LoadCfg( int player )
 {
-	int v[5] = { 35, 16, 100, 100, 35 };
+	int v[ROW_CFG_COUNT] = { 35, 16, 100, 100, 35, 100, 0 };
 	int i;
 
 	if( player > 0 && player < SPLIT_MAX_PLAYERS )
-		sscanf( ui_cfgvars[player]->string, "%d %d %d %d %d", &v[0], &v[1], &v[2], &v[3], &v[4] );
+		sscanf( ui_cfgvars[player]->string, "%d %d %d %d %d %d %d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6] );
 
-	for( i = 0; i < 5; i++ )
+	for( i = 0; i < ROW_CFG_COUNT; i++ )
 		ui_cfg[player][i] = bound( ui_rows[i].min, v[i], ui_rows[i].max );
 }
 
@@ -145,8 +174,8 @@ static void UI_SaveCfg( int player )
 	if( player < 1 || player >= SPLIT_MAX_PLAYERS )
 		return;
 
-	Q_snprintf( s, sizeof( s ), "%d %d %d %d %d", ui_cfg[player][0], ui_cfg[player][1],
-		ui_cfg[player][2], ui_cfg[player][3], ui_cfg[player][4] );
+	Q_snprintf( s, sizeof( s ), "%d %d %d %d %d %d %d", ui_cfg[player][0], ui_cfg[player][1],
+		ui_cfg[player][2], ui_cfg[player][3], ui_cfg[player][4], ui_cfg[player][5], ui_cfg[player][6] );
 	Cvar_DirectSet( ui_cfgvars[player], s );
 }
 
@@ -162,6 +191,8 @@ static int UI_GetRow( int player, int row )
 		case ROW_STICK_SENS:	return (int)( Cvar_VariableValue( "wii_stick_sens" ) * 100.0f + 0.5f );
 		case ROW_IR_SENS:	return (int)( Cvar_VariableValue( "wii_ir_sens" ) * 100.0f + 0.5f );
 		case ROW_AUTOAIM:	return (int)( Cvar_VariableValue( "wii_aimassist_strength" ) * 100.0f + 0.5f );
+		case ROW_XH_SIZE:	return bound( ui_rows[ROW_XH_SIZE].min, (int)wii_xhair_size.value, ui_rows[ROW_XH_SIZE].max );
+		case ROW_XH_COLOR:	return bound( 0, (int)wii_xhair_color.value, (int)UI_XH_COLORS - 1 );
 		}
 
 		return 0;
@@ -188,6 +219,8 @@ static void UI_SetRow( int player, int row, int value )
 			Cvar_SetValue( "wii_aimassist_strength", f );
 			SV_SplitSetAutoaim( 0, (float)value );
 			break;
+		case ROW_XH_SIZE:	Cvar_SetValue( "wii_xhair_size", (float)value ); break;
+		case ROW_XH_COLOR:	Cvar_SetValue( "wii_xhair_color", (float)value ); break;
 		}
 
 		return;
@@ -216,6 +249,32 @@ void CL_SplitUIPlayerStarted( int player )
 {
 	UI_LoadCfg( player );
 	SV_SplitSetAutoaim( player, (float)ui_cfg[player][ROW_AUTOAIM] );
+}
+
+/*
+=============
+CL_SplitCrosshairStyle
+
+size (1.0 = the normal one) and colour of the crosshair of a player; false when
+both are the defaults
+=============
+*/
+qboolean CL_SplitCrosshairStyle( int player, float *scale, int *r, int *g, int *b )
+{
+	int size, color;
+
+	if( player < 0 || player >= SPLIT_MAX_PLAYERS )
+		player = 0;
+
+	size = UI_GetRow( player, ROW_XH_SIZE );
+	color = bound( 0, UI_GetRow( player, ROW_XH_COLOR ), (int)UI_XH_COLORS - 1 );
+
+	if( scale ) *scale = size * 0.01f;
+	if( r ) *r = ui_xh_colors[color].r;
+	if( g ) *g = ui_xh_colors[color].g;
+	if( b ) *b = ui_xh_colors[color].b;
+
+	return size != 100 || color != 0;
 }
 
 typedef struct
@@ -322,7 +381,7 @@ static void UI_DrawMenu( int player, int x, int y, int w, int h )
 {
 	const float k = CL_SplitPixelAspectValue();
 	const int th = CL_SplitTextHeight();
-	const int rowh = th + 6;
+	const int rowh = Q_min( th + 6, Q_max( th + 1, ( h - 4 ) / ( ROW_COUNT + 2 )));
 	int pw = Q_min( w - 8, (int)( 300.0f / k ));
 	int ph = rowh * ( ROW_COUNT + 2 );
 	int px, py, i;
@@ -356,7 +415,15 @@ static void UI_DrawMenu( int player, int x, int y, int w, int h )
 
 		if( i != ROW_CLOSE )
 		{
-			Q_snprintf( text, sizeof( text ), sel ? "< %d%% >" : "%d%%", UI_GetRow( player, i ));
+			if( i == ROW_XH_COLOR )
+			{
+				const int c = bound( 0, UI_GetRow( player, i ), (int)UI_XH_COLORS - 1 );
+
+				Q_snprintf( text, sizeof( text ), sel ? "< %s >" : "%s", ui_xh_colors[c].name );
+				CL_SplitFill( px + pw - 8 - CL_SplitTextWidth( text ) - th - 4, ry + 1, th - 2, th - 2,
+					ui_xh_colors[c].r, ui_xh_colors[c].g, ui_xh_colors[c].b, 255 );
+			}
+			else Q_snprintf( text, sizeof( text ), sel ? "< %d%% >" : "%d%%", UI_GetRow( player, i ));
 			UI_TextRight( px + pw - 8, ry, text, r, g, b );
 		}
 	}
@@ -391,6 +458,136 @@ static const char *UI_WeaponName( int id )
 	return "";
 }
 
+/*
+=============
+the table of players, for a dead player (the client DLL shows it to player 1)
+=============
+*/
+typedef struct
+{
+	int	client;
+	int	frags, deaths, ping;
+	qboolean	known;
+} ui_score_t;
+
+static int UI_ScoreCompare( const void *a, const void *b )
+{
+	const ui_score_t *x = (const ui_score_t *)a, *y = (const ui_score_t *)b;
+
+	if( x->frags != y->frags )
+		return y->frags - x->frags;
+
+	if( x->deaths != y->deaths )
+		return x->deaths - y->deaths;
+
+	return x->client - y->client;
+}
+
+static void UI_DrawScoreboard( int player, int x, int y, int w, int h )
+{
+	const float k = CL_SplitPixelAspectValue();
+	const int th = CL_SplitTextHeight();
+	const int rowh = th + 3;
+	const int colw = CL_SplitTextWidth( "00000" );
+	ui_score_t list[MAX_CLIENTS];
+	int count = 0, i, self = -1, shown, pw, ph, px, py, top, maxrows;
+	int frags_r, deaths_r, ping_r, name_w;
+	char text[64], name[MAX_SCOREBOARDNAME];
+	float f;
+
+	if( !cl.maxclients )
+		return;
+
+	if( SV_SplitGetView( player, NULL, NULL, &i, NULL, NULL, &f ))
+		self = i - 1;
+
+	for( i = 0; i < cl.maxclients && i < MAX_CLIENTS; i++ )
+	{
+		ui_score_t *e;
+
+		if( !cl.players[i].name[0] )
+			continue;
+
+		e = &list[count++];
+		e->client = i;
+		e->ping = cl.players[i].ping;
+		e->known = SV_SplitGetScore( i, &e->frags, &e->deaths );
+
+		if( !e->known )
+		{
+			e->frags = 0;
+			e->deaths = 0;
+		}
+	}
+
+	if( count <= 0 )
+		return;
+
+	qsort( list, count, sizeof( list[0] ), UI_ScoreCompare );
+
+	// the table sits in the upper part, the "dispara para reaparecer" line stays below it
+	top = y + Q_max( 4, h / 16 );
+	maxrows = ( y + h * 3 / 4 - top ) / rowh - 2;
+	maxrows = bound( 1, maxrows, count );
+	shown = maxrows;
+
+	pw = Q_min( w - 8, (int)( 340.0f / k ));
+	ph = rowh * ( shown + 2 ) + 8;
+	px = x + ( w - pw ) / 2;
+	py = top;
+
+	CL_SplitFill( px, py, pw, ph, 0, 0, 0, 190 );
+	CL_SplitFill( px, py, pw, 2, 255, 160, 0, 255 );
+
+	ping_r = px + pw - 8;
+	deaths_r = ping_r - colw;
+	frags_r = deaths_r - colw;
+	name_w = frags_r - colw - ( px + 8 );
+
+	CL_SplitDrawText( px + 8, py + 6, "Jugador", 255, 200, 40, 255 );
+	UI_TextRight( frags_r, py + 6, "Frags", 255, 200, 40 );
+	UI_TextRight( deaths_r, py + 6, "Muer.", 255, 200, 40 );
+	UI_TextRight( ping_r, py + 6, "Ping", 255, 200, 40 );
+
+	for( i = 0; i < shown; i++ )
+	{
+		const ui_score_t *e = &list[i];
+		const int ry = py + 6 + rowh * ( i + 1 ) + 2;
+		const qboolean mine = e->client == self;
+		const int r = mine ? 255 : 210, g = mine ? 220 : 210, b = mine ? 60 : 210;
+		int len;
+
+		if( mine )
+			CL_SplitFill( px + 3, ry - 1, pw - 6, th + 2, 255, 160, 0, 60 );
+
+		Q_strncpy( name, cl.players[e->client].name, sizeof( name ));
+		len = Q_strlen( name );
+
+		while( len > 1 && CL_SplitTextWidth( name ) > name_w )
+			name[--len] = 0;
+
+		CL_SplitDrawText( px + 8, ry, name, r, g, b, 255 );
+
+		Q_snprintf( text, sizeof( text ), "%d", e->frags );
+		UI_TextRight( frags_r, ry, text, r, g, b );
+		Q_snprintf( text, sizeof( text ), "%d", e->deaths );
+		UI_TextRight( deaths_r, ry, text, r, g, b );
+		Q_snprintf( text, sizeof( text ), "%d", e->ping );
+		UI_TextRight( ping_r, ry, text, r, g, b );
+	}
+}
+
+static void UI_DrawDead( int player, int x, int y, int w, int h )
+{
+	const int th = CL_SplitTextHeight();
+
+	UI_DrawScoreboard( player, x, y, w, h );
+	UI_TextCenter( x + w / 2, y + h - th * 2 - 8, "ELIMINADO", 255, 60, 60 );
+	UI_TextCenter( x + w / 2, y + h - th - 4, "Dispara para reaparecer", 220, 220, 220 );
+}
+
+static void HUD_PlainCrosshair( int cx, int cy, int h, float k, float scale, int cr, int cg, int cb );
+
 static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 {
 	const float k = CL_SplitPixelAspectValue();
@@ -421,25 +618,16 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 	// they look the same on a stretched 16:9 screen
 	if( health > 0.0f )
 	{
-		const int cx = x + w / 2, cy = y + h / 2;
-		const int len = Q_max( 4, h / 40 ), gap = 3;
-		const int lx = Q_max( 1, (int)( len / k ));
-		const int gx = Q_max( 1, (int)( gap / k ));
+		float xs = 1.0f;
+		int xr = 255, xg = 255, xb = 255;
 
-		CL_SplitFill( cx - gx - lx - 1, cy - 2, lx + 2, 4, 0, 0, 0, 160 );
-		CL_SplitFill( cx + gx - 1, cy - 2, lx + 2, 4, 0, 0, 0, 160 );
-		CL_SplitFill( cx - 2, cy - gap - len - 1, 4, len + 2, 0, 0, 0, 160 );
-		CL_SplitFill( cx - 2, cy + gap - 1, 4, len + 2, 0, 0, 0, 160 );
-
-		CL_SplitFill( cx - gx - lx, cy - 1, lx, 2, 255, 255, 255, 255 );
-		CL_SplitFill( cx + gx, cy - 1, lx, 2, 255, 255, 255, 255 );
-		CL_SplitFill( cx - 1, cy - gap - len, 2, len, 255, 255, 255, 255 );
-		CL_SplitFill( cx - 1, cy + gap, 2, len, 255, 255, 255, 255 );
+		CL_SplitCrosshairStyle( player, &xs, &xr, &xg, &xb );
+		HUD_PlainCrosshair( x + w / 2, y + h / 2, h, k, xs, xr, xg, xb );
 	}
 	else
 	{
-		UI_TextCenter( x + w / 2, y + h / 2 - th, "ELIMINADO", 255, 60, 60 );
-		UI_TextCenter( x + w / 2, y + h / 2 + 2, "Dispara para reaparecer", 220, 220, 220 );
+		UI_DrawDead( player, x, y, w, h );
+		return;
 	}
 
 	// health and armour, bottom left
@@ -711,9 +899,9 @@ static void HUD_Scale( int *r, int *g, int *b, int a )
 }
 
 // outlined plus, for when the weapon has no crosshair sprite of its own
-static void HUD_PlainCrosshair( int cx, int cy, int h, float k )
+static void HUD_PlainCrosshair( int cx, int cy, int h, float k, float scale, int cr, int cg, int cb )
 {
-	const int len = Q_max( 4, h / 40 ), gap = 3;
+	const int len = Q_max( 4, (int)( Q_max( 4, h / 40 ) * scale )), gap = 3;
 	const int lx = Q_max( 1, (int)( len / k ));
 	const int gx = Q_max( 1, (int)( gap / k ));
 
@@ -722,10 +910,10 @@ static void HUD_PlainCrosshair( int cx, int cy, int h, float k )
 	CL_SplitFill( cx - 2, cy - gap - len - 1, 4, len + 2, 0, 0, 0, 160 );
 	CL_SplitFill( cx - 2, cy + gap - 1, 4, len + 2, 0, 0, 0, 160 );
 
-	CL_SplitFill( cx - gx - lx, cy - 1, lx, 2, 255, 255, 255, 255 );
-	CL_SplitFill( cx + gx, cy - 1, lx, 2, 255, 255, 255, 255 );
-	CL_SplitFill( cx - 1, cy - gap - len, 2, len, 255, 255, 255, 255 );
-	CL_SplitFill( cx - 1, cy + gap, 2, len, 255, 255, 255, 255 );
+	CL_SplitFill( cx - gx - lx, cy - 1, lx, 2, cr, cg, cb, 255 );
+	CL_SplitFill( cx + gx, cy - 1, lx, 2, cr, cg, cb, 255 );
+	CL_SplitFill( cx - 1, cy - gap - len, 2, len, cr, cg, cb, 255 );
+	CL_SplitFill( cx - 1, cy + gap, 2, len, cr, cg, cb, 255 );
 }
 
 static void UI_DrawHUD( int player, int x, int y, int w, int h )
@@ -768,8 +956,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 
 	if( health <= 0.0f )
 	{
-		UI_TextCenter( x + w / 2, y + h / 2 - th, "ELIMINADO", 255, 60, 60 );
-		UI_TextCenter( x + w / 2, y + h / 2 + 2, "Dispara para reaparecer", 220, 220, 220 );
+		UI_DrawDead( player, x, y, w, h );
 		return;
 	}
 
@@ -786,15 +973,22 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	cx = x + (int)( w * 0.5f * ( 1.0f + px ));
 	cy = y + (int)( h * 0.5f * ( 1.0f + py ));
 
-	if( ws && ws->crosshair.ok )
 	{
-		const wrect_t *rc = &ws->crosshair.rc;
-		const float cw = ( rc->right - rc->left ) * v.sx, ch = ( rc->bottom - rc->top ) * v.sy;
+		float xs = 1.0f;
+		int xr = 255, xg = 255, xb = 255;
 
-		CL_SplitDrawSprite( ws->crosshair.spr, rc, cx - cw * 0.5f, cy - ch * 0.5f, v.sx, v.sy, 255, 255, 255, 255, kRenderTransColor );
+		CL_SplitCrosshairStyle( player, &xs, &xr, &xg, &xb );
+
+		if( ws && ws->crosshair.ok )
+		{
+			const wrect_t *rc = &ws->crosshair.rc;
+			const float cw = ( rc->right - rc->left ) * v.sx * xs, ch = ( rc->bottom - rc->top ) * v.sy * xs;
+
+			CL_SplitDrawSprite( ws->crosshair.spr, rc, cx - cw * 0.5f, cy - ch * 0.5f, v.sx * xs, v.sy * xs, xr, xg, xb, 255, kRenderTransColor );
+		}
+		else if( !haveweapon )
+			HUD_PlainCrosshair( cx, cy, h, k, xs, xr, xg, xb );
 	}
-	else if( !haveweapon )
-		HUD_PlainCrosshair( cx, cy, h, k );
 
 	fh = hud.number[0].rc.bottom - hud.number[0].rc.top;
 	y0 = v.h - fh - fh / 2;
@@ -1713,6 +1907,8 @@ void CL_SplitLobbyDraw( void )
 
 void CL_SplitUIInit( void )
 {
+	Cvar_RegisterVariable( &wii_xhair_size );
+	Cvar_RegisterVariable( &wii_xhair_color );
 	Cvar_RegisterVariable( &wii_split_set1 );
 	Cvar_RegisterVariable( &wii_split_set2 );
 	Cvar_RegisterVariable( &wii_split_set3 );

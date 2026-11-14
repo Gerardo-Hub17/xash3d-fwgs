@@ -848,6 +848,8 @@ static void GAME_EXPORT SPR_DisableScissor( void )
 	CL_DisableScissor( &clgame.ds.scissor );
 }
 
+static void CL_SplitDrawSpritePtr( const model_t *spr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode );
+
 /*
 ====================
 CL_DrawCrosshair
@@ -938,6 +940,33 @@ static void CL_DrawCrosshair( void )
 
 	clgame.ds.pSprite = clgame.ds.pCrosshair;
 	Vector4Copy( clgame.ds.rgbaCrosshair, clgame.ds.spriteColor );
+
+#if XASH_OGC
+	// size and colour picked in the menu of the split screen (player 1's crosshair is drawn here)
+	{
+		float scale = 1.0f;
+		int cr, cg, cb;
+
+		if( CL_SplitCrosshairStyle( 0, &scale, &cr, &cg, &cb ))
+		{
+			// framebuffer pixels: the point the crosshair is centred on is the one before the
+			// conversion to logical sizes
+			const float sx = scale / xscale, sy = scale / yscale;
+			const float cx = ( x + 0.5f * width ) / xscale + rx;
+			const float cy = ( y + 0.5f * height ) / yscale;
+
+			if( cr == 255 && cg == 255 && cb == 255 )
+			{
+				cr = clgame.ds.rgbaCrosshair[0];
+				cg = clgame.ds.rgbaCrosshair[1];
+				cb = clgame.ds.rgbaCrosshair[2];
+			}
+
+			CL_SplitDrawSpritePtr( clgame.ds.pCrosshair, &clgame.ds.rcCrosshair, cx - width * sx * 0.5f, cy - height * sy * 0.5f, sx, sy, cr, cg, cb, 255, kRenderTransColor );
+			return;
+		}
+	}
+#endif
 
 	cl_hud_nomargin = true;
 	pfnSPR_DrawHoles( 0, x, y, &clgame.ds.rcCrosshair );
@@ -1726,7 +1755,11 @@ const client_sprite_t *CL_SplitSpriteList( const char *file, int *count )
 // draws the rectangle prc of a sprite at x, y (framebuffer pixels) scaled by sx, sy
 void CL_SplitDrawSprite( HSPRITE hspr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode )
 {
-	const model_t *spr = CL_GetSpritePointer( hspr );
+	CL_SplitDrawSpritePtr( CL_GetSpritePointer( hspr ), prc, x, y, sx, sy, r, g, b, a, rendermode );
+}
+
+static void CL_SplitDrawSpritePtr( const model_t *spr, const wrect_t *prc, float x, float y, float sx, float sy, int r, int g, int b, int a, int rendermode )
+{
 	const model_t *saved = clgame.ds.pSprite;
 	float s1, t1, s2, t2, w, h;
 	int iw = 0, ih = 0, texnum;

@@ -25,6 +25,9 @@ GNU General Public License for more details.
 #include <ogc/ios.h>
 #include <ogc/usb.h>
 #include <ogc/usbmouse.h>
+#include <ogc/lwp.h>
+#include <tuxedo/thread.h>
+#include <tuxedo/ppc/exception.h>
 #include <wiikeyboard/keyboard.h>
 
 /*
@@ -824,6 +827,76 @@ static void OGC_FireStats_f( void )
 	ogc_firelog_n = 0;
 }
 
+
+/*
+Vigilante de cuelgues.
+
+Cuando el juego se congela no sale ninguna pantalla de excepcion, asi que no
+hay direcciones que resolver. Este hilo, con mas prioridad que el principal,
+mira un contador que Host_InputFrame incrementa en cada cuadro. Si el contador
+no se mueve durante wii_hangtrap segundos con la partida activa, el hilo
+principal esta atascado: se le pide a libogc la misma pantalla de excepcion
+de siempre, pero con el contexto GUARDADO del hilo principal (PC, LR y la
+cadena de pila de donde esta colgado). Esas direcciones se pegan en
+crash_addrs.txt igual que en un crash normal.
+Se reconoce porque la excepcion dice "Performance" (nunca ocurre sola).
+Solo funciona si el cuelgue deja correr las interrupciones; un bucle con las
+interrupciones apagadas no se puede detectar desde aqui.
+*/
+static CVAR_DEFINE_AUTO( wii_hangtrap, "20", FCVAR_ARCHIVE, "seconds without a frame before the game shows a crash screen with where it is stuck (0 = off)" );
+
+static volatile u32 ogc_wd_beat;
+static volatile int ogc_wd_armed;
+static KThread     *ogc_wd_main;
+static lwp_t        ogc_wd_thread;
+static u8           ogc_wd_stack[8192] ATTRIBUTE_ALIGN( 8 );
+
+static void *OGC_WatchdogMain( void *arg )
+{
+	u32 last = ogc_wd_beat;
+	u32 stalled = 0;
+
+	(void)arg;
+
+	for( ;; )
+	{
+		usleep( 250000 );
+
+		if( !ogc_wd_armed || ogc_wd_beat != last )
+		{
+			last = ogc_wd_beat;
+			stalled = 0;
+			continue;
+		}
+
+		stalled += 250;
+
+		if( wii_hangtrap.value >= 1.0f && stalled >= (u32)( wii_hangtrap.value * 1000.0f ) && ogc_wd_main )
+		{
+			PPCExcptCurPanicFn( PPC_EXCPT_PM, &ogc_wd_main->ctx );
+			stalled = 0;
+		}
+	}
+
+	return NULL;
+}
+
+static void OGC_WatchdogInit( void )
+{
+	Cvar_RegisterVariable( &wii_hangtrap );
+
+	ogc_wd_main = KThreadGetSelf();
+
+	if( LWP_CreateThread( &ogc_wd_thread, OGC_WatchdogMain, NULL, ogc_wd_stack, sizeof( ogc_wd_stack ), 100 ) != 0 )
+		ogc_wd_main = NULL;
+}
+
+static void OGC_WatchdogBeat( void )
+{
+	ogc_wd_armed = ( cls.state == ca_active && !cls.changelevel && !cls.changedemo );
+	ogc_wd_beat++;
+}
+
 static void OGC_GetRemoteTilt( float *roll, float *pitch );
 static void OGC_KeyboardFrame( void );
 static void OGC_MouseFrame( void );
@@ -836,6 +909,8 @@ void OGC_InputInit( void )
 	// to match the screen the engine thinks it is drawing to.
 	if( refState.width > 0 && refState.height > 0 )
 		WPAD_SetVRes( WPAD_CHAN_ALL, refState.width, refState.height );
+
+	OGC_WatchdogInit();
 
 	Cvar_RegisterVariable( &wii_ir );
 	Cvar_RegisterVariable( &wii_ir_deadzone );
@@ -1347,6 +1422,8 @@ void OGC_ButtonsFrame( void )
             Cvar_DirectSet( &wii_input_tune, "5" );
         }
     }
+
+	OGC_WatchdogBeat();
 
 	// teclado y raton USB, y la vibracion, no dependen de wii_buttons
 	OGC_KeyboardFrame();

@@ -1229,6 +1229,8 @@ void CL_SplitViewport( int player, int *vp );
 void CL_SplitHudSize( int *w, int *h );
 float CL_SplitViewAspect( int player );
 void CL_SplitFov( int player, float base, float *fov_x, float *fov_y );
+float CL_SplitBaseFov( int player );
+qboolean CL_SplitCrosshairStyle( int player, float *scale, int *r, int *g, int *b );
 void CL_SplitGunLimit( float *left, float *down, float halfx, float halfy );
 void CL_SplitGunAim( cl_entity_t *view, float left, float down, float halfx, float halfy );
 void CL_SplitRenderView( void );

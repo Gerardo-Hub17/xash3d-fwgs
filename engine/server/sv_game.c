@@ -383,6 +383,10 @@ static int SV_Multicast( int dest, const vec3_t origin, const edict_t *ent, qboo
 		return 0;
 	}
 
+	// the table of scores for the extra players of the split screen
+	if( usermessage )
+		SV_SplitSniffScore( &sv.multicast );
+
 	switch( dest )
 	{
 	case MSG_INIT:
