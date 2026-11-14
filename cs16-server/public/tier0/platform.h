@@ -41,7 +41,9 @@
 #endif
 
 // Used to step into the debugger
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(GEKKO)
+	#define DebuggerBreak() __builtin_trap() // int3 es x86; en PowerPC no existe
+#elif defined(__GNUC__) || defined(__clang__)
 	#define DebuggerBreak() __asm__ __volatile__("int3;")
 #else
 	#define DebuggerBreak() __debugbreak()
@@ -71,7 +73,7 @@
 // Can't use extern "C" when DLL exporting a global
 #define DLL_GLOBAL_EXPORT extern __declspec(dllexport)
 #define DLL_GLOBAL_IMPORT extern __declspec(dllimport)
-#elif defined __linux__
+#elif defined __linux__ || defined GEKKO
 
 // Used for dll exporting and importing
 #define DLL_EXPORT extern "C"
