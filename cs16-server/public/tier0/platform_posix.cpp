@@ -43,7 +43,7 @@ bool Plat_IsInDebugSession()
 	sysctl(mib, 4, &info, &size, NULL, 0);
 	bool result = ((info.kp_proc.p_flag & P_TRACED) == P_TRACED);
 	return result;
-#elif defined(_LINUX)
+#elif defined(_LINUX) && !defined(GEKKO)
 	char s[256];
 	snprintf(s, 256, "/proc/%d/cmdline", getppid());
 	FILE *fp = fopen(s, "r");
@@ -53,6 +53,9 @@ bool Plat_IsInDebugSession()
 		fclose(fp);
 		return (0 == strncmp(s, "gdb", 3));
 	}
+	return false;
+#else
+	// Wii (GEKKO): no hay /proc ni getppid() en newlib/libogc
 	return false;
 #endif
 }

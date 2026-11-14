@@ -607,6 +607,9 @@ bool SaveNavigationMap(const char *filename)
 
 #ifdef WIN32
 	int fd = _open(filename, _O_BINARY | _O_CREAT | _O_WRONLY, _S_IREAD | _S_IWRITE);
+#elif defined(GEKKO)
+	// libogc/newlib no trae creat(); open() con los mismos flags equivale
+	int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP);
 #else
 	int fd = creat(filename, S_IRUSR | S_IWUSR | S_IRGRP);
 #endif // WIN32
