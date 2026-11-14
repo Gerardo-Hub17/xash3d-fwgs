@@ -13,6 +13,10 @@ see CMakeLists.txt); every call is attributed to its call site and its caller's 
   line. "at" is the function that called malloc (operator new and Mem_Alloc show up here, which
   is why "from" exists); "from" is who called that one.
 
+  The [LIVE] lines are what matters for an out-of-memory: bytes still held per call site (frees
+  subtracted, blocks of 4 KB or more). The [ALLOC] ones are cumulative: a buffer that is allocated
+  and freed a hundred times looks big there.
+
   Totals are cumulative (frees are not subtracted), so a caller that allocates and frees the same
   buffer a hundred times looks big. A single allocation of 256 KB or more is also printed as it
   happens: [ALLOC-BIG].
@@ -28,6 +32,7 @@ extern void *__real_malloc( size_t size );
 extern void *__real_calloc( size_t n, size_t size );
 extern void *__real_realloc( void *ptr, size_t size );
 extern void *__real_memalign( size_t align, size_t size );
+extern void __real_free( void *ptr );
 
 #define AT_SLOTS	2048
 #define AT_BIG		( 256 * 1024 )
@@ -37,7 +42,23 @@ typedef struct
 	uint32_t	pc, pc2;
 	uint32_t	calls;
 	uint32_t	bytes;
+	int32_t	live;	// bytes of this call site that are still allocated (blocks >= AT_LIVE_MIN only)
 } at_entry_t;
+
+// live blocks: pointer -> size and call site, to subtract the frees
+#define AT_LIVE_SLOTS	16384
+#define AT_LIVE_MIN	4096
+#define AT_TOMB		1u
+
+typedef struct
+{
+	uint32_t	ptr;
+	uint32_t	size;
+	uint16_t	slot;
+} at_live_t;
+
+static at_live_t at_live[AT_LIVE_SLOTS];
+static uint32_t at_live_bytes, at_live_blocks, at_live_lost;
 
 static at_entry_t at_table[AT_SLOTS];
 static uint32_t at_total_calls, at_total_bytes, at_overflow;
@@ -65,10 +86,10 @@ static uint32_t at_caller2( uint32_t fw )
 	return ((volatile uint32_t *)fB )[1];
 }
 
-static void at_record( uint32_t pc, size_t size, uint32_t fw )
+static int at_record( uint32_t pc, size_t size, uint32_t fw )
 {
 	uint32_t pc2, h;
-	int i;
+	int i, slot = -1;
 
 	at_total_calls++;
 	at_total_bytes += (uint32_t)size;
@@ -90,6 +111,7 @@ static void at_record( uint32_t pc, size_t size, uint32_t fw )
 		{
 			e->calls++;
 			e->bytes += (uint32_t)size;
+			slot = (int)(( h + i ) % AT_SLOTS );
 			goto big;
 		}
 	}
@@ -101,30 +123,112 @@ big:
 		printf( "[ALLOC-BIG] %u KB at 0x%08x from 0x%08x\n", (unsigned)( size / 1024 ), pc, pc2 );
 		at_busy = 0;
 	}
+
+	return slot;
+}
+
+static void at_live_add( void *ptr, size_t size, int slot )
+{
+	uint32_t h, p = (uint32_t)ptr;
+	int i;
+
+	if( !ptr || size < AT_LIVE_MIN || slot < 0 )
+		return;
+
+	h = ( p >> 4 ) * 2654435761u;
+
+	for( i = 0; i < 64; i++ )
+	{
+		at_live_t *l = &at_live[( h + i ) % AT_LIVE_SLOTS];
+
+		if( l->ptr == 0 || l->ptr == AT_TOMB )
+		{
+			l->ptr = p;
+			l->size = (uint32_t)size;
+			l->slot = (uint16_t)slot;
+			at_table[slot].live += (int32_t)size;
+			at_live_bytes += (uint32_t)size;
+			at_live_blocks++;
+			return;
+		}
+	}
+
+	at_live_lost++;
+}
+
+static void at_live_del( void *ptr )
+{
+	uint32_t h, p = (uint32_t)ptr;
+	int i;
+
+	if( !ptr )
+		return;
+
+	h = ( p >> 4 ) * 2654435761u;
+
+	for( i = 0; i < 64; i++ )
+	{
+		at_live_t *l = &at_live[( h + i ) % AT_LIVE_SLOTS];
+
+		if( l->ptr == 0 )
+			return;
+
+		if( l->ptr == p )
+		{
+			at_table[l->slot].live -= (int32_t)l->size;
+			at_live_bytes -= l->size;
+			at_live_blocks--;
+			l->ptr = AT_TOMB;
+			return;
+		}
+	}
 }
 
 void *__wrap_malloc( size_t size )
 {
-	at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
-	return __real_malloc( size );
+	const int slot = at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
+	void *p = __real_malloc( size );
+
+	at_live_add( p, size, slot );
+	return p;
 }
 
 void *__wrap_calloc( size_t n, size_t size )
 {
-	at_record( (uint32_t)__builtin_return_address( 0 ), n * size, (uint32_t)__builtin_frame_address( 0 ));
-	return __real_calloc( n, size );
+	const int slot = at_record( (uint32_t)__builtin_return_address( 0 ), n * size, (uint32_t)__builtin_frame_address( 0 ));
+	void *p = __real_calloc( n, size );
+
+	at_live_add( p, n * size, slot );
+	return p;
 }
 
 void *__wrap_realloc( void *ptr, size_t size )
 {
-	at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
-	return __real_realloc( ptr, size );
+	const int slot = at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
+	void *p = __real_realloc( ptr, size );
+
+	if( p && size )
+	{
+		at_live_del( ptr );
+		at_live_add( p, size, slot );
+	}
+
+	return p;
 }
 
 void *__wrap_memalign( size_t align, size_t size )
 {
-	at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
-	return __real_memalign( align, size );
+	const int slot = at_record( (uint32_t)__builtin_return_address( 0 ), size, (uint32_t)__builtin_frame_address( 0 ));
+	void *p = __real_memalign( align, size );
+
+	at_live_add( p, size, slot );
+	return p;
+}
+
+void __wrap_free( void *ptr )
+{
+	at_live_del( ptr );
+	__real_free( ptr );
 }
 
 void OGC_AllocDump( void )
@@ -158,6 +262,34 @@ void OGC_AllocDump( void )
 	{
 		const at_entry_t *e = &at_table[top[k]];
 		Con_Printf( "[ALLOC] #%d at 0x%08x from 0x%08x : %u calls, %u KB\n", k + 1, e->pc, e->pc2, e->calls, e->bytes / 1024 );
+	}
+
+	// what is really held right now, by call site (blocks of 4 KB or more)
+	ntop = 0;
+
+	for( int s = 0; s < AT_SLOTS; s++ )
+	{
+		int k;
+
+		if( at_table[s].live <= 0 ) continue;
+
+		for( k = ntop; k > 0 && at_table[top[k - 1]].live < at_table[s].live; k-- )
+			if( k < TOP ) top[k] = top[k - 1];
+
+		if( k < TOP )
+		{
+			top[k] = s;
+			if( ntop < TOP ) ntop++;
+		}
+	}
+
+	Con_Printf( "[LIVE] %u KB in %u blocks of 4 KB or more are held now (%u not tracked)\n",
+		at_live_bytes / 1024, at_live_blocks, at_live_lost );
+
+	for( int k = 0; k < ntop; k++ )
+	{
+		const at_entry_t *e = &at_table[top[k]];
+		Con_Printf( "[LIVE] #%d at 0x%08x from 0x%08x : %d KB held (%u calls so far)\n", k + 1, e->pc, e->pc2, e->live / 1024, e->calls );
 	}
 
 	at_busy = 0;

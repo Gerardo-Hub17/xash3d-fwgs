@@ -741,6 +741,7 @@ qboolean SV_InitGame( qboolean silent )
 	COM_ResetLibraryError();
 
 	COM_GetCommonLibraryPath( LIBRARY_SERVER, dllpath, sizeof( dllpath ));
+	MEM_PHYS( "SV_InitGame: before SV_LoadProgs" );
 
 	if( !SV_LoadProgs( dllpath ))
 	{
@@ -948,6 +949,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	MEM_PHYS( "SV_SpawnServer begin" );
 	SV_SetupClients();
+	MEM_PHYS( "after SV_SetupClients" );
 
 	if( !SV_InitGame( false ))
 		return false;

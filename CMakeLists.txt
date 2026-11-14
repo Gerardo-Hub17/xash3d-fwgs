@@ -335,7 +335,7 @@ option(XASH_OGC_ALLOCTRACE "wrap malloc/calloc/realloc/memalign and report the t
 if(XASH_OGC_ALLOCTRACE)
     target_compile_definitions(xash PUBLIC -DXASH_OGC_ALLOCTRACE=1)
     target_link_options(xash PRIVATE
-        -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=memalign)
+        -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=memalign -Wl,--wrap=free)
 endif()
 
 option(XASH_OGC_HEAPPROBE "report free memory, pool totals and texture memory at each map load" OFF)

@@ -799,7 +799,7 @@ static byte *GX_Downscale2x( const byte *in, int outw, int outh, pixformat_t fmt
 	if( !in || !GX_GetSrcFmt( fmt, &s ))
 		return NULL;
 
-	byte *out = (byte *)malloc( (size_t)outw * outh * 4 );
+	byte *out = (byte *)Mem_Malloc( r_temppool, (size_t)outw * outh * 4 );
 	if( !out )
 		return NULL;
 
@@ -849,7 +849,7 @@ if( !in ) return NULL;
 if( inw == outw && inh == outh )
 return (byte *)in;
 
-byte *out = (byte *)malloc( outw * outh * 4 );
+byte *out = (byte *)Mem_Malloc( r_temppool, outw * outh * 4 );
 if( !out ) return (byte *)in;
 
 for( int y = 0; y < outh; y++ )
