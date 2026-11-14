@@ -379,6 +379,13 @@ void _Mem_EmptyPool( poolhandle_t poolptr, const char *filename, int fileline );
 void _Mem_Check( const char *filename, int fileline );
 qboolean Mem_IsAllocatedExt( poolhandle_t poolptr, void *data );
 void Mem_PrintStats( void );
+#if XASH_OGC
+void Mem_PhysReport( const char *tag );
+void Mem_PhysInit( void );
+#define MEM_PHYS( tag ) Mem_PhysReport( tag )
+#else
+#define MEM_PHYS( tag ) ((void)0)
+#endif
 void Mem_Stats_f( void );
 
 #define Mem_Malloc( pool, size ) _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )

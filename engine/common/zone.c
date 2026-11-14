@@ -30,9 +30,15 @@ GNU General Public License for more details.
 static void Mem_ReportOOM( size_t size )
 {
     struct mallinfo mi = mallinfo();
-    printf( "[OOM] request %u B | heap: sbrk'd %u KB, in use %u KB, free inside heap %u KB | "
-        "arena1 left %u KB, arena2 left %u KB\n",
-        (unsigned)size, (unsigned)mi.arena / 1024, (unsigned)mi.uordblks / 1024, (unsigned)mi.fordblks / 1024,
+    // NOTE: mi.arena / mi.uordblks are meaningless here: libogc2 starts the heap in MEM1 and
+    // jumps to MEM2, and newlib counts the ~256MB gap between them as heap. Only "free inside
+    // heap" and the arena1/arena2 left figures (physical memory not yet handed to malloc) mean anything.
+    printf( "[OOM] request %u B | free inside heap %u KB | arena1 left %u KB, arena2 left %u KB\n",
+        (unsigned)size, (unsigned)mi.fordblks / 1024,
+        (unsigned)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024,
+        (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
+    Con_Printf( S_ERROR "[OOM] request %u B | free inside heap %u KB | arena1 left %u KB, arena2 left %u KB\n",
+        (unsigned)size, (unsigned)mi.fordblks / 1024,
         (unsigned)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024,
         (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
     Mem_PrintStats();
@@ -668,6 +674,49 @@ void Mem_PrintStats( void )
 	Con_Printf( "^3%zu^7 memory pools, totalling: ^1%s\n", count, Q_memprint( size ));
 	Con_Printf( "total allocated size: ^1%s\n", Q_memprint( realsize ));
 }
+
+#if XASH_OGC
+/*
+===========
+Mem_PhysReport
+
+Wii: how much physical memory malloc has not touched yet, per stage. The mempools only
+account for what goes through Mem_Alloc; textures, the game DLLs and libc allocate straight
+from malloc, and the drop in "left" between two reports minus the drop in "pools" is that.
+Printed to the console (engine.log) and to the debug log. Also: console command "memphys".
+===========
+*/
+void Mem_PhysReport( const char *tag )
+{
+	static unsigned prev_left = 0, prev_pools = 0;
+	struct mallinfo mi = mallinfo();
+	size_t realsize = 0;
+	unsigned a1 = (unsigned)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024;
+	unsigned a2 = (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024;
+	unsigned left = a1 + a2, pools;
+
+	for( size_t i = 0; i < poolcount; i++ )
+		if( poolchain[i].filename )
+			realsize += poolchain[i].realsize;
+	pools = (unsigned)( realsize / 1024 );
+
+	Con_Printf( "[MEMPHYS] %s: MEM1 left %u KB, MEM2 left %u KB, free inside heap %u KB | pools %u KB"
+		" | since last: left %+d KB, pools %+d KB\n", tag, a1, a2, (unsigned)mi.fordblks / 1024, pools,
+		prev_left ? (int)left - (int)prev_left : 0, prev_left ? (int)pools - (int)prev_pools : 0 );
+	prev_left = left;
+	prev_pools = pools;
+}
+
+static void Mem_PhysReport_f( void )
+{
+	Mem_PhysReport( "memphys" );
+}
+
+void Mem_PhysInit( void )
+{
+	Cmd_AddCommand( "memphys", Mem_PhysReport_f, "Wii: physical memory left (MEM1/MEM2) vs mempool usage" );
+}
+#endif
 
 static void Mem_PrintList( size_t minallocationsize )
 {

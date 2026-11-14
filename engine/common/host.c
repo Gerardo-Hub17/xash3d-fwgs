@@ -1273,8 +1273,14 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 		Cvar_Get( "host_allow_changegame", "0", FCVAR_READ_ONLY, "allows to change games" );
 	}
 
+#if XASH_OGC
+	Mem_PhysInit();
+#endif
+	MEM_PHYS( "before SV_Init" );
 	SV_Init();
+	MEM_PHYS( "after SV_Init (server DLL)" );
 	CL_Init();
+	MEM_PHYS( "after CL_Init (client DLL, renderer, menu)" );
 
 	HTTP_Init();
 	SoundList_Init();

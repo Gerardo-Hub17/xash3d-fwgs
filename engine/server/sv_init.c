@@ -945,6 +945,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 {
 	int		i;
 
+	MEM_PHYS( "SV_SpawnServer begin" );
 	SV_SetupClients();
 
 	if( !SV_InitGame( false ))
