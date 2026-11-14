@@ -42,6 +42,9 @@ static void Mem_ReportOOM( size_t size )
         (unsigned)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024,
         (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
     Mem_PrintStats();
+#if XASH_OGC_ALLOCTRACE
+    OGC_AllocDump();
+#endif
 }
 #define MEM_REPORT_OOM( x ) Mem_ReportOOM( x )
 #else
@@ -710,6 +713,9 @@ void Mem_PhysReport( const char *tag )
 static void Mem_PhysReport_f( void )
 {
 	Mem_PhysReport( "memphys" );
+#if XASH_OGC_ALLOCTRACE
+	OGC_AllocDump();
+#endif
 }
 
 void Mem_PhysInit( void )

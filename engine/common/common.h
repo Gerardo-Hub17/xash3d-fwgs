@@ -383,6 +383,9 @@ void Mem_PrintStats( void );
 void Mem_PhysReport( const char *tag );
 void Mem_PhysInit( void );
 #define MEM_PHYS( tag ) Mem_PhysReport( tag )
+#if XASH_OGC_ALLOCTRACE
+void OGC_AllocDump( void );
+#endif
 #else
 #define MEM_PHYS( tag ) ((void)0)
 #endif

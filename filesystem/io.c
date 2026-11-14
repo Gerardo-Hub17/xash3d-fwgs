@@ -653,6 +653,10 @@ byte *FS_LoadFileFromArchive( searchpath_t *sp, const char *path, int pack_ind, 
 		return NULL;
 
 	filesize = file->real_length;
+#if XASH_OGC
+	if( filesize >= 512 * 1024 ) // diagnostic: which big file is being read when memory runs out
+		Con_Printf( "[FSBIG] %s: %li KB\n", path, (long)( filesize / 1024 ));
+#endif
 	buf = (byte *)pfnAlloc( filesize + 1 );
 
 	if( unlikely( !buf )) // TODO: indicate errors

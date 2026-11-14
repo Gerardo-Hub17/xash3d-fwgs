@@ -588,6 +588,7 @@ void SV_ActivateServer( int runPhysics )
 	if( !svs.initialized )
 		return;
 
+	MEM_PHYS( "SV_ActivateServer begin" );
 	MSG_Init( &msg, "ActivateServer", msg_buf, sizeof( msg_buf ));
 
 	// always clearing newunit variable
@@ -950,6 +951,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	if( !SV_InitGame( false ))
 		return false;
+	MEM_PHYS( "after SV_InitGame" );
 
 	Delta_Init(); // re-initialize delta
 
@@ -1063,7 +1065,9 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 		Cvar_SetValue( "gx_split_lod", lod );
 	}
 
+	MEM_PHYS( "before Mod_LoadWorld" );
 	sv.worldmodel = sv.models[WORLD_INDEX] = Mod_LoadWorld( sv.model_precache[WORLD_INDEX], true );
+	MEM_PHYS( "after Mod_LoadWorld" );
 	CRC32_MapFile( &sv.worldmapCRC, sv.model_precache[WORLD_INDEX], svs.maxclients > 1 );
 
 	if( FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ) && FS_FileExists( "progs.dat", false ))
@@ -1108,6 +1112,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	// pregenerate test packet
 	SV_GenerateTestPacket();
 
+	MEM_PHYS( "SV_SpawnServer end" );
 	return true;
 }
 

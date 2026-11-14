@@ -331,6 +331,13 @@ if(XASH_OGC_TEXDELAY AND TARGET ref_gx)
     target_compile_definitions(ref_gx PUBLIC -DXASH_OGC_TEXDELAY=${XASH_OGC_TEXDELAY})
 endif()
 
+option(XASH_OGC_ALLOCTRACE "wrap malloc/calloc/realloc/memalign and report the top callers by bytes (diagnostic)" ON)
+if(XASH_OGC_ALLOCTRACE)
+    target_compile_definitions(xash PUBLIC -DXASH_OGC_ALLOCTRACE=1)
+    target_link_options(xash PRIVATE
+        -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=memalign)
+endif()
+
 option(XASH_OGC_HEAPPROBE "report free memory, pool totals and texture memory at each map load" OFF)
 if(XASH_OGC_HEAPPROBE)
     target_compile_definitions(xash PUBLIC -DXASH_OGC_HEAPPROBE=1)
