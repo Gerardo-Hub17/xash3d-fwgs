@@ -997,7 +997,7 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
 		if( FBitSet( tex->flags, TF_ATLAS_PAGE ))
 			picked = ( gx_testmode == 14 ) ? GX_TF_RGB565 : GX_TF_RGBA8;
-		else if( picked == GX_TF_RGB565 && GX_SplitTexture( tex ) && !( tex->width & 7 ) && !( tex->height & 7 ))
+		else if(( picked == GX_TF_RGB565 || picked == GX_TF_RGBA8 ) && !( tex->width & 7 ) && !( tex->height & 7 ))
 		{
 			gx_srcfmt_t sf;
 
