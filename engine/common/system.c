@@ -472,9 +472,7 @@ void Sys_Quit( const char *reason )
 
     // FIX DSI en btpbuf_free: Apagar mandos antes del reset para detener Bluetooth/USB
     extern void WPAD_Shutdown(void);
-    extern void PAD_Shutdown(void);
     WPAD_Shutdown();
-    PAD_Shutdown();
     usleep( 150000 ); // Dar tiempo a libogc para limpiar los callbacks en vuelo
 
     SYS_ResetSystem( SYS_RETURNTOMENU, 0, 0 );
