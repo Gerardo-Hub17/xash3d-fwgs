@@ -469,6 +469,14 @@ void Sys_Quit( const char *reason )
     // Forzamos un reinicio inmediato del sistema para volver al menu de forma limpia.
     Con_Printf( "Saliendo de Xash3D... volviendo al menu de la Wii.\n" );
     usleep( 100000 ); // Dar tiempo a que se imprima el mensaje
+
+    // FIX DSI en btpbuf_free: Apagar mandos antes del reset para detener Bluetooth/USB
+    extern void WPAD_Shutdown(void);
+    extern void PAD_Shutdown(void);
+    WPAD_Shutdown();
+    PAD_Shutdown();
+    usleep( 150000 ); // Dar tiempo a libogc para limpiar los callbacks en vuelo
+
     SYS_ResetSystem( SYS_RETURNTOMENU, 0, 0 );
 #endif
 
