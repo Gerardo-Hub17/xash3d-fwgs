@@ -31,6 +31,21 @@ GNU General Public License for more details.
 #define CL_TEST_RETRIES       5
 
 CVAR_DEFINE_AUTO( showpause, "1", 0, "show pause logo when paused" );
+#if XASH_OGC
+CVAR_DEFINE_AUTO( wii_loadlog, "1", FCVAR_ARCHIVE, "Wii: write each model that a level loads to the log, synced to the SD card at once, to find where a load dies; 0 = off" );
+
+// [LOAD] line, synced, with how much memory is left
+static void CL_LoadLog( const char *what, const char *name )
+{
+	if( !wii_loadlog.value )
+		return;
+
+	Con_Printf( "[LOAD] %s %s\n", what, name );
+	OGC_DebugFlush();
+}
+#else
+#define CL_LoadLog( what, name ) ((void)0)
+#endif
 CVAR_DEFINE_AUTO( mp_decals, "300", FCVAR_ARCHIVE, "decals limit in multiplayer" );
 static CVAR_DEFINE_AUTO( dev_overview, "0", 0, "draw level in overview-mode" );
 static CVAR_DEFINE_AUTO( cl_resend, "6.0", 0, "time to resend connect" );
@@ -3390,6 +3405,8 @@ qboolean CL_PrecacheResources( void )
 		}
 	}
 
+	MEM_PHYS( "client: world and submodels loaded" );
+
 	if( cls.state != ca_active )
 		S_BeginRegistration();
 
@@ -3442,6 +3459,7 @@ qboolean CL_PrecacheResources( void )
 				{
 					if( pRes->nIndex != -1 )
 					{
+						CL_LoadLog( "model", pRes->szFileName );
 						cl.models[pRes->nIndex] = Mod_ForName( pRes->szFileName, false, true );
 
 						if( cl.models[pRes->nIndex] == NULL )
@@ -3456,6 +3474,7 @@ qboolean CL_PrecacheResources( void )
 					}
 					else
 					{
+						CL_LoadLog( "sprite", pRes->szFileName );
 						CL_LoadClientSprite( pRes->szFileName );
 					}
 				}
@@ -3490,8 +3509,12 @@ qboolean CL_PrecacheResources( void )
 	cl.nummodels = bound( 0, cl.nummodels, MAX_MODELS );
 	cl.numfiles = bound( 0, cl.numfiles, MAX_CUSTOM );
 
+	MEM_PHYS( "client: resources registered" );
+
 	if( cls.state != ca_active )
 		S_EndRegistration();
+
+	MEM_PHYS( "client: sounds registered" );
 
 	return true;
 }
@@ -3565,6 +3588,9 @@ static void CL_InitLocal( void )
 	cl.resourcesonhand.pNext = cl.resourcesonhand.pPrev = &cl.resourcesonhand;
 
 	Cvar_RegisterVariable( &cl_ticket_generator );
+#if XASH_OGC
+	Cvar_RegisterVariable( &wii_loadlog );
+#endif
 	Cvar_RegisterVariable( &cl_advertise_engine_in_name );
 	Cvar_RegisterVariable( &cl_log_outofband );
 	Cvar_RegisterVariable( &cl_autorecord );

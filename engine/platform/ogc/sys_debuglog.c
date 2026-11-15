@@ -60,6 +60,14 @@ void OGC_DebugPrint(const char *fmt, ...)
     fsync(fileno(g_log_fp));
 }
 
+/* fsync ahora: para los puntos de control de memoria y los informes antes de un error */
+void OGC_DebugFlush(void)
+{
+    if (!g_log_fp) return;
+    fflush(g_log_fp);
+    fsync(fileno(g_log_fp));
+}
+
 /* devoptab: redirige stdout/stderr a la SD */
 static ssize_t OGC_SDWrite(struct _reent *r, void *fd, const char *ptr, size_t len)
 {

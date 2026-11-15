@@ -385,6 +385,7 @@ void Mem_PhysInit( void );
 #define MEM_PHYS( tag ) Mem_PhysReport( tag )
 #if XASH_OGC_ALLOCTRACE
 void OGC_AllocDump( void );
+void OGC_AllocHint( const char *file, int line );
 #endif
 #else
 #define MEM_PHYS( tag ) ((void)0)

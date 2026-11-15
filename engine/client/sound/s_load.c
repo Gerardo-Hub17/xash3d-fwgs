@@ -99,6 +99,66 @@ static wavdata_t *S_CreateDefaultSound( void )
 	return sc;
 }
 
+#if XASH_OGC
+extern convar_t wii_lazy_sounds, wii_sound_cache_kb;
+
+/*
+=================
+S_TrimCache
+
+Wii: keep the samples in memory under wii_sound_cache_kb. Drops the samples of sounds that no
+channel is playing or is about to play; the sound itself (its handle) stays registered and
+S_LoadSound reads it again from disk the next time it is needed.
+=================
+*/
+static void S_TrimCache( size_t incoming )
+{
+	const size_t limit = (size_t)Q_max( 0.0f, wii_sound_cache_kb.value ) * 1024;
+	size_t used = 0;
+	sfx_t *sfx;
+	int i, c;
+
+	if( !limit || !snd.initialized )
+		return;
+
+	for( i = 0, sfx = s_knownSfx; i < s_numSfx; i++, sfx++ )
+	{
+		if( sfx->cache )
+			used += sfx->cache->size;
+	}
+
+	if( used + incoming <= limit )
+		return;
+
+	for( i = 1, sfx = s_knownSfx + 1; i < s_numSfx && used + incoming > limit; i++, sfx++ )
+	{
+		qboolean inuse = false;
+
+		if( !sfx->cache || !sfx->name[0] || !Q_stricmp( sfx->name, "*default" ))
+			continue;
+
+		for( c = 0; c < snd.total_channels && !inuse; c++ )
+		{
+			const channel_t *ch = &snd.channels[c];
+
+			if( ch->sfx == sfx || ( ch->data && ch->data == sfx->cache ))
+				inuse = true;
+
+			// words of a sentence that is being put together
+			for( const voxword_t *w = ch->words; w && w->sfx && !inuse; w++ )
+				inuse = ( w->sfx == sfx );
+		}
+
+		if( inuse )
+			continue;
+
+		used -= sfx->cache->size;
+		FS_FreeSound( sfx->cache );
+		sfx->cache = NULL;
+	}
+}
+#endif
+
 /*
 =================
 S_LoadSound
@@ -124,6 +184,10 @@ wavdata_t *S_LoadSound( sfx_t *sfx )
 
 #if XASH_OGC
 	prof_t0 = Platform_DoubleTime();
+#endif
+
+#if XASH_OGC
+	S_TrimCache( 256 * 1024 );
 #endif
 
 	// load it from disk
@@ -306,6 +370,16 @@ void S_EndRegistration( void )
 		if( sfx->servercount != cl.servercount )
 			S_FreeSound( sfx ); // don't need this sound
 	}
+
+#if XASH_OGC
+	// Wii: this loop reads every sound the server precached (hundreds in Counter-Strike) into RAM
+	// at once. They are read the first time they play instead, like on the PSP.
+	if( wii_lazy_sounds.value )
+	{
+		s_registering = false;
+		return;
+	}
+#endif
 
 	// load everything in
 	for( i = 0, sfx = s_knownSfx; i < s_numSfx; i++, sfx++ )

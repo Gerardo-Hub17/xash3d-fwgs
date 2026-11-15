@@ -1291,6 +1291,18 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 	if(( i = SV_ModelIndex( s )) == 0 )
 		return 0;
 
+#if XASH_OGC
+	{
+		extern convar_t wii_loadlog;
+		extern void OGC_DebugFlush( void );
+
+		if( wii_loadlog.value && !Host_IsDedicated( ))
+		{
+			Con_Printf( "[LOAD] precache %s\n", sv.model_precache[i] );
+			OGC_DebugFlush();
+		}
+	}
+#endif
 	sv.models[i] = Mod_ForName( sv.model_precache[i], false, true );
 
 	if( !optional )

@@ -197,6 +197,10 @@ void Mod_Init( void )
 		extern convar_t wii_preload_anims;
 		extern void Mod_MapCRC_f( void );
 		extern convar_t wii_preload_kb, wii_preload_reserve;
+		extern convar_t wii_cs_sharemodels, wii_cs_ctmodel, wii_cs_tmodel;
+		Cvar_RegisterVariable( &wii_cs_sharemodels );
+		Cvar_RegisterVariable( &wii_cs_ctmodel );
+		Cvar_RegisterVariable( &wii_cs_tmodel );
 		Cvar_RegisterVariable( &wii_preload_anims );
 		Cvar_RegisterVariable( &wii_preload_kb );
 		Cvar_RegisterVariable( &wii_preload_reserve );
@@ -252,6 +256,110 @@ void Mod_Shutdown( void )
 
 ===============================================================================
 */
+#if XASH_OGC
+/*
+==================
+Mod_ShareName
+
+Counter-Strike has nine player models (and models/player.mdl, which the server uses for hitboxes)
+of about 2 MB each: they have the same skeleton and sequences and differ in the skin. Loading
+all of them takes ~20 MB of the Wii's heap and the game never needs more than a couple at a
+time. cstrike-psp does what is done here: one model per team. Every model of a team is loaded
+as the same one (wii_cs_ctmodel / wii_cs_tmodel), and models/player.mdl as the CT one.
+
+wii_cs_sharemodels: 0 = every model on its own (original behaviour), 1 = one per team,
+2 = one for everybody. Only Counter-Strike (gamedir cstrike/czero) and only when the model
+that replaces the requested one exists.
+==================
+*/
+CVAR_DEFINE_AUTO( wii_cs_sharemodels, "1", FCVAR_ARCHIVE, "Wii: load one player model per team (CS 1.6) instead of all of them: 0 = all, 1 = one per team, 2 = one for everybody" );
+CVAR_DEFINE_AUTO( wii_cs_ctmodel, "gign", FCVAR_ARCHIVE, "Wii: the model that every CT player uses when wii_cs_sharemodels is on (gign, gsg9, sas, urban)" );
+CVAR_DEFINE_AUTO( wii_cs_tmodel, "terror", FCVAR_ARCHIVE, "Wii: the model that every terrorist uses when wii_cs_sharemodels is on (terror, leet, arctic, guerilla)" );
+
+static const char *const mod_cs_ct[] = { "gign", "gsg9", "sas", "urban", "vip", NULL };
+static const char *const mod_cs_t[] = { "arctic", "guerilla", "leet", "terror", NULL };
+
+static qboolean Mod_NameInList( const char *name, size_t len, const char *const *list )
+{
+	for( ; *list; list++ )
+	{
+		if( Q_strlen( *list ) == len && !Q_strnicmp( *list, name, len ))
+			return true;
+	}
+
+	return false;
+}
+
+static const char *Mod_ShareName( const char *filename, char *out, size_t outsize )
+{
+	const int level = (int)wii_cs_sharemodels.value;
+	static char seen[16][MAX_QPATH];
+	static int numseen;
+	qboolean ct;
+	const char *want;
+	int i;
+
+	if( level <= 0 || !filename )
+		return filename;
+
+	if( Q_strnicmp( GI->gamefolder, "cstrike", 7 ) && Q_strnicmp( GI->gamefolder, "czero", 5 ))
+		return filename;
+
+	if( !Q_stricmp( filename, "models/player.mdl" ))
+	{
+		ct = true;
+	}
+	else if( !Q_strnicmp( filename, "models/player/", 14 ))
+	{
+		// models/player/<name>/<name>.mdl
+		const char *dir = filename + 14, *slash = Q_strchr( dir, '/' );
+		size_t len;
+
+		if( !slash )
+			return filename;
+
+		len = slash - dir;
+
+		if( Q_strnicmp( slash + 1, dir, len ) || Q_stricmp( slash + 1 + len, ".mdl" ))
+			return filename;
+
+		if( Mod_NameInList( dir, len, mod_cs_ct ))
+			ct = true;
+		else if( Mod_NameInList( dir, len, mod_cs_t ))
+			ct = false;
+		else
+			return filename; // custom model, leave it alone
+	}
+	else
+	{
+		return filename;
+	}
+
+	want = ( ct || level >= 2 ) ? wii_cs_ctmodel.string : wii_cs_tmodel.string;
+
+	if( COM_StringEmptyOrNULL( want ))
+		return filename;
+
+	Q_snprintf( out, outsize, "models/player/%s/%s.mdl", want, want );
+
+	if( !Q_stricmp( out, filename ) || !FS_FileExists( out, false ))
+		return filename;
+
+	for( i = 0; i < numseen; i++ )
+	{
+		if( !Q_stricmp( seen[i], filename ))
+			return out;
+	}
+
+	if( numseen < ARRAYSIZE( seen ))
+		Q_strncpy( seen[numseen++], filename, sizeof( seen[0] ));
+
+	Con_Printf( "[SHARE] %s -> %s\n", filename, out );
+
+	return out;
+}
+#endif
+
 /*
 ==================
 Mod_FindName
@@ -265,7 +373,16 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 	model_t	*mod;
 	int	i;
 
+#if XASH_OGC
+	{
+		char shared[MAX_QPATH];
+
+		filename = Mod_ShareName( filename, shared, sizeof( shared ));
+		Q_strncpy( modname, filename, sizeof( modname ));
+	}
+#else
 	Q_strncpy( modname, filename, sizeof( modname ));
+#endif
 
 	// search the currently loaded models
 	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )

@@ -55,6 +55,10 @@ CVAR_DEFINE_AUTO( snd_mute_losefocus, "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "sile
 CVAR_DEFINE_AUTO( s_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( s_samplecount, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "sample count (0 for default value)" );
 CVAR_DEFINE_AUTO( s_warn_late_precache, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "warn about late precached sounds on client-side" );
+#if XASH_OGC
+CVAR_DEFINE_AUTO( wii_lazy_sounds, "1", FCVAR_ARCHIVE, "Wii: load a sound the first time it plays instead of loading every precached sound when the level starts (hundreds in Counter-Strike)" );
+CVAR_DEFINE_AUTO( wii_sound_cache_kb, "8192", FCVAR_ARCHIVE, "Wii: most KB of sound samples kept in memory; the ones nobody is playing are dropped (and reloaded when needed) above this. 0 = no limit" );
+#endif
 
 /*
 =============================================================================
@@ -1994,6 +1998,10 @@ qboolean S_Init( void )
 	Cvar_RegisterVariable( &s_test );
 	Cvar_RegisterVariable( &s_samplecount );
 	Cvar_RegisterVariable( &s_warn_late_precache );
+#if XASH_OGC
+	Cvar_RegisterVariable( &wii_lazy_sounds );
+	Cvar_RegisterVariable( &wii_sound_cache_kb );
+#endif
 
 	if( Sys_CheckParm( "-nosound" ))
 	{

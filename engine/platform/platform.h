@@ -583,5 +583,6 @@ qboolean VoiceCapture_Lock( qboolean lock );
 /* Debug log a SD (Wii). */
 void OGC_DebugPrint(const char *fmt, ...);
 void OGC_DebugInit(void);
+void OGC_DebugFlush(void); // fsync of the log
 
 #endif // PLATFORM_H
