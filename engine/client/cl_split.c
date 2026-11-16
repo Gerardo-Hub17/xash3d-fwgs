@@ -255,6 +255,36 @@ float CL_SplitViewAspect( int player )
 
 /*
 =============
+CL_SplitBaseFov
+
+The field of view a player asks for. Player 1 gets it from the client DLL, the
+others from their own entity (the crossbow, the sniper scope and so on set
+pev->fov; 0 means the normal one), so a zoom only changes that player's view.
+=============
+*/
+float CL_SplitBaseFov( int player )
+{
+	float fov;
+
+	if( player <= 0 )
+		return cl.local.scr_fov;
+
+	fov = SV_SplitGetFov( player );
+
+	if( fov >= 1.0f && fov <= 170.0f )
+		return fov;
+
+	{
+		const convar_t *var = Cvar_FindVar( "default_fov" );
+
+		fov = var ? var->value : 90.0f;
+	}
+
+	return fov >= 10.0f ? fov : 90.0f;
+}
+
+/*
+=============
 CL_SplitFov
 
 Each view keeps as much of the normal field of view as its shape allows: the
@@ -280,6 +310,31 @@ void CL_SplitFov( int player, float base, float *fov_x, float *fov_y )
 
 	*fov_x = RAD2DEG( atan( tx )) * 2.0f;
 	*fov_y = RAD2DEG( atan( tx / a )) * 2.0f;
+}
+
+#if XASH_OGC
+// free memory of the two Wii areas, for the breadcrumbs of the split screen (KB)
+static void CL_SplitMemLeft( unsigned *mem1, unsigned *mem2 )
+{
+	extern void *SYS_GetArena1Lo( void ), *SYS_GetArena1Hi( void ), *SYS_GetArena2Lo( void ), *SYS_GetArena2Hi( void );
+
+	*mem1 = (unsigned)((size_t)SYS_GetArena1Hi() - (size_t)SYS_GetArena1Lo()) / 1024;
+	*mem2 = (unsigned)((size_t)SYS_GetArena2Hi() - (size_t)SYS_GetArena2Lo()) / 1024;
+}
+#endif
+
+// one line in the log whenever something that could end in a freeze changes
+static void CL_SplitCrumb( const char *what, int player )
+{
+#if XASH_OGC
+	unsigned m1, m2;
+
+	CL_SplitMemLeft( &m1, &m2 );
+	Con_Printf( "[SPLIT] %s (player %d) cls.state %d sv %d maxclients %d arena MEM1 %uK MEM2 %uK\n", what, player + 1,
+		(int)cls.state, SV_Active(), cl.maxclients, m1, m2 );
+#else
+	Con_Printf( "[SPLIT] %s (player %d)\n", what, player + 1 );
+#endif
 }
 
 /*
@@ -308,6 +363,9 @@ void CL_SplitFrame( void )
 
 	if( !wanted )
 	{
+		if( split.active )
+			CL_SplitCrumb( "split screen off (map change, reload or disconnect)", 0 );
+
 		SV_SplitStopAll();
 		split.active = false;
 		S_SplitListeners( 0 );
@@ -344,6 +402,7 @@ void CL_SplitFrame( void )
 				{
 					VectorClear( p->angles );
 					p->warned = false;
+					CL_SplitCrumb( "extra player added", i );
 					p->animstart = 0.0;
 					p->firing = false;
 					p->firecount = SV_SplitGetFire( i, NULL );
@@ -398,7 +457,16 @@ void CL_SplitFrame( void )
 
 			// the game turned the player (spawn, teleport): start from those angles
 			if( SV_SplitTakeAngles( i, forced ))
-				VectorCopy( forced, p->angles );
+			{
+				// whatever the game sent, keep it a sane angle
+				if( !isfinite( forced[PITCH] ) || !isfinite( forced[YAW] ))
+					VectorClear( forced );
+
+				p->angles[PITCH] = bound( -89.0f, forced[PITCH], 89.0f );
+				p->angles[YAW] = anglemod( forced[YAW] );
+				p->angles[ROLL] = 0.0f;
+				Con_Reportf( "[SPLIT] player %d: new angles from the game %.0f %.0f\n", i + 1, p->angles[PITCH], p->angles[YAW] );
+			}
 
 			p->roll = p->tilt = 0.0f;
 
@@ -505,7 +573,7 @@ static void CL_SplitAimAngles( int player, const vec3_t camera, float px, float 
 	if( moveyaw )
 		*moveyaw = 0.0f;
 
-	CL_SplitFov( player, cl.local.scr_fov, &fx, &fy );
+	CL_SplitFov( player, CL_SplitBaseFov( player ), &fx, &fy );
 	tx = tanf( DEG2RAD( fx ) * 0.5f ) * bound( -1.0f, px, 1.0f );
 	ty = tanf( DEG2RAD( fy ) * 0.5f ) * bound( -1.0f, py, 1.0f );
 
@@ -521,8 +589,14 @@ static void CL_SplitAimAngles( int player, const vec3_t camera, float px, float 
 		return;
 
 	dyaw = RAD2DEG( atan2f( dir[1], dir[0] )) - camera[YAW];
-	while( dyaw > 180.0f ) dyaw -= 360.0f;
-	while( dyaw < -180.0f ) dyaw += 360.0f;
+
+	// not a loop: a huge or infinite yaw (a forced angle gone wrong) would never get below 180 and freeze the game
+	if( !isfinite( dyaw ))
+		return;
+
+	dyaw = fmodf( dyaw + 180.0f, 360.0f );
+	if( dyaw < 0.0f ) dyaw += 360.0f;
+	dyaw -= 180.0f;
 	dpitch = -RAD2DEG( atan2f( dir[2], flat )) - camera[PITCH];
 
 	aim[YAW] = camera[YAW] + dyaw;
@@ -938,7 +1012,7 @@ static qboolean CL_SplitSetupViewModel( int player, int entindex, const vec3_t o
 		const float sway = CL_SplitCvar( "wii_ir_gunsway", 0.0f );
 		const float shift = CL_SplitCvar( "wii_gun_shift", 0.0f );
 
-		CL_SplitFov( player, cl.local.scr_fov, &fx, &fy );
+		CL_SplitFov( player, CL_SplitBaseFov( player ), &fx, &fy );
 		tx = tanf( DEG2RAD( fx ) * 0.5f );
 		ty = tanf( DEG2RAD( fy ) * 0.5f );
 
@@ -1025,6 +1099,11 @@ void CL_SplitRenderView( void )
 		{
 			splitp_t *sp = &split.p[player];
 
+			if( sp->lasthealth > 0.0f && health <= 0.0f )
+				CL_SplitCrumb( "player died", player );
+			else if( sp->lasthealth <= 0.0f && health > 0.0f )
+				CL_SplitCrumb( "player spawned", player );
+
 			if( sp->lasthealth > 0.0f && health < sp->lasthealth )
 			{
 				const float lost = bound( 1.0f, sp->lasthealth - health, 50.0f );
@@ -1043,7 +1122,7 @@ void CL_SplitRenderView( void )
 		VectorAdd( split.p[player].angles, punch, rvp.viewangles );
 		rvp.viewentity = index;
 		rvp.flags = RF_DRAW_WORLD | RF_SPLIT_VIEW | RF_NO_VIEWMODEL | RF_SPLIT_COUNT_BITS( split.count );
-		CL_SplitFov( player, cl.local.scr_fov, &rvp.fov_x, &rvp.fov_y );
+		CL_SplitFov( player, CL_SplitBaseFov( player ), &rvp.fov_x, &rvp.fov_y );
 
 		// GL_RenderFrame changes these, the 2D code after the views still needs player 1's
 		VectorCopy( refState.vieworg, oldorg );

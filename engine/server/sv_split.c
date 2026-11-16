@@ -234,6 +234,8 @@ void SV_SplitStopAll( void )
 
 	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
 		SV_SplitStop( i );
+
+	SV_SplitClearScores( );
 }
 
 /*
@@ -391,6 +393,86 @@ qboolean SV_SplitTakeAngles( int player, vec3_t angles )
 	VectorCopy( p->fixed, angles );
 
 	return true;
+}
+
+/*
+=============
+SV_SplitSniffScore
+
+keeps the frags and deaths of every player out of the ScoreInfo broadcast, so the
+table of a dead extra player can be drawn without the client DLL
+=============
+*/
+static struct
+{
+	short	frags, deaths;
+	qboolean	valid;
+} sv_split_score[MAX_CLIENTS];
+
+void SV_SplitSniffScore( sizebuf_t *msg )
+{
+	const char *name = NULL;
+	int i, cmd, size = 0, idx;
+
+	for( i = 1; i < SPLIT_MAX_PLAYERS; i++ )
+		if( SV_SplitActive( i )) break;
+
+	if( i >= SPLIT_MAX_PLAYERS )
+		return;
+
+	MSG_SeekToBit( msg, 0, SEEK_SET );
+
+	if( MSG_GetNumBitsWritten( msg ) < 16 )
+		return;
+
+	cmd = MSG_ReadCmd( msg, NS_SERVER );
+
+	if( cmd <= svc_lastmsg )
+		return;
+
+	for( i = 0; i < MAX_USER_MESSAGES; i++ )
+	{
+		if( svgame.msg[i].number == cmd )
+		{
+			name = svgame.msg[i].name;
+			size = svgame.msg[i].size;
+			break;
+		}
+	}
+
+	if( !name || Q_strcmp( name, "ScoreInfo" ))
+		return;
+
+	if( size == -1 )
+		MSG_ReadWord( msg );
+
+	if( MSG_GetNumBitsLeft( msg ) < 40 )
+		return;
+
+	idx = MSG_ReadByte( msg ) - 1; // client index + 1
+
+	if( idx < 0 || idx >= MAX_CLIENTS )
+		return;
+
+	sv_split_score[idx].frags = (short)MSG_ReadShort( msg );
+	sv_split_score[idx].deaths = (short)MSG_ReadShort( msg );
+	sv_split_score[idx].valid = true;
+}
+
+qboolean SV_SplitGetScore( int client, int *frags, int *deaths )
+{
+	if( client < 0 || client >= MAX_CLIENTS || !sv_split_score[client].valid )
+		return false;
+
+	if( frags ) *frags = sv_split_score[client].frags;
+	if( deaths ) *deaths = sv_split_score[client].deaths;
+
+	return true;
+}
+
+void SV_SplitClearScores( void )
+{
+	memset( sv_split_score, 0, sizeof( sv_split_score ));
 }
 
 /*
@@ -692,6 +774,23 @@ qboolean SV_SplitGetViewModel( int player, int *modelindex, int *sequence, int *
 	if( animcount ) *animcount = p->animcount;
 
 	return true;
+}
+
+/*
+=============
+SV_SplitGetFov
+
+field of view the game set for a player (crossbow, scope), 0 = the default
+=============
+*/
+float SV_SplitGetFov( int player )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p || !SV_SplitActive( player ))
+		return 0.0f;
+
+	return p->edict->v.fov;
 }
 
 /*
