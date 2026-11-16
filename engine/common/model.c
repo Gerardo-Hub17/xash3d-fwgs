@@ -197,10 +197,14 @@ void Mod_Init( void )
 		extern convar_t wii_preload_anims;
 		extern void Mod_MapCRC_f( void );
 		extern convar_t wii_preload_kb, wii_preload_reserve;
-		extern convar_t wii_cs_sharemodels, wii_cs_ctmodel, wii_cs_tmodel;
+		extern convar_t wii_cs_sharemodels, wii_cs_modelreserve, wii_cs_ctmodel, wii_cs_tmodel;
+		extern convar_t wii_share_anims, wii_share_anims_kb;
 		Cvar_RegisterVariable( &wii_cs_sharemodels );
+		Cvar_RegisterVariable( &wii_cs_modelreserve );
 		Cvar_RegisterVariable( &wii_cs_ctmodel );
 		Cvar_RegisterVariable( &wii_cs_tmodel );
+		Cvar_RegisterVariable( &wii_share_anims );
+		Cvar_RegisterVariable( &wii_share_anims_kb );
 		Cvar_RegisterVariable( &wii_preload_anims );
 		Cvar_RegisterVariable( &wii_preload_kb );
 		Cvar_RegisterVariable( &wii_preload_reserve );
@@ -246,6 +250,12 @@ Mod_Shutdown
 void Mod_Shutdown( void )
 {
 	Mod_FreeAll();
+#if XASH_OGC
+	{
+		extern void Mod_StudioShareShutdown( void );
+		Mod_StudioShareShutdown();
+	}
+#endif
 	Mem_FreePool( &com_studiocache );
 }
 
@@ -262,19 +272,25 @@ void Mod_Shutdown( void )
 Mod_ShareName
 
 Counter-Strike has nine player models (and models/player.mdl, which the server uses for hitboxes)
-of about 2 MB each: they have the same skeleton and sequences and differ in the skin. Loading
-all of them takes ~20 MB of the Wii's heap and the game never needs more than a couple at a
-time. cstrike-psp does what is done here: one model per team. Every model of a team is loaded
-as the same one (wii_cs_ctmodel / wii_cs_tmodel), and models/player.mdl as the CT one.
+of about 2 MB each: they have the same skeleton and sequences and differ in the geometry and the
+skin. Loading all of them took ~20 MB of the Wii's heap. Their animations are shared (see
+Mod_StudioShareAnims in mod_studio.c) so every extra character is cheap and all of them can be
+loaded. This is the safety net for when there is not even that memory: a model that is asked for
+with too little free memory is loaded as the model of its team (wii_cs_ctmodel / wii_cs_tmodel),
+as models/player.mdl is loaded as the CT one. cstrike-psp does this with every model.
 
 wii_cs_sharemodels: 0 = every model on its own (original behaviour), 1 = one per team,
-2 = one for everybody. Only Counter-Strike (gamedir cstrike/czero) and only when the model
-that replaces the requested one exists.
+2 = one for everybody, 3 = every model on its own while there are wii_cs_modelreserve KB free
+(the decision is made once per model). Only Counter-Strike (gamedir cstrike/czero) and only when
+the model that replaces the requested one exists.
 ==================
 */
-CVAR_DEFINE_AUTO( wii_cs_sharemodels, "1", FCVAR_ARCHIVE, "Wii: load one player model per team (CS 1.6) instead of all of them: 0 = all, 1 = one per team, 2 = one for everybody" );
-CVAR_DEFINE_AUTO( wii_cs_ctmodel, "gign", FCVAR_ARCHIVE, "Wii: the model that every CT player uses when wii_cs_sharemodels is on (gign, gsg9, sas, urban)" );
-CVAR_DEFINE_AUTO( wii_cs_tmodel, "terror", FCVAR_ARCHIVE, "Wii: the model that every terrorist uses when wii_cs_sharemodels is on (terror, leet, arctic, guerilla)" );
+CVAR_DEFINE_AUTO( wii_cs_sharemodels, "3", FCVAR_ARCHIVE, "Wii: player models of CS 1.6: 0 = all of them, 1 = one per team, 2 = one for everybody, 3 = all of them while there is memory (wii_cs_modelreserve)" );
+CVAR_DEFINE_AUTO( wii_cs_modelreserve, "16384", FCVAR_ARCHIVE, "Wii: free KB under which a new player model is loaded as the model of its team (wii_cs_sharemodels 3)" );
+CVAR_DEFINE_AUTO( wii_cs_ctmodel, "gign", FCVAR_ARCHIVE, "Wii: the model that every CT player uses when models are shared (gign, gsg9, sas, urban)" );
+CVAR_DEFINE_AUTO( wii_cs_tmodel, "terror", FCVAR_ARCHIVE, "Wii: the model that every terrorist uses when models are shared (terror, leet, arctic, guerilla)" );
+
+extern size_t Mod_FreeMemoryKB( void );
 
 static const char *const mod_cs_ct[] = { "gign", "gsg9", "sas", "urban", "vip", NULL };
 static const char *const mod_cs_t[] = { "arctic", "guerilla", "leet", "terror", NULL };
@@ -293,9 +309,10 @@ static qboolean Mod_NameInList( const char *name, size_t len, const char *const 
 static const char *Mod_ShareName( const char *filename, char *out, size_t outsize )
 {
 	const int level = (int)wii_cs_sharemodels.value;
-	static char seen[16][MAX_QPATH];
+	static char seen[32][MAX_QPATH];
+	static qboolean alias[32];
 	static int numseen;
-	qboolean ct;
+	qboolean ct, useout;
 	const char *want;
 	int i;
 
@@ -335,7 +352,7 @@ static const char *Mod_ShareName( const char *filename, char *out, size_t outsiz
 		return filename;
 	}
 
-	want = ( ct || level >= 2 ) ? wii_cs_ctmodel.string : wii_cs_tmodel.string;
+	want = ( ct || level == 2 ) ? wii_cs_ctmodel.string : wii_cs_tmodel.string;
 
 	if( COM_StringEmptyOrNULL( want ))
 		return filename;
@@ -348,15 +365,24 @@ static const char *Mod_ShareName( const char *filename, char *out, size_t outsiz
 	for( i = 0; i < numseen; i++ )
 	{
 		if( !Q_stricmp( seen[i], filename ))
-			return out;
+			return alias[i] ? out : filename;
 	}
 
-	if( numseen < ARRAYSIZE( seen ))
-		Q_strncpy( seen[numseen++], filename, sizeof( seen[0] ));
+	// no room to remember the decision: a model that is not in the table is never replaced in "auto"
+	if( numseen >= ARRAYSIZE( seen ))
+		return ( level >= 3 ) ? filename : out;
 
-	Con_Printf( "[SHARE] %s -> %s\n", filename, out );
+	// first time this model is asked for: decide now and do not change it in the middle of a level
+	if( level >= 3 )
+		useout = Mod_FreeMemoryKB() < (size_t)Q_max( 0.0f, wii_cs_modelreserve.value );
+	else useout = true;
 
-	return out;
+	Q_strncpy( seen[numseen], filename, sizeof( seen[0] ));
+	alias[numseen++] = useout;
+
+	Con_Printf( "[SHARE] %s %s %s (free %i KB)\n", filename, useout ? "->" : "kept, not", out, (int)Mod_FreeMemoryKB( ));
+
+	return useout ? out : filename;
 }
 #endif
 
@@ -793,8 +819,22 @@ Mod_ValidateCRC
 */
 qboolean Mod_ValidateCRC( const char *name, uint32_t crc )
 {
-	model_t *mod = Mod_FindName( name, true );
-	model_info_t *p = &mod_crcinfo[mod - mod_known];
+	model_t *mod;
+	model_info_t *p;
+
+#if XASH_OGC
+	{
+		// a model that is loaded as another one (Mod_ShareName) is never loaded under its own name:
+		// there is no CRC of it to compare, and the one of the replacement is not its CRC
+		char shared[MAX_QPATH];
+
+		if( Mod_ShareName( name, shared, sizeof( shared )) != name )
+			return true;
+	}
+#endif
+
+	mod = Mod_FindName( name, true );
+	p = &mod_crcinfo[mod - mod_known];
 
 	if( !FBitSet( p->flags, FCRC_CHECKSUM_DONE ))
 		return true;

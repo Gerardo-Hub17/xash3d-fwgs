@@ -949,23 +949,33 @@ static void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qbo
 Mod_GetStudioBounds
 ====================
 */
+static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buffersize );
+
 qboolean Mod_GetStudioBounds( const char *name, vec3_t mins, vec3_t maxs )
 {
 	int	result = false;
+	fs_offset_t	filesize = 0;
 	byte	*f;
 
 	if( !Q_strstr( name, "models" ) || !Q_strstr( name, ".mdl" ))
 		return false;
 
-	f = FS_LoadFile( name, NULL, false );
+	f = FS_LoadFile( name, &filesize, false );
 	if( !f ) return false;
 
-	if( *(uint *)f == IDSTUDIOHEADER )
+	// the file is little-endian: on a big-endian machine (Wii) the identifier is read swapped,
+	// and the whole model has to be swapped before its bones and animations can be evaluated
+	if( filesize >= (fs_offset_t)sizeof( studiohdr_t ) && LittleLong( *(uint *)f ) == IDSTUDIOHEADER )
 	{
-		VectorClear( mins );
-		VectorClear( maxs );
-		Mod_StudioComputeBounds( f, mins, maxs, false );
-		result = true;
+#if XASH_BIG_ENDIAN
+		if( Mod_SwapStudioModel( name, f, filesize ))
+#endif
+		{
+			VectorClear( mins );
+			VectorClear( maxs );
+			Mod_StudioComputeBounds( f, mins, maxs, false );
+			result = true;
+		}
 	}
 	Mem_Free( f );
 
@@ -1139,7 +1149,7 @@ void Mod_ResetPreloadBudget( void )
 }
 
 // memoria libre real: lo que queda sin pedir en MEM2 mas los huecos libres del heap de newlib
-static size_t Mod_FreeMemoryKB( void )
+size_t Mod_FreeMemoryKB( void )
 {
 #if XASH_OGC
     struct mallinfo mi = mallinfo();
@@ -1291,6 +1301,583 @@ static studiohdr_t *R_StudioLoadHeader( model_t *mod, void *buffer, size_t buffe
 	return (studiohdr_t *)buffer;
 }
 
+#if XASH_OGC
+/*
+=================
+Mod_StudioShareAnims
+
+Wii: the player models of Counter-Strike (gign, gsg9, sas, urban, arctic, guerilla, leet, terror
+and models/player.mdl) are ~2 MB each, and ~1.6 MB of that are animations. Their skeleton and
+sequences are the same: most of the animation data is byte for byte equal between the models,
+only the geometry and the skin change. So that every character can be a different model without
+paying 2 MB for each one, the animation data of a player model is moved out of the model
+into a pool that all of them share: an animation block that was already seen is not kept twice,
+the sequence just points to the copy that is already in the pool (what cstrike-psp does).
+
+The model keeps the rest (bones, hitboxes, sequence descriptions, geometry, skin) in a
+compact buffer. Everything is checked before anything is changed, and if anything looks
+unusual the model is kept the way it was (returns NULL and says why).
+
+An animation block of a sequence goes from its animindex up to the next structure of the model
+(the next sequence block, the bodyparts, the textures...). It is only moved when the whole
+block is self-contained: every animation value that the bones of the sequence read lies inside
+it, so the pooled copy is read exactly like the original.
+=================
+*/
+CVAR_DEFINE_AUTO( wii_share_anims, "1", FCVAR_ARCHIVE, "Wii: player models (models/player*) share the animation data they have in common, each extra character costs a fraction of the RAM. 0 = off" );
+CVAR_DEFINE_AUTO( wii_share_anims_kb, "8192", FCVAR_ARCHIVE, "Wii: most KB of animation data held by the shared pool" );
+
+#ifndef ANIMSHARE_PTR32
+#define ANIMSHARE_PTR32		( sizeof( void * ) == 4 )
+#endif
+
+#define ANIMSHARE_SLAB		( 256 * 1024 )
+#define ANIMSHARE_MAXBLOCKS	2048
+#define ANIMSHARE_HASH		4096	// power of two, bigger than MAXBLOCKS
+#define ANIMSHARE_MINBLOCK	256
+#define ANIMSHARE_MAXOTHER	4096
+#define ANIMSHARE_MAXPARTS	256
+
+typedef struct
+{
+	byte	*data;
+	uint	size;
+	uint	hash;
+} animblock_t;
+
+typedef struct
+{
+	int	start;	// offsets in the model that are taken out
+	int	end;
+	byte	*data;	// where the block lives now
+} animcut_t;
+
+static poolhandle_t	anim_pool;
+static animblock_t	anim_blocks[ANIMSHARE_MAXBLOCKS];
+static short		anim_hash[ANIMSHARE_HASH];	// block index + 1, 0 = free
+static int		anim_numblocks;
+static size_t		anim_bytes;
+static byte		*anim_slab;
+static size_t		anim_slab_left;
+
+// scratch, the model loads one at a time
+static int		anim_other[ANIMSHARE_MAXOTHER];	// offsets of everything that is not an animation block
+static int		anim_numother;
+static int		anim_starts[MAXSTUDIOSEQUENCES];
+static animcut_t	anim_cuts[MAXSTUDIOSEQUENCES];
+static byte		*anim_seqdata[MAXSTUDIOSEQUENCES];
+
+static int Mod_AnimCompareInt( const void *a, const void *b )
+{
+	const int x = *(const int *)a, y = *(const int *)b;
+
+	return ( x > y ) - ( x < y );
+}
+
+static uint Mod_AnimHash( const byte *data, uint size )
+{
+	uint h = 2166136261u;
+	uint i;
+
+	for( i = 0; i < size; i++ )
+	{
+		h ^= data[i];
+		h *= 16777619u;
+	}
+
+	return h;
+}
+
+// the block in the pool that is byte for byte equal to this one
+static byte *Mod_AnimFind( const byte *data, uint size, uint hash )
+{
+	uint slot = hash & ( ANIMSHARE_HASH - 1 );
+
+	while( anim_hash[slot] )
+	{
+		const animblock_t *b = &anim_blocks[anim_hash[slot] - 1];
+
+		if( b->hash == hash && b->size == size && !memcmp( b->data, data, size ))
+			return b->data;
+
+		slot = ( slot + 1 ) & ( ANIMSHARE_HASH - 1 );
+	}
+
+	return NULL;
+}
+
+// copy of the block into the pool; NULL when the pool is full
+static byte *Mod_AnimAdd( const byte *data, uint size, uint hash )
+{
+	const size_t asize = ( size + 7 ) & ~(size_t)7;
+	const size_t cap = (size_t)Q_max( 0.0f, wii_share_anims_kb.value ) * 1024;
+	uint slot;
+	byte *p;
+
+	if( anim_numblocks >= ANIMSHARE_MAXBLOCKS || anim_bytes + asize > cap )
+		return NULL;
+
+	if( !anim_pool )
+		anim_pool = Mem_AllocPool( "animation share" );
+
+	if( asize > ANIMSHARE_SLAB / 4 )
+	{
+		p = Mem_Malloc( anim_pool, asize );
+	}
+	else
+	{
+		if( asize > anim_slab_left )
+		{
+			anim_slab = Mem_Malloc( anim_pool, ANIMSHARE_SLAB );
+			anim_slab_left = ANIMSHARE_SLAB;
+		}
+
+		p = anim_slab + ( ANIMSHARE_SLAB - anim_slab_left );
+		anim_slab_left -= asize;
+	}
+
+	memcpy( p, data, size );
+
+	anim_blocks[anim_numblocks].data = p;
+	anim_blocks[anim_numblocks].size = size;
+	anim_blocks[anim_numblocks].hash = hash;
+	anim_numblocks++;
+	anim_bytes += asize;
+
+	slot = hash & ( ANIMSHARE_HASH - 1 );
+	while( anim_hash[slot] )
+		slot = ( slot + 1 ) & ( ANIMSHARE_HASH - 1 );
+	anim_hash[slot] = (short)anim_numblocks;
+
+	return p;
+}
+
+void Mod_StudioShareShutdown( void )
+{
+	if( anim_pool )
+		Mem_FreePool( &anim_pool );
+
+	anim_pool = 0;
+	anim_slab = NULL;
+	anim_slab_left = 0;
+	anim_numblocks = 0;
+	anim_bytes = 0;
+	memset( anim_hash, 0, sizeof( anim_hash ));
+}
+
+static qboolean Mod_AnimOther( int offset, int limit )
+{
+	if( offset == 0 )
+		return true;
+
+	if( offset < (int)sizeof( studiohdr_t ) || offset > limit || anim_numother >= ANIMSHARE_MAXOTHER )
+		return false;
+
+	anim_other[anim_numother++] = offset;
+	return true;
+}
+
+// the array [offset, offset + count * size) is inside the part of the model that is kept
+static qboolean Mod_AnimArray( int offset, int count, size_t size, int maxcount, int limit )
+{
+	if( count < 0 || count > maxcount )
+		return false;
+
+	if( count == 0 )
+		return true;
+
+	return ( offset & 3 ) == 0 && offset >= (int)sizeof( studiohdr_t ) && offset <= limit && (size_t)offset + (size_t)count * size <= (size_t)limit;
+}
+
+// every value the bones of the sequence read stays inside [start, end)
+static qboolean Mod_AnimBlockOk( const byte *base, int start, int end, int numbones, const mstudioseqdesc_t *seq )
+{
+	const int numanims = seq->numblends * numbones;
+	int n, k;
+
+	if( seq->numblends <= 0 || seq->numblends > 16 || seq->numframes <= 0 || seq->numframes > 1024 )
+		return false;
+
+	if( numanims <= 0 || (size_t)numanims * sizeof( mstudioanim_t ) > (size_t)( end - start ))
+		return false;
+
+	for( n = 0; n < numanims; n++ )
+	{
+		const mstudioanim_t *panim = (const mstudioanim_t *)( base + start ) + n;
+
+		for( k = 0; k < 6; k++ )
+		{
+			int frames = seq->numframes;
+			int pos;
+
+			if( panim->offset[k] == 0 )
+				continue;
+
+			pos = (int)( (const byte *)panim - base ) + panim->offset[k];
+
+			while( frames > 0 )
+			{
+				const mstudioanimvalue_t *pv;
+				int valid, total;
+
+				if( pos < start || pos + 2 > end )
+					return false;
+
+				pv = (const mstudioanimvalue_t *)( base + pos );
+				valid = pv->num.valid;
+				total = pv->num.total;
+
+				if( total <= 0 || pos + 2 + valid * 2 > end )
+					return false;
+
+				pos += 2 + valid * 2;
+				frames -= total;
+			}
+		}
+	}
+
+	return true;
+}
+
+// new offset of one that is kept, after the cuts are taken out
+static int Mod_AnimMap( int offset, int numcuts )
+{
+	int i, shift = 0;
+
+	if( offset <= 0 )
+		return offset;
+
+	for( i = 0; i < numcuts && anim_cuts[i].end <= offset; i++ )
+		shift += anim_cuts[i].end - anim_cuts[i].start;
+
+	return offset - shift;
+}
+
+#define ANIM_FAIL( msg ) do { *why = ( msg ); return NULL; } while( 0 )
+
+static studiohdr_t *Mod_StudioShareAnims( model_t *mod, const char **why )
+{
+	studiohdr_t	*phdr = (studiohdr_t *)mod->cache.data;
+	byte		*base = (byte *)phdr;
+	studiohdr_t	old;
+	mstudioseqdesc_t	*pseq;
+	mstudiobodyparts_t	*pbody;
+	int		limit, numseq, numbones, numcuts = 0, numstarts = 0;
+	int		i, j, k, nfound = 0, nadded = 0, nbytes = 0, newlen;
+	size_t		oldlen;
+
+	*why = NULL;
+
+	if( !wii_share_anims.value || Q_strnicmp( mod->name, "models/player", 13 ))
+		return NULL;
+
+	// the pooled block is reached with an int offset from the model: true in a 32 bit address space
+	if( !ANIMSHARE_PTR32 )
+	{
+		*why = "only for 32 bit";
+		return NULL;
+	}
+
+	old = *phdr;
+	limit = old.texturedataindex;
+	numseq = old.numseq;
+	numbones = old.numbones;
+
+	if( old.studiohdr2index != 0 || old.unused != 0 || old.unused2 != 0 || old.unused3 != 0 )
+		ANIM_FAIL( "extended model header" );
+
+	if( limit < (int)sizeof( studiohdr_t ) || limit > old.length )
+		ANIM_FAIL( "no texture base" );
+
+	if( numseq <= 0 || numseq > MAXSTUDIOSEQUENCES || numbones <= 0 || numbones > MAXSTUDIOBONES )
+		ANIM_FAIL( "sequences or bones out of range" );
+
+	// everything that is not an animation block
+	anim_numother = 0;
+
+	if( !Mod_AnimOther( old.boneindex, limit ) || !Mod_AnimOther( old.bonecontrollerindex, limit ) ||
+		!Mod_AnimOther( old.hitboxindex, limit ) || !Mod_AnimOther( old.seqindex, limit ) ||
+		!Mod_AnimOther( old.seqgroupindex, limit ) || !Mod_AnimOther( old.textureindex, limit ) ||
+		!Mod_AnimOther( old.texturedataindex, limit ) || !Mod_AnimOther( old.skinindex, limit ) ||
+		!Mod_AnimOther( old.bodypartindex, limit ) || !Mod_AnimOther( old.attachmentindex, limit ) ||
+		!Mod_AnimOther( old.transitionindex, limit ))
+		ANIM_FAIL( "bad header offsets" );
+
+	if( !Mod_AnimArray( old.seqindex, numseq, sizeof( mstudioseqdesc_t ), MAXSTUDIOSEQUENCES, limit ) || old.seqindex == 0 )
+		ANIM_FAIL( "bad sequence array" );
+
+	if( !Mod_AnimArray( old.bodypartindex, old.numbodyparts, sizeof( mstudiobodyparts_t ), ANIMSHARE_MAXPARTS, limit ))
+		ANIM_FAIL( "bad bodypart array" );
+
+	pseq = (mstudioseqdesc_t *)( base + old.seqindex );
+
+	for( i = 0; i < numseq; i++ )
+	{
+		const mstudioseqdesc_t *s = &pseq[i];
+
+		// pivots and automove tables (classic format): never seen, not handled
+		if( s->weightlistindex != 0 || s->iklockindex != 0 || s->autolayerindex != 0 || s->keyvalueindex != 0 )
+			ANIM_FAIL( "sequence with pivots or automove" );
+
+		if( s->numevents != 0 && !Mod_AnimArray( s->eventindex, s->numevents, sizeof( mstudioevent_t ), 1024, limit ))
+			ANIM_FAIL( "bad event array" );
+
+		if( !Mod_AnimOther( s->eventindex, limit ))
+			ANIM_FAIL( "bad event offset" );
+
+		anim_seqdata[i] = NULL;
+
+		if( s->seqgroup == 0 )
+		{
+			if( s->animindex < (int)sizeof( studiohdr_t ) || s->animindex >= limit || ( s->animindex & 1 ))
+				ANIM_FAIL( "bad animation offset" );
+
+			anim_starts[numstarts++] = s->animindex;
+		}
+	}
+
+	pbody = (mstudiobodyparts_t *)( base + old.bodypartindex );
+
+	for( i = 0; i < old.numbodyparts; i++ )
+	{
+		mstudiomodel_t *pmodel;
+
+		if( !Mod_AnimArray( pbody[i].modelindex, pbody[i].nummodels, sizeof( mstudiomodel_t ), ANIMSHARE_MAXPARTS, limit ) ||
+			!Mod_AnimOther( pbody[i].modelindex, limit ))
+			ANIM_FAIL( "bad model array" );
+
+		pmodel = (mstudiomodel_t *)( base + pbody[i].modelindex );
+
+		for( j = 0; j < pbody[i].nummodels; j++ )
+		{
+			mstudiomesh_t *pmesh;
+
+			// classic "numgroups / groupindex": deformation groups, never used
+			if( pmodel[j].blendvertinfoindex != 0 || pmodel[j].blendnorminfoindex != 0 )
+				ANIM_FAIL( "model with deformation groups" );
+
+			if( !Mod_AnimOther( pmodel[j].meshindex, limit ) || !Mod_AnimOther( pmodel[j].vertinfoindex, limit ) ||
+				!Mod_AnimOther( pmodel[j].vertindex, limit ) || !Mod_AnimOther( pmodel[j].norminfoindex, limit ) ||
+				!Mod_AnimOther( pmodel[j].normindex, limit ))
+				ANIM_FAIL( "bad model offsets" );
+
+			if( !Mod_AnimArray( pmodel[j].meshindex, pmodel[j].nummesh, sizeof( mstudiomesh_t ), ANIMSHARE_MAXPARTS, limit ))
+				ANIM_FAIL( "bad mesh array" );
+
+			pmesh = (mstudiomesh_t *)( base + pmodel[j].meshindex );
+
+			for( k = 0; k < pmodel[j].nummesh; k++ )
+			{
+				if( !Mod_AnimOther( pmesh[k].triindex, limit ) || !Mod_AnimOther( pmesh[k].unused, limit ))
+					ANIM_FAIL( "bad mesh offsets" );
+			}
+		}
+	}
+
+	qsort( anim_other, anim_numother, sizeof( anim_other[0] ), Mod_AnimCompareInt );
+	qsort( anim_starts, numstarts, sizeof( anim_starts[0] ), Mod_AnimCompareInt );
+
+	// one block per distinct animindex: from there to the next thing in the model.
+	// every block has to keep to itself, also the ones that stay: a sequence that reads the data
+	// of another block would read what is no longer there
+	for( i = 0; i < numstarts; i++ )
+	{
+		int start = anim_starts[i], end = limit, lo, hi;
+		qboolean claimed;
+
+		if( i > 0 && start == anim_starts[i - 1] )
+			continue;
+
+		// a block starts where something else starts: not clear what it is, it stays
+		lo = 0;
+		hi = anim_numother;
+		while( lo < hi )
+		{
+			const int mid = ( lo + hi ) / 2;
+
+			if( anim_other[mid] <= start )
+				lo = mid + 1;
+			else hi = mid;
+		}
+
+		claimed = lo > 0 && anim_other[lo - 1] == start;
+
+		if( lo < anim_numother && anim_other[lo] < end )
+			end = anim_other[lo];
+
+		for( j = i + 1; j < numstarts; j++ )
+		{
+			if( anim_starts[j] != start )
+			{
+				if( anim_starts[j] < end )
+					end = anim_starts[j];
+				break;
+			}
+		}
+
+		for( j = 0; j < numseq; j++ )
+		{
+			if( pseq[j].seqgroup == 0 && pseq[j].animindex == start && !Mod_AnimBlockOk( base, start, end, numbones, &pseq[j] ))
+				ANIM_FAIL( "a sequence reads outside of its own animation block" );
+		}
+
+		// what is left behind moves down by what is cut: keep the 4 byte alignment of the structures
+		// (what is left of the block, up to 3 bytes of padding, stays; if it is not padding the block stays)
+		end = start + ( ( end - start ) & ~3 );
+
+		if( claimed || end - start < ANIMSHARE_MINBLOCK )
+			continue;
+
+		for( j = 0; j < numseq; j++ )
+		{
+			if( pseq[j].seqgroup == 0 && pseq[j].animindex == start && !Mod_AnimBlockOk( base, start, end, numbones, &pseq[j] ))
+				break;
+		}
+
+		if( j < numseq )
+			continue;
+
+		anim_cuts[numcuts].start = start;
+		anim_cuts[numcuts].end = end;
+		anim_cuts[numcuts].data = NULL;
+		numcuts++;
+	}
+
+	if( numcuts == 0 )
+		ANIM_FAIL( "no animation block could be taken out" );
+
+	// into the pool (or to the copy that is already there); the ones that do not fit stay in the model
+	for( i = j = 0; i < numcuts; i++ )
+	{
+		const uint size = anim_cuts[i].end - anim_cuts[i].start;
+		const uint hash = Mod_AnimHash( base + anim_cuts[i].start, size );
+		byte *data = Mod_AnimFind( base + anim_cuts[i].start, size, hash );
+
+		if( data )
+		{
+			nfound++;
+		}
+		else
+		{
+			data = Mod_AnimAdd( base + anim_cuts[i].start, size, hash );
+
+			if( !data )
+				continue;
+
+			nadded++;
+		}
+
+		anim_cuts[j] = anim_cuts[i];
+		anim_cuts[j].data = data;
+		nbytes += size;
+		j++;
+	}
+
+	numcuts = j;
+
+	if( numcuts == 0 )
+		ANIM_FAIL( "the pool is full" );
+
+	// from here on nothing can fail
+	for( i = 0; i < numseq; i++ )
+	{
+		if( pseq[i].seqgroup != 0 )
+			continue;
+
+		for( j = 0; j < numcuts; j++ )
+		{
+			if( anim_cuts[j].start == pseq[i].animindex )
+			{
+				anim_seqdata[i] = anim_cuts[j].data;
+				break;
+			}
+		}
+	}
+
+	// the offsets of what is kept (at the place where they are now)
+	phdr->boneindex = Mod_AnimMap( old.boneindex, numcuts );
+	phdr->bonecontrollerindex = Mod_AnimMap( old.bonecontrollerindex, numcuts );
+	phdr->hitboxindex = Mod_AnimMap( old.hitboxindex, numcuts );
+	phdr->seqindex = Mod_AnimMap( old.seqindex, numcuts );
+	phdr->seqgroupindex = Mod_AnimMap( old.seqgroupindex, numcuts );
+	phdr->textureindex = Mod_AnimMap( old.textureindex, numcuts );
+	phdr->texturedataindex = Mod_AnimMap( old.texturedataindex, numcuts );
+	phdr->skinindex = Mod_AnimMap( old.skinindex, numcuts );
+	phdr->bodypartindex = Mod_AnimMap( old.bodypartindex, numcuts );
+	phdr->attachmentindex = Mod_AnimMap( old.attachmentindex, numcuts );
+	phdr->transitionindex = Mod_AnimMap( old.transitionindex, numcuts );
+
+	for( i = 0; i < numseq; i++ )
+	{
+		pseq[i].eventindex = Mod_AnimMap( pseq[i].eventindex, numcuts );
+
+		if( pseq[i].seqgroup == 0 && !anim_seqdata[i] )
+			pseq[i].animindex = Mod_AnimMap( pseq[i].animindex, numcuts );
+	}
+
+	for( i = 0; i < old.numbodyparts; i++ )
+	{
+		const int modelindex = pbody[i].modelindex;
+		mstudiomodel_t *pmodel = (mstudiomodel_t *)( base + modelindex );
+
+		for( j = 0; j < pbody[i].nummodels; j++ )
+		{
+			mstudiomesh_t *pmesh = (mstudiomesh_t *)( base + pmodel[j].meshindex );
+
+			for( k = 0; k < pmodel[j].nummesh; k++ )
+			{
+				pmesh[k].triindex = Mod_AnimMap( pmesh[k].triindex, numcuts );
+				pmesh[k].unused = Mod_AnimMap( pmesh[k].unused, numcuts );
+			}
+
+			pmodel[j].meshindex = Mod_AnimMap( pmodel[j].meshindex, numcuts );
+			pmodel[j].vertinfoindex = Mod_AnimMap( pmodel[j].vertinfoindex, numcuts );
+			pmodel[j].vertindex = Mod_AnimMap( pmodel[j].vertindex, numcuts );
+			pmodel[j].norminfoindex = Mod_AnimMap( pmodel[j].norminfoindex, numcuts );
+			pmodel[j].normindex = Mod_AnimMap( pmodel[j].normindex, numcuts );
+		}
+
+		pbody[i].modelindex = Mod_AnimMap( modelindex, numcuts );
+	}
+
+	// close the gaps, from the first cut to the end (what moves goes down, never overlaps itself)
+	{
+		int dst = anim_cuts[0].start;
+
+		for( i = 0; i < numcuts; i++ )
+		{
+			const int src = anim_cuts[i].end;
+			const int next = ( i + 1 < numcuts ) ? anim_cuts[i + 1].start : limit;
+
+			memmove( base + dst, base + src, next - src );
+			dst += next - src;
+		}
+
+		newlen = dst;
+	}
+
+	oldlen = limit;
+	mod->cache.data = Mem_Realloc( mod->mempool, base, newlen );
+	phdr = (studiohdr_t *)mod->cache.data;
+	phdr->length = newlen;
+
+	pseq = (mstudioseqdesc_t *)( (byte *)phdr + phdr->seqindex );
+
+	for( i = 0; i < numseq; i++ )
+	{
+		if( anim_seqdata[i] )
+			pseq[i].animindex = (int)( anim_seqdata[i] - (byte *)phdr );
+	}
+
+	Con_Printf( "[ANIMSHARE] %s: %i anim blocks (%i KB) out of the model: %i reused, %i new in the pool; model %i -> %i KB, pool %i KB\n",
+		mod->name, numcuts, nbytes / 1024, nfound, nadded, (int)( oldlen / 1024 ), newlen / 1024, (int)( anim_bytes / 1024 ));
+
+	return phdr;
+}
+
+#undef ANIM_FAIL
+#endif // XASH_OGC
+
 static studiohdr_t *Mod_MaybeTruncateStudioTextureData( model_t *mod )
 {
 #if XASH_LOW_MEMORY
@@ -1385,6 +1972,27 @@ void Mod_LoadStudioModel( model_t *mod, void *buffer, size_t buffersize, qboolea
 	}
 
 	// NOTE: we may not want to keep raw textures in memory. just cutoff model pointer above texture base
+#if XASH_OGC
+	if( !textures_loaded )
+	{
+		// player models: the animations they have in common live once, in a pool (and the texture base is cut off)
+		const char *why;
+		studiohdr_t *shared = Mod_StudioShareAnims( mod, &why );
+
+		if( shared )
+		{
+			phdr = shared;
+		}
+		else
+		{
+			if( why )
+				Con_Printf( "[ANIMSHARE] %s: kept as is (%s)\n", mod->name, why );
+
+			phdr = Mod_MaybeTruncateStudioTextureData( mod );
+		}
+	}
+	else
+#endif
 	phdr = Mod_MaybeTruncateStudioTextureData( mod );
 
 	// setup bounding box
