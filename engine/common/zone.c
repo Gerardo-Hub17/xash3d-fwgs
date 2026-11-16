@@ -28,6 +28,7 @@ GNU General Public License for more details.
 #include <malloc.h>
 #include <ogc/system.h>
 void OGC_DebugFlush( void );
+void OGC_WMCheck( const char *file, int line );
 
 static void Mem_ReportOOM( size_t size )
 {
@@ -271,6 +272,10 @@ void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char 
 	if( size <= 0 )
 		return NULL;
 
+#if XASH_OGC
+	OGC_WMCheck( filename, fileline ); // libogc's wiimote structures still intact? (sys_ogc.c)
+#endif
+
 	if( unlikely( !poolptr ))
 	{
 		Sys_Error( "%s: pool == NULL (alloc at %s:%i)\n", __func__, filename, fileline );
@@ -374,6 +379,10 @@ void _Mem_Free( void *data, const char *filename, int fileline )
 {
 	if( data == NULL )
 		return;
+
+#if XASH_OGC
+	OGC_WMCheck( filename, fileline );
+#endif
 
 	if( Mem_ReadSentinel( data ) == MEMHEADER_SENTINEL_SMALL )
 		Mem_FreeBlockSmall((memheader_small_t *)((byte *)data - sizeof( memheader_small_t )), filename, fileline );

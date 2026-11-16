@@ -40,6 +40,9 @@ static void CL_LoadLog( const char *what, const char *name )
 	if( !wii_loadlog.value )
 		return;
 
+	// before the line: if a mempool block was trashed since the last [LOAD] line, the error names
+	// where it was allocated and this is the first check after it, so the culprit is in between
+	Mem_Check();
 	Con_Printf( "[LOAD] %s %s\n", what, name );
 	OGC_DebugFlush();
 }

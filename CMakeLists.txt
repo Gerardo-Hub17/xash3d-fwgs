@@ -346,7 +346,7 @@ if(XASH_OGC_HEAPPROBE)
     endif()
 endif()
 
-option(XASH_OGC_MEMCHECK "walk every memory pool sentinel each frame" OFF)
+option(XASH_OGC_MEMCHECK "walk every memory pool sentinel every ~10 s (and between loads, see wii_loadlog)" ON)
 if(XASH_OGC_MEMCHECK)
     target_compile_definitions(xash PUBLIC -DXASH_OGC_MEMCHECK=1)
     if(TARGET ref_gx)

@@ -41,6 +41,7 @@ extern void *__real_calloc( size_t n, size_t size );
 extern void *__real_realloc( void *ptr, size_t size );
 extern void *__real_memalign( size_t align, size_t size );
 extern void __real_free( void *ptr );
+extern void OGC_WMNoteAlloc( void *p, size_t size );
 
 #define AT_SLOTS	2048
 #define AT_BIG		( 256 * 1024 )
@@ -269,6 +270,7 @@ void *__wrap_malloc( size_t size )
 
 	if( !p && size ) at_fail( "malloc", size );
 	at_live_add( p, size, slot );
+	OGC_WMNoteAlloc( p, size ); // sys_ogc.c: finds the wiimote structures WPAD_Init allocates
 	return p;
 }
 

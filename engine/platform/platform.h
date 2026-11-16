@@ -584,5 +584,6 @@ qboolean VoiceCapture_Lock( qboolean lock );
 void OGC_DebugPrint(const char *fmt, ...);
 void OGC_DebugInit(void);
 void OGC_DebugFlush(void); // fsync of the log
+void OGC_WMCheck( const char *file, int line ); // checks libogc's wiimote structures (see sys_ogc.c)
 
 #endif // PLATFORM_H

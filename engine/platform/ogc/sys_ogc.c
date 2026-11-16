@@ -231,6 +231,130 @@ static void *OGC_MonitorThread( void *arg )
 }
 #endif
 
+
+#if XASH_OGC_ALLOCTRACE
+/*
+WMCHECK: libogc allocates the four wiimote_t structures with malloc, at the very start of the
+heap (WPAD_Init), and its Bluetooth callback __wpad_eventCB (it runs from the IRQ) reads
+wm->unid first thing to pick the pad's queue. A crash there (DSI at wpad.c:744, stack ending in
+__readbulkdataCB/PPCExcptIrqHandler) means that word was overwritten by someone else: some buffer
+ran off its end, or was written after being freed. This remembers where the structures are and
+checks unid and event_cb every time the engine allocates or frees memory and once per frame. The
+first time one is wrong it says where the engine was the last time it was right, dumps the memory
+around it (what was written there usually tells who wrote it) and puts the values back, so the
+game goes on instead of dying in the IRQ.
+*/
+#define OGC_WM_MAX	4
+
+static wiimote		*ogc_wm[OGC_WM_MAX];
+static wii_event_cb	ogc_wm_cb[OGC_WM_MAX];
+static int		ogc_wm_n;
+static volatile int	ogc_wm_capture;
+static int		ogc_wm_on;
+static int		ogc_wm_fixed;
+static const char	*ogc_wm_file = "OGC_Init";
+static int		ogc_wm_line;
+
+// called by the malloc wrapper while WPAD_Init runs
+void OGC_WMNoteAlloc( void *p, size_t size )
+{
+	if( ogc_wm_capture && p && size == sizeof( wiimote ) && ogc_wm_n < OGC_WM_MAX )
+		ogc_wm[ogc_wm_n++] = (wiimote *)p;
+}
+
+static void OGC_WMDump( const char *what, const unsigned char *at, int before, int after )
+{
+	const unsigned char *p = at - before;
+	int i, j;
+
+	printf( "[WMCHECK] %s: %p (%i bytes before, %i after)\n", what, (const void *)at, before, after );
+
+	for( i = 0; i < before + after; i += 16 )
+	{
+		char text[17];
+
+		printf( "[WMCHECK] %08X:", (unsigned)( p + i ));
+		for( j = 0; j < 16; j++ )
+		{
+			const unsigned char c = p[i + j];
+
+			printf( " %02X", c );
+			text[j] = ( c >= 32 && c < 127 ) ? c : '.';
+		}
+		text[16] = 0;
+		printf( "  %s%s\n", text, ( p + i <= at && at < p + i + 16 ) ? "  <" : "" );
+	}
+}
+
+void OGC_WMCheck( const char *file, int line )
+{
+	int i;
+
+	if( !ogc_wm_on )
+		return;
+
+	for( i = 0; i < ogc_wm_n; i++ )
+	{
+		wiimote *wm = ogc_wm[i];
+
+		if( wm->unid == i && wm->event_cb == ogc_wm_cb[i] )
+			continue;
+
+		if( ogc_wm_fixed++ < 3 )
+		{
+			const int old_unid = wm->unid;
+			const void *old_cb = (const void *)wm->event_cb;
+			const int pause_check = ogc_wm_on;
+
+			ogc_wm_on = 0; // printing may allocate: do not come back here
+
+			printf( "[WMCHECK] wiimote %i was overwritten: unid %i (should be %i), event_cb %p (should be %p)\n",
+				i, old_unid, i, old_cb, (const void *)ogc_wm_cb[i] );
+			printf( "[WMCHECK] seen at %s:%i, it was still intact at %s:%i\n",
+				file ? file : "?", line, ogc_wm_file, ogc_wm_line );
+			OGC_WMDump( "wiimote_t", (const unsigned char *)wm, 128, 128 );
+			OGC_DebugFlush();
+
+			ogc_wm_on = pause_check;
+		}
+
+		*(volatile int *)&wm->unid = i;
+		*(volatile wii_event_cb *)&wm->event_cb = ogc_wm_cb[i];
+	}
+
+	ogc_wm_file = file;
+	ogc_wm_line = line;
+}
+
+static void OGC_WMStart( void )
+{
+	int i;
+
+	ogc_wm_capture = 0;
+
+	for( i = 0; i < ogc_wm_n; i++ )
+	{
+		if( ogc_wm[i]->unid != i || !ogc_wm[i]->event_cb )
+			break;
+
+		ogc_wm_cb[i] = ogc_wm[i]->event_cb;
+	}
+
+	if( ogc_wm_n < 1 || i != ogc_wm_n )
+	{
+		printf( "[WMCHECK] could not find the wiimote structures (%i found), not watching them\n", ogc_wm_n );
+		return;
+	}
+
+	ogc_wm_on = 1;
+	printf( "[WMCHECK] watching %i wiimote structures, first at %p (%u bytes each)\n",
+		ogc_wm_n, (void *)ogc_wm[0], (unsigned)sizeof( wiimote ));
+}
+#else
+#define OGC_WMStart() ((void)0)
+void OGC_WMCheck( const char *file, int line ) { (void)file; (void)line; }
+#endif
+
 void OGC_Init( void )
 {
 #if XASH_OGC_STACKWATCH
@@ -292,7 +416,11 @@ void OGC_Init( void )
 	}
 
 	printf( "OGC_Init: WPAD\n" );
+#if XASH_OGC_ALLOCTRACE
+	ogc_wm_capture = 1; // remember where libogc puts the wiimote structures
+#endif
 	WPAD_Init();
+	OGC_WMStart();
 
 	// SDL only ever reads the remote (WPAD_Data / WPAD_ReadPending); it never
 	// configures it. The IR sensor reports nothing at all unless the data
@@ -313,6 +441,9 @@ void OGC_Init( void )
 void OGC_Shutdown( void )
 {
 	printf( "%s\n", __func__ );
+#if XASH_OGC_ALLOCTRACE
+	ogc_wm_on = 0; // from here on libogc may free those structures: never write to them again
+#endif
 }
 
 //const struct in6_addr in6addr_any = {{ 0 }};

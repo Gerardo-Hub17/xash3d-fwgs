@@ -1298,6 +1298,7 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 
 		if( wii_loadlog.value && !Host_IsDedicated( ))
 		{
+			Mem_Check(); // see CL_LoadLog
 			Con_Printf( "[LOAD] precache %s\n", sv.model_precache[i] );
 			OGC_DebugFlush();
 		}

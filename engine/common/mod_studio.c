@@ -23,6 +23,7 @@ GNU General Public License for more details.
 #if XASH_OGC
 #include <malloc.h>
 #include <ogc/system.h>
+#include "platform/platform.h" // OGC_DebugFlush
 #endif
 
 typedef int (*STUDIOAPI)( int, sv_blending_interface_t**, server_studio_api_t*,  float (*transform)[3][4], float (*bones)[MAXSTUDIOBONES][3][4] );
@@ -1871,6 +1872,7 @@ static studiohdr_t *Mod_StudioShareAnims( model_t *mod, const char **why )
 
 	Con_Printf( "[ANIMSHARE] %s: %i anim blocks (%i KB) out of the model: %i reused, %i new in the pool; model %i -> %i KB, pool %i KB\n",
 		mod->name, numcuts, nbytes / 1024, nfound, nadded, (int)( oldlen / 1024 ), newlen / 1024, (int)( anim_bytes / 1024 ));
+	OGC_DebugFlush(); // the next thing that dies must not take this line with it
 
 	return phdr;
 }
