@@ -28,6 +28,9 @@ CVAR_DEFINE( scr_viewsize, "viewsize", "120", FCVAR_ARCHIVE, "screen size (quake
 CVAR_DEFINE_AUTO( cl_testlights, "0", FCVAR_CHEAT, "test dynamic lights" );
 CVAR_DEFINE( cl_allow_levelshots, "allow_levelshots", "0", FCVAR_ARCHIVE, "allow engine to use indivdual levelshots instead of 'loading' image" );
 CVAR_DEFINE_AUTO( cl_levelshot_name, "*black", 0, "contains path to current levelshot" );
+#if XASH_OGC
+CVAR_DEFINE_AUTO( wii_loadscreen, "1", FCVAR_ARCHIVE, "Wii: draw a loading screen (map picture, bar, current file) while a level loads; 0 = off" );
+#endif
 static CVAR_DEFINE_AUTO( cl_envshot_size, "256", FCVAR_ARCHIVE, "envshot size of cube side" );
 CVAR_DEFINE_AUTO( v_dark, "0", 0, "starts level from dark screen" );
 static CVAR_DEFINE_AUTO( net_speeds, "0", FCVAR_ARCHIVE, "show network packets" );
@@ -498,6 +501,131 @@ static qboolean SCR_DrawPlaque( void )
 	return false;
 }
 
+#if XASH_OGC
+/*
+================
+SCR_WiiLoading
+
+The normal screen update is off while the loading plaque is up (V_PreRender), and the level
+loads inside one frame of the main loop: the screen stayed black. This draws a frame of its own
+(picture of the map, bar, file that is loading), a few times per second, from the places that
+load things.
+
+phase 0: the server precaches (cur = index of the model, no total), phase 1: the client
+loads the resources (cur of total)
+================
+*/
+void SCR_WiiLoading( int phase, const char *map, const char *item, int cur, int total )
+{
+	static double last;
+	static char shotmap[MAX_QPATH], shotpath[MAX_QPATH];
+	static qboolean shotfound;
+	static qboolean shotoverview;
+	const rgba_t white = { 255, 255, 255, 255 }, grey = { 180, 180, 180, 255 };
+	double now;
+	float frac;
+	int w, h, tw, th, barw, barh, barx, bary, shot = 0;
+	char line[160];
+
+	if( !wii_loadscreen.value || !ref.initialized || host.type == HOST_DEDICATED || cl.background )
+		return;
+
+	now = Sys_DoubleTime();
+
+	if( item && item[0] && now - last < 0.12 )
+		return;
+
+	last = now;
+	w = refState.width;
+	h = refState.height;
+
+	if( phase == 0 )
+		frac = 0.5f * (float)cur / (float)( cur + 60 );
+	else
+		frac = 0.5f + 0.5f * (float)cur / (float)Q_max( total, 1 );
+
+	frac = bound( 0.0f, frac, 1.0f );
+
+	if( !map )
+		map = "";
+
+	// picture of the map: levelshots/<map> or the overview, looked for once per map
+	if( Q_strcmp( shotmap, map ))
+	{
+		static const char *const tries[] = { "levelshots/%s.tga", "levelshots/%s.bmp", "levelshots/%s.png", "overviews/%s.bmp" };
+
+		Q_strncpy( shotmap, map, sizeof( shotmap ));
+		shotfound = false;
+
+		for( int i = 0; map[0] && i < ARRAYSIZE( tries ); i++ )
+		{
+			Q_snprintf( shotpath, sizeof( shotpath ), tries[i], map );
+
+			if( FS_FileExists( shotpath, false ))
+			{
+				shotfound = true;
+				shotoverview = ( i == ARRAYSIZE( tries ) - 1 );
+				break;
+			}
+		}
+	}
+
+	ref.dllFuncs.R_BeginFrame( false );
+	ref.dllFuncs.R_Set2DMode( true );
+	ref.dllFuncs.FillRGBA( kRenderNormal, 0, 0, w, h, 8, 8, 12, 255 );
+
+	if( shotfound )
+		shot = ref.dllFuncs.GL_LoadTexture( shotpath, NULL, 0, TF_IMAGE );
+
+	if( shot )
+	{
+		ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+
+		if( shotoverview )
+		{
+			int side = h * 55 / 100;
+
+			ref.dllFuncs.R_DrawStretchPic(( w - side ) / 2, h * 12 / 100, side, side, 0, 0, 1, 1, shot );
+		}
+		else
+			ref.dllFuncs.R_DrawStretchPic( 0, 0, w, h, 0, 0, 1, 1, shot );
+	}
+
+	// title
+	Q_snprintf( line, sizeof( line ), map[0] ? "CARGANDO %s" : "CARGANDO", map );
+	Con_DrawStringLen( line, &tw, &th );
+	Con_DrawString(( w - tw ) / 2, h * 74 / 100, line, white );
+
+	// bar
+	barw = w * 60 / 100;
+	barh = Q_max( 10, h / 36 );
+	barx = ( w - barw ) / 2;
+	bary = h * 84 / 100;
+	ref.dllFuncs.FillRGBA( kRenderNormal, barx - 2, bary - 2, barw + 4, barh + 4, 200, 200, 200, 255 );
+	ref.dllFuncs.FillRGBA( kRenderNormal, barx, bary, barw, barh, 30, 30, 36, 255 );
+	ref.dllFuncs.FillRGBA( kRenderNormal, barx, bary, (int)( barw * frac ), barh, 235, 170, 20, 255 );
+
+	// what is loading
+	if( item && item[0] )
+	{
+		size_t len = Q_strlen( item );
+
+		Q_snprintf( line, sizeof( line ), "%s", len > 52 ? item + len - 52 : item );
+		Con_DrawStringLen( line, &tw, &th );
+		Con_DrawString(( w - tw ) / 2, bary + barh + 8, line, grey );
+	}
+
+	ref.dllFuncs.R_Set2DMode( false );
+	ref.dllFuncs.R_EndFrame();
+}
+
+void SCR_WiiLoadingReset( void )
+{
+	// the first frame at once: the plaque must not be a black screen
+	SCR_WiiLoading( 0, "", "", 0, 0 );
+}
+#endif
+
 /*
 ================
 SCR_BeginLoadingPlaque
@@ -514,6 +642,11 @@ void SCR_BeginLoadingPlaque( qboolean is_background )
 		if( cls.state == ca_disconnected && !(GameState->curstate == STATE_RUNFRAME && GameState->nextstate != STATE_RUNFRAME) )
 			SCR_UpdateScreen();
 	}
+
+#if XASH_OGC
+	if( !is_background )
+		SCR_WiiLoadingReset();
+#endif
 
 	if( cls.state == ca_disconnected || cls.disable_screen )
 		return; // already set
@@ -942,6 +1075,9 @@ void SCR_Init( void )
 
 	Cvar_RegisterVariable( &scr_centertime );
 	Cvar_RegisterVariable( &cl_levelshot_name );
+#if XASH_OGC
+	Cvar_RegisterVariable( &wii_loadscreen );
+#endif
 	Cvar_RegisterVariable( &cl_allow_levelshots );
 	Cvar_RegisterVariable( &scr_loading );
 	Cvar_RegisterVariable( &scr_download );

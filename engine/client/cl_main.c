@@ -3413,11 +3413,25 @@ qboolean CL_PrecacheResources( void )
 	if( cls.state != ca_active )
 		S_BeginRegistration();
 
+#if XASH_OGC
+	int wii_total = 0, wii_cur = 0;
+
+	for( pRes = cl.resourcesonhand.pNext; pRes && pRes != &cl.resourcesonhand; pRes = pRes->pNext )
+	{
+		if( !FBitSet( pRes->ucFlags, RES_PRECACHED ))
+			wii_total++;
+	}
+#endif
+
 	// precache all the remaining resources where order is doesn't matter
 	for( pRes = cl.resourcesonhand.pNext; pRes && pRes != &cl.resourcesonhand; pRes = pRes->pNext )
 	{
 		if( FBitSet( pRes->ucFlags, RES_PRECACHED ))
 			continue;
+
+#if XASH_OGC
+		SCR_WiiLoading( 1, clgame.mapname, pRes->szFileName, ++wii_cur, wii_total );
+#endif
 
 		switch( pRes->type )
 		{

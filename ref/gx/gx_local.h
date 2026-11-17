@@ -112,6 +112,8 @@ typedef struct gltexture_s
 
 	GXTexObj		texObj;
 	void		*nativeData;
+	void		*tlutData;	// 16 RGB5A3 entries (GX_TF_CI4 only)
+	GXTlutObj		tlutObj;
 	u32		texnum;
 	u8      encode;      
    u8		format;
@@ -676,6 +678,8 @@ extern convar_t	gl_finish;
 extern convar_t	gl_nosort;
 extern convar_t	gl_test;
 extern convar_t	gl_msaa;
+extern convar_t	gx_ci4;
+extern convar_t	gx_ci4_dither;
 extern convar_t	gx_split_lod;	// set by the engine: >= 2 while a split screen map is loaded (players)
 extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;

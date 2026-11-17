@@ -46,6 +46,8 @@ CVAR_DEFINE_AUTO( gl_finish, "0", FCVAR_GLCONFIG, "use GX_DrawDone instead of a 
 CVAR_DEFINE_AUTO( gl_nosort, "0", FCVAR_GLCONFIG, "disable sorting of translucent surfaces" );
 CVAR_DEFINE_AUTO( gl_test, "0", 0, "engine developer cvar for quick testing new features" );
 CVAR_DEFINE_AUTO( gl_msaa, "0", FCVAR_GLCONFIG, "enable or disable the GX copy-filter antialiasing" );
+CVAR_DEFINE_AUTO( gx_ci4, "1", FCVAR_ARCHIVE, "viewmodels and effect sprites as GX_TF_CI4 (16 colors, 1/8 of the memory of RGB565)" );
+CVAR_DEFINE_AUTO( gx_ci4_dither, "8", FCVAR_ARCHIVE, "ordered dithering strength of the CI4 textures (0 = off)" );
 CVAR_DEFINE_AUTO( gx_split_lod, "0", 0, "split screen detail level (set by the engine, number of players)" );
 CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelformat stencil bits (0 - auto)" );
 CVAR_DEFINE_AUTO( gl_overbright, "0", FCVAR_GLCONFIG, "overbrights" );
@@ -438,6 +440,8 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gx_vsync );
 	gEngfuncs.Cvar_RegisterVariable( &gl_msaa );
 	gEngfuncs.Cvar_RegisterVariable( &gx_split_lod );
+	gEngfuncs.Cvar_RegisterVariable( &gx_ci4 );
+	gEngfuncs.Cvar_RegisterVariable( &gx_ci4_dither );
 	gEngfuncs.Cvar_RegisterVariable( &gl_stencilbits );
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );

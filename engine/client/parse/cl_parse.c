@@ -1556,7 +1556,12 @@ static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 		COM_FixSlashes( filename );
 		have_file = FS_FileExists( filename, false );
 
+#if XASH_OGC
+		// an alias is never compared: do not read 2 MB from the disk just for that
+		if( Q_strstr( filename, "models/" ) && have_file && !Mod_IsShareAlias( filename ))
+#else
 		if( Q_strstr( filename, "models/" ) && have_file )
+#endif
 		{
 			uint32_t crcFile;
 			CRC32_Init( &crcFile );

@@ -159,6 +159,18 @@ void GX_Bind( int tmu, unsigned int texnum )
 		return;
 
 	int texmap = tmu_to_gx_texmap( tmu );
+
+	if( texture->format == GX_TF_CI4 && texture->tlutData )
+	{
+		// every bind takes the next of the 16 palette slots: a palette that is still needed by a
+		// draw that is waiting in the FIFO is not overwritten by the one of the next texture
+		static u32 ci4_slot;
+
+		GX_LoadTlut( (GXTlutObj *)&texture->tlutObj, GX_TLUT0 + ci4_slot );
+		GX_InitTexObjTlut( (GXTexObj *)&texture->texObj, GX_TLUT0 + ci4_slot );
+		ci4_slot = ( ci4_slot + 1 ) & 15;
+	}
+
 	GX_LoadTexObj( (GXTexObj *)&texture->texObj, texmap );
 
 	glState.currentTextures[tmu] = (GXTexObj *)&texture->texObj;

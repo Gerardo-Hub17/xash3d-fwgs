@@ -46,6 +46,22 @@ static void GX_TexAccount( const gl_texture_t *tex, size_t bytes, int sign )
     }
 }
 
+/* GX_InitTexObj, or GX_InitTexObjCI when the texture is a GX_TF_CI4 (its palette is loaded by GX_Bind) */
+static void GX_TexObjSetup( gl_texture_t *tex, u8 wrapS, u8 wrapT, u8 mipmap )
+{
+	if( tex->format == GX_TF_CI4 && tex->tlutData )
+	{
+		GX_InitTlutObj( &tex->tlutObj, tex->tlutData, GX_TL_RGB5A3, 16 );
+		GX_InitTexObjCI( &tex->texObj, tex->nativeData, (u16)tex->width, (u16)tex->height,
+			GX_TF_CI4, wrapS, wrapT, mipmap, GX_TLUT0 );
+	}
+	else
+	{
+		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)tex->width, (u16)tex->height,
+			tex->format, wrapS, wrapT, mipmap );
+	}
+}
+
 void GX_MemReport( const char *tag )
 {
     struct mallinfo mi = mallinfo();
@@ -171,10 +187,7 @@ void GX_ApplyTextureParams( gl_texture_t *tex )
 
 	if( tex->nativeData )
 	{
-		GX_InitTexObj( &tex->texObj, tex->nativeData,
-			(u16)tex->width, (u16)tex->height,
-			tex->format,
-			wrapS, wrapT,
+		GX_TexObjSetup( tex, wrapS, wrapT,
 			tex->numMips > 1 && !FBitSet( tex->flags, TF_NOMIPMAP ) ? GX_TRUE : GX_FALSE );
 
 		GX_InitTexObjLOD( &tex->texObj,
@@ -251,6 +264,7 @@ static size_t GX_CalcTextureSize( u8 gxFormat, int width, int height, int depth 
 	case GX_TF_I8:
 	case GX_TF_IA4:     return (size_t)w8 * h4 * depth;
 	case GX_TF_I4:
+	case GX_TF_CI4:
 	case GX_TF_CMPR:    return (size_t)w8 * h8 / 2 * depth;
 	case GX_TF_RGBA8:
 	default:            return (size_t)w4 * h4 * 4 * depth;
@@ -676,11 +690,102 @@ static void GX_ConvertToNative( byte *dst, const byte *src, int width, int heigh
 }
 
 
-/* one 4x4 block to DXT1: 565 end points from the bounding box, 4 colors, no alpha */
-static void GX_EncodeBlockDXT1( byte *dst, const byte rgb[16][3] )
+static void GX_DXT1Unpack565( int pal[3], u16 c )
+{
+	pal[0] = (( c >> 11 ) << 3 ) | (( c >> 11 ) >> 2 );
+	pal[1] = ((( c >> 5 ) & 63 ) << 2 ) | ((( c >> 5 ) & 63 ) >> 4 );
+	pal[2] = (( c & 31 ) << 3 ) | (( c & 31 ) >> 2 );
+}
+
+/* a block with see-through texels: 3 colors (c0 <= c1) and index 3 = transparent */
+static void GX_EncodeBlockDXT1A( byte *dst, const byte rgb[16][3], const byte alpha[16] )
+{
+	int lo[3] = { 255, 255, 255 }, hi[3] = { 0, 0, 0 };
+	int i, k, opaque = 0;
+	u32 indices = 0;
+	u16 c0 = 0, c1 = 0;
+
+	for( i = 0; i < 16; i++ )
+	{
+		if( alpha[i] < 128 )
+			continue;
+
+		opaque++;
+		for( k = 0; k < 3; k++ )
+		{
+			if( rgb[i][k] < lo[k] ) lo[k] = rgb[i][k];
+			if( rgb[i][k] > hi[k] ) hi[k] = rgb[i][k];
+		}
+	}
+
+	if( opaque )
+	{
+		c0 = (u16)((( lo[0] >> 3 ) << 11 ) | (( lo[1] >> 2 ) << 5 ) | ( lo[2] >> 3 ));
+		c1 = (u16)((( hi[0] >> 3 ) << 11 ) | (( hi[1] >> 2 ) << 5 ) | ( hi[2] >> 3 ));
+
+		if( c0 > c1 )
+		{
+			u16 t = c0; c0 = c1; c1 = t;
+		}
+	}
+
+	dst[0] = (byte)( c0 >> 8 ); dst[1] = (byte)c0;
+	dst[2] = (byte)( c1 >> 8 ); dst[3] = (byte)c1;
+
+	{
+		int pal[3][3];
+
+		GX_DXT1Unpack565( pal[0], c0 );
+		GX_DXT1Unpack565( pal[1], c1 );
+		for( k = 0; k < 3; k++ )
+			pal[2][k] = ( pal[0][k] + pal[1][k] ) / 2;
+
+		for( i = 0; i < 16; i++ )
+		{
+			int best = 3;
+
+			if( alpha[i] >= 128 )
+			{
+				int bestd = 0x7FFFFFFF;
+
+				for( int j = 0; j < 3; j++ )
+				{
+					int dr = rgb[i][0] - pal[j][0];
+					int dg = rgb[i][1] - pal[j][1];
+					int db = rgb[i][2] - pal[j][2];
+					int d = dr * dr + dg * dg + db * db;
+
+					if( d < bestd ) { bestd = d; best = j; }
+				}
+			}
+
+			indices |= (u32)best << ( 8 * ( i >> 2 ) + 2 * ( 3 - ( i & 3 )));
+		}
+	}
+
+	dst[4] = (byte)indices;
+	dst[5] = (byte)( indices >> 8 );
+	dst[6] = (byte)( indices >> 16 );
+	dst[7] = (byte)( indices >> 24 );
+}
+
+/* one 4x4 block to DXT1: 565 end points from the bounding box, 4 colors; alpha (or NULL) = 1 bit alpha */
+static void GX_EncodeBlockDXT1( byte *dst, const byte rgb[16][3], const byte *alpha )
 {
 	int lo[3] = { 255, 255, 255 }, hi[3] = { 0, 0, 0 };
 	int i, k;
+
+	if( alpha )
+	{
+		for( i = 0; i < 16; i++ )
+		{
+			if( alpha[i] < 128 )
+			{
+				GX_EncodeBlockDXT1A( dst, rgb, alpha );
+				return;
+			}
+		}
+	}
 
 	for( i = 0; i < 16; i++ )
 	{
@@ -767,6 +872,7 @@ static void GX_ConvertCMPR( byte *dst, const byte *src, int width, int height, c
 			for( int q = 0; q < 4; q++ )
 			{
 				byte rgb[16][3];
+				byte alpha[16];
 				int bx = tx + ( q & 1 ) * 4;
 				int by = ty + ( q >> 1 ) * 4;
 
@@ -782,10 +888,330 @@ static void GX_ConvertCMPR( byte *dst, const byte *src, int width, int height, c
 						rgb[y * 4 + x][0] = t[s->r];
 						rgb[y * 4 + x][1] = t[s->g];
 						rgb[y * 4 + x][2] = t[s->b];
+						alpha[y * 4 + x] = ( s->a >= 0 ) ? t[s->a] : 255;
 					}
 				}
 
-				GX_EncodeBlockDXT1( tile + q * 8, rgb );
+				GX_EncodeBlockDXT1( tile + q * 8, rgb, ( s->a >= 0 ) ? alpha : NULL );
+			}
+		}
+	}
+}
+
+/* ---- what a texture is used for, from its name (see Mod_SpriteLoadFrame, R_StudioLoadTexture, Mod_LoadTextures) ---- */
+typedef enum
+{
+	GXC_OTHER = 0,
+	GXC_HUD,		// #HUD/xxx.spr(...)
+	GXC_WORLD,		// walls, floors, ceilings: xxx.mip
+	GXC_MODEL,		// #models/xxx/texture.mdl
+	GXC_VIEWMODEL,	// #models/v_xxx/texture.mdl
+	GXC_EFFECT,		// #sprites/xxx.spr(...).spr (not the HUD)
+} gx_texclass_t;
+
+static gx_texclass_t GX_TexClass( const char *name )
+{
+	int len = Q_strlen( name );
+
+	if( !Q_strncmp( name, "#HUD/", 5 ))
+		return GXC_HUD;
+
+	if( len > 4 && !Q_stricmp( name + len - 4, ".mip" ))
+		return ( len > 9 && !Q_stricmp( name + len - 9, "_luma.mip" )) ? GXC_OTHER : GXC_WORLD;
+
+	if( name[0] != '#' )
+		return GXC_OTHER;
+
+	if( len > 4 && !Q_stricmp( name + len - 4, ".mdl" ))
+	{
+		const char *last = Q_strrchr( name, '/' );	// in front of the name of the texture
+
+		if( last && last > name )
+		{
+			const char *p = last;
+
+			while( p > name && p[-1] != '/' && p[-1] != '#' )
+				p--;
+
+			if( p[0] == 'v' && p[1] == '_' )
+				return GXC_VIEWMODEL;
+		}
+
+		return GXC_MODEL;
+	}
+
+	if( len > 4 && !Q_stricmp( name + len - 4, ".spr" ))
+		return GXC_EFFECT;
+
+	return GXC_OTHER;
+}
+
+/* only 0 and 255 (more or less): DXT1 can keep it */
+static qboolean GX_AlphaIsBinary( const byte *src, int width, int height, const gx_srcfmt_t *s )
+{
+	if( !src || s->a < 0 )
+		return true;
+
+	for( int i = 0, n = width * height; i < n; i++, src += s->bpp )
+	{
+		if( src[s->a] > 32 && src[s->a] < 224 )
+			return false;
+	}
+
+	return true;
+}
+
+/* ---- GX_TF_CI4: 16 colors per texture (palette in RGB5A3) ---- */
+typedef struct { byte c[4]; } gx_qpix_t;
+
+#define GX_QSAMPLES 4096
+
+static gx_qpix_t gx_qsamp[GX_QSAMPLES];	// the uploads are never in parallel
+static int       gx_qchan;
+
+static int GX_QCmp( const void *a, const void *b )
+{
+	return (int)((const gx_qpix_t *)a)->c[gx_qchan] - (int)((const gx_qpix_t *)b)->c[gx_qchan];
+}
+
+static u16 GX_EncodeRGB5A3( int r, int g, int b, int a )
+{
+	if( a >= 0xE0 )
+		return (u16)( 0x8000 | (( r >> 3 ) << 10 ) | (( g >> 3 ) << 5 ) | ( b >> 3 ));
+
+	return (u16)((( a >> 5 ) << 12 ) | (( r >> 4 ) << 8 ) | (( g >> 4 ) << 4 ) | ( b >> 4 ));
+}
+
+static void GX_DecodeRGB5A3( byte out[4], u16 v )
+{
+	if( v & 0x8000 )
+	{
+		int r = ( v >> 10 ) & 31, g = ( v >> 5 ) & 31, b = v & 31;
+
+		out[0] = (byte)(( r << 3 ) | ( r >> 2 ));
+		out[1] = (byte)(( g << 3 ) | ( g >> 2 ));
+		out[2] = (byte)(( b << 3 ) | ( b >> 2 ));
+		out[3] = 255;
+	}
+	else
+	{
+		int a = ( v >> 12 ) & 7;
+
+		out[0] = (byte)((( v >> 8 ) & 15 ) * 17 );
+		out[1] = (byte)((( v >> 4 ) & 15 ) * 17 );
+		out[2] = (byte)(( v & 15 ) * 17 );
+		out[3] = (byte)(( a << 5 ) | ( a << 2 ) | ( a >> 1 ));
+	}
+}
+
+/* median cut on a sample of the pixels */
+static void GX_BuildPalette16( const byte *src, int width, int height, const gx_srcfmt_t *s, qboolean useAlpha,
+	u16 pal[16], byte dec[16][4] )
+{
+	const int total = width * height;
+	const int step = ( total + GX_QSAMPLES - 1 ) / GX_QSAMPLES;
+	int count = 0, nb = 1;
+	int blo[16], bhi[16];
+
+	for( int i = 0; i < total && count < GX_QSAMPLES; i += step, count++ )
+	{
+		const byte *p = src + i * s->bpp;
+
+		gx_qsamp[count].c[0] = p[s->r];
+		gx_qsamp[count].c[1] = p[s->g];
+		gx_qsamp[count].c[2] = p[s->b];
+		gx_qsamp[count].c[3] = useAlpha ? p[s->a] : 255;
+	}
+
+	blo[0] = 0;
+	bhi[0] = count;
+
+	while( nb < 16 )
+	{
+		int best = -1, bestChan = 0;
+		float bestScore = 0.0f;
+
+		for( int b = 0; b < nb; b++ )
+		{
+			int n = bhi[b] - blo[b];
+			int mn[4] = { 255, 255, 255, 255 }, mx[4] = { 0, 0, 0, 0 };
+
+			if( n < 2 )
+				continue;
+
+			for( int i = blo[b]; i < bhi[b]; i++ )
+			{
+				for( int k = 0; k < 4; k++ )
+				{
+					if( gx_qsamp[i].c[k] < mn[k] ) mn[k] = gx_qsamp[i].c[k];
+					if( gx_qsamp[i].c[k] > mx[k] ) mx[k] = gx_qsamp[i].c[k];
+				}
+			}
+
+			for( int k = 0; k < ( useAlpha ? 4 : 3 ); k++ )
+			{
+				float score = (float)( mx[k] - mn[k] ) * sqrtf( (float)n );
+
+				if( score > bestScore )
+				{
+					bestScore = score;
+					best = b;
+					bestChan = k;
+				}
+			}
+		}
+
+		if( best < 0 )
+			break;
+
+		gx_qchan = bestChan;
+		qsort( gx_qsamp + blo[best], bhi[best] - blo[best], sizeof( gx_qpix_t ), GX_QCmp );
+
+		{
+			// the cut goes between two different values (the closest one to the middle): the same color
+			// is never in two boxes
+			const int lo = blo[best], hi = bhi[best];
+			int mid = lo + ( hi - lo ) / 2;
+
+			for( int d = 0; d < hi - lo; d++ )
+			{
+				int up = mid + d, down = mid - d;
+
+				if( up > lo && up < hi && gx_qsamp[up].c[bestChan] != gx_qsamp[up - 1].c[bestChan] )
+				{
+					mid = up;
+					break;
+				}
+
+				if( down > lo && down < hi && gx_qsamp[down].c[bestChan] != gx_qsamp[down - 1].c[bestChan] )
+				{
+					mid = down;
+					break;
+				}
+			}
+
+			blo[nb] = mid;
+			bhi[nb] = bhi[best];
+			bhi[best] = mid;
+			nb++;
+		}
+	}
+
+	for( int b = 0; b < 16; b++ )
+	{
+		int src_b = ( b < nb ) ? b : 0;
+		int n = bhi[src_b] - blo[src_b];
+		int sum[4] = { 0, 0, 0, 0 };
+
+		for( int i = blo[src_b]; i < bhi[src_b]; i++ )
+			for( int k = 0; k < 4; k++ )
+				sum[k] += gx_qsamp[i].c[k];
+
+		if( n < 1 )
+			n = 1;
+
+		pal[b] = GX_EncodeRGB5A3( sum[0] / n, sum[1] / n, sum[2] / n, sum[3] / n );
+		GX_DecodeRGB5A3( dec[b], pal[b] );
+	}
+}
+
+/* index of the closest entry of the palette */
+static int GX_NearestPal( const byte dec[16][4], int r, int g, int b, int a, qboolean useAlpha )
+{
+	int best = 0, bestd = 0x7FFFFFFF;
+
+	for( int i = 0; i < 16; i++ )
+	{
+		int dr = r - dec[i][0], dg = g - dec[i][1], db = b - dec[i][2];
+		int d = dr * dr + dg * dg + db * db;
+
+		if( useAlpha )
+		{
+			int da = a - dec[i][3];
+
+			d += da * da;
+		}
+
+		if( d < bestd )
+		{
+			bestd = d;
+			best = i;
+		}
+	}
+
+	return best;
+}
+
+/* tiles of 8x8 texels, 4 bits each (first texel in the high nibble), 32 bytes per tile; the size is a multiple of 8 */
+static void GX_ConvertCI4( gl_texture_t *tex, byte *dst, const byte *src, int width, int height, pixformat_t fmt )
+{
+	static const byte bayer[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+	gx_srcfmt_t s;
+	u16 pal[16];
+	byte dec[16][4];
+	qboolean useAlpha = false;
+	int spread = (int)gx_ci4_dither.value;
+
+	if( !GX_GetSrcFmt( fmt, &s ))
+		return;
+
+	if( spread < 0 ) spread = 0;
+	if( spread > 32 ) spread = 32;
+
+	if( s.a >= 0 )
+	{
+		for( int i = 0, n = width * height; i < n; i++ )
+		{
+			if( src[i * s.bpp + s.a] < 255 )
+			{
+				useAlpha = true;
+				break;
+			}
+		}
+	}
+
+	GX_BuildPalette16( src, width, height, &s, useAlpha, pal, dec );
+
+	if( !tex->tlutData )
+		tex->tlutData = memalign( 32, 32 );
+
+	if( !tex->tlutData )
+	{
+		gEngfuncs.Host_Error( "%s: out of memory for the palette of %s\n", __func__, tex->name );
+		return;
+	}
+
+	memcpy( tex->tlutData, pal, sizeof( pal ));
+	DCFlushRange( tex->tlutData, 32 );
+
+	for( int ty = 0; ty < height; ty += 8 )
+	{
+		for( int tx = 0; tx < width; tx += 8 )
+		{
+			byte *tile = dst + (( ty >> 3 ) * ( width >> 3 ) + ( tx >> 3 )) * 32;
+
+			for( int y = 0; y < 8; y++ )
+			{
+				for( int k = 0; k < 4; k++ )
+				{
+					int idx[2];
+
+					for( int h = 0; h < 2; h++ )
+					{
+						int x = tx + k * 2 + h;
+						const byte *p = src + (( ty + y ) * width + x ) * s.bpp;
+						int bias = (( bayer[(( ty + y ) & 3 ) * 4 + ( x & 3 )] * 2 - 15 ) * spread ) >> 4;
+						int r = p[s.r] + bias, g = p[s.g] + bias, b = p[s.b] + bias;
+						int a = useAlpha ? p[s.a] : 255;
+
+						r = r < 0 ? 0 : ( r > 255 ? 255 : r );
+						g = g < 0 ? 0 : ( g > 255 ? 255 : g );
+						b = b < 0 ? 0 : ( b > 255 ? 255 : b );
+						idx[h] = GX_NearestPal( dec, r, g, b, a, useAlpha );
+					}
+
+					tile[y * 4 + k] = (byte)(( idx[0] << 4 ) | idx[1] );
+				}
 			}
 		}
 	}
@@ -869,6 +1295,15 @@ dst[3] = src[3];
 return out;
 }
 
+static void GX_ConvertForTexture( gl_texture_t *tex, byte *dst, const byte *src, int width, int height,
+	pixformat_t srcFmt, u8 fmt )
+{
+	if( fmt == GX_TF_CI4 )
+		GX_ConvertCI4( tex, dst, src, width, height, srcFmt );
+	else
+		GX_ConvertToNative( dst, src, width, height, srcFmt, fmt );
+}
+
 static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int height,
 	pixformat_t srcFmt, const byte *data, u8 newFmt )
 {
@@ -879,12 +1314,18 @@ static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int heig
 
 	if( tex->nativeData && tex->format == newFmt && (int)tex->width == width && (int)tex->height == height )
 	{
-		GX_ConvertToNative( (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
+		GX_ConvertForTexture( tex, (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 		GX_InvalidateTexAll();
 	}
 	else
 	{
+		if( tex->tlutData )
+		{
+			free( tex->tlutData );
+			tex->tlutData = NULL;
+		}
+
 		if( tex->nativeData )
 		{
 			GX_TexAccount( tex, GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 ), -1 );
@@ -903,11 +1344,10 @@ static void GX_UploadMipLevel( gl_texture_t *tex, int level, int width, int heig
 		tex->height = (word)height;
 		GX_TexAccount( tex, nativeSize, +1 );
 
-		GX_ConvertToNative( (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
+		GX_ConvertForTexture( tex, (byte *)tex->nativeData, data, width, height, srcFmt, newFmt );
 		DCFlushRange( tex->nativeData, nativeSize );
 
-		GX_InitTexObj( &tex->texObj, tex->nativeData, (u16)width, (u16)height,
-			tex->format, GX_CLAMP, GX_CLAMP, GX_FALSE );
+		GX_TexObjSetup( tex, GX_CLAMP, GX_CLAMP, GX_FALSE );
 	}
 	tex->size = nativeSize;
 }
@@ -957,6 +1397,11 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 			free( tex->nativeData );
 			tex->nativeData = NULL;
 		}
+		if( tex->tlutData )
+		{
+			free( tex->tlutData );
+			tex->tlutData = NULL;
+		}
 		tex->format = GX_TF_RGB565; // forzado: cabe en TMEM 128K como el skybox
 		size_t size = GX_CalcTextureSize( tex->format, tex->width, tex->height, 1 );
 		tex->nativeData = memalign( 32, size );
@@ -997,12 +1442,23 @@ static qboolean GX_UploadTexture( gl_texture_t *tex, rgbdata_t *pic )
 		u8 picked = GX_PickFormat( data, tex->width, tex->height, dataFmt );
 		if( FBitSet( tex->flags, TF_ATLAS_PAGE ))
 			picked = ( gx_testmode == 14 ) ? GX_TF_RGB565 : GX_TF_RGBA8;
-		else if(( picked == GX_TF_RGB565 || picked == GX_TF_RGBA8 ) && !( tex->width & 7 ) && !( tex->height & 7 ))
+		else if( !( tex->width & 7 ) && !( tex->height & 7 ))
 		{
+			const gx_texclass_t cls = GX_TexClass( tex->name );
 			gx_srcfmt_t sf;
 
-			if( GX_GetSrcFmt( dataFmt, &sf ))
-				picked = GX_TF_CMPR;
+			// HUD: the formats of Half-Life. Viewmodels and effects: CI4. Models and world: CMPR (also
+			// with a mask, DXT1 has 1 bit of alpha). The rest: CMPR when it has no alpha
+			if( cls != GXC_HUD && GX_GetSrcFmt( dataFmt, &sf ))
+			{
+				if(( cls == GXC_VIEWMODEL || cls == GXC_EFFECT ) && gx_ci4.value )
+					picked = GX_TF_CI4;
+				else if( picked == GX_TF_RGB565 || picked == GX_TF_RGBA8 )
+					picked = GX_TF_CMPR;
+				else if( picked == GX_TF_RGB5A3 && ( cls == GXC_MODEL || cls == GXC_WORLD ) &&
+					GX_AlphaIsBinary( data, tex->width, tex->height, &sf ))
+					picked = GX_TF_CMPR;
+			}
 		}
 		if( g_diagTexIdx < 15 )
 		{
@@ -1195,6 +1651,13 @@ static void GL_DeleteTexture( gl_texture_t *tex )
 		free( tex->nativeData );
 		tex->nativeData = NULL;
 	}
+
+	if( tex->tlutData )
+	{
+		free( tex->tlutData );
+		tex->tlutData = NULL;
+	}
+
 	memset( tex, 0, sizeof( *tex ));
 }
 

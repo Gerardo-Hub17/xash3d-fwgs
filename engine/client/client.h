@@ -983,6 +983,9 @@ void SCR_VidInit( void );
 void SCR_TileClear( void );
 void SCR_DirtyScreen( void );
 void SCR_EndLoadingPlaque( void );
+#if XASH_OGC
+void SCR_WiiLoading( int phase, const char *map, const char *item, int cur, int total );
+#endif
 int SCR_LoadPauseIcon( void );
 void SCR_RegisterTextures( void );
 void SCR_LoadCreditsFont( void );

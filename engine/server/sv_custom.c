@@ -242,7 +242,16 @@ void SV_TransferConsistencyInfo( void )
 
 static void SV_SendConsistencyList( sv_client_t *cl, sizebuf_t *msg )
 {
-	if( svs.maxclients == 1 || !sv_consistency.value || !sv.num_consistency || FBitSet( cl->flags, FCL_HLTV_PROXY ))
+	qboolean skip = svs.maxclients == 1 || !sv_consistency.value || !sv.num_consistency || FBitSet( cl->flags, FCL_HLTV_PROXY );
+
+#if XASH_OGC
+	// the player of the console is the owner of the server: nothing to enforce, and the check reads
+	// every model file again from the disk (about 25 MB of reads with the CS player models)
+	if( NET_IsLocalAddress( cl->netchan.remote_address ))
+		skip = true;
+#endif
+
+	if( skip )
 	{
 		ClearBits( cl->flags, FCL_FORCE_UNMODIFIED );
 		MSG_WriteOneBit( msg, 0 );

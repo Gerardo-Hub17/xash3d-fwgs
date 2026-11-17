@@ -1295,6 +1295,7 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 	{
 		extern convar_t wii_loadlog;
 		extern void OGC_DebugFlush( void );
+		extern void SCR_WiiLoading( int phase, const char *map, const char *item, int cur, int total );
 
 		if( wii_loadlog.value && !Host_IsDedicated( ))
 		{
@@ -1302,6 +1303,9 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 			Con_Printf( "[LOAD] precache %s\n", sv.model_precache[i] );
 			OGC_DebugFlush();
 		}
+
+		if( !Host_IsDedicated( ))
+			SCR_WiiLoading( 0, sv.name, sv.model_precache[i], i, 0 );
 	}
 #endif
 	sv.models[i] = Mod_ForName( sv.model_precache[i], false, true );

@@ -1616,9 +1616,19 @@ static studiohdr_t *Mod_StudioShareAnims( model_t *mod, const char **why )
 	{
 		const mstudioseqdesc_t *s = &pseq[i];
 
-		// pivots and automove tables (classic format): never seen, not handled
-		if( s->weightlistindex != 0 || s->iklockindex != 0 || s->autolayerindex != 0 || s->keyvalueindex != 0 )
-			ANIM_FAIL( "sequence with pivots or automove" );
+		// classic format: weightlistindex = numpivots, iklockindex = pivotindex (20 byte records that the
+		// renderer never reads), autolayerindex / keyvalueindex = automoveposindex / automoveangleindex
+		// (tables of unknown size that nothing reads either). They stay in the model: they are only
+		// registered as things that are not animation, so that a block stops in front of them, and
+		// their offsets are moved with the rest. The real CS player models have them
+		if( s->weightlistindex < 0 || s->weightlistindex > 64 ||
+			( s->weightlistindex != 0 && !Mod_AnimArray( s->iklockindex, s->weightlistindex, 20, 64, limit )) ||
+			( s->weightlistindex == 0 && s->iklockindex != 0 ))
+			ANIM_FAIL( "bad pivot array" );
+
+		if( !Mod_AnimOther( s->iklockindex, limit ) || !Mod_AnimOther( s->autolayerindex, limit ) ||
+			!Mod_AnimOther( s->keyvalueindex, limit ))
+			ANIM_FAIL( "bad pivot or automove offset" );
 
 		if( s->numevents != 0 && !Mod_AnimArray( s->eventindex, s->numevents, sizeof( mstudioevent_t ), 1024, limit ))
 			ANIM_FAIL( "bad event array" );
@@ -1811,6 +1821,9 @@ static studiohdr_t *Mod_StudioShareAnims( model_t *mod, const char **why )
 	for( i = 0; i < numseq; i++ )
 	{
 		pseq[i].eventindex = Mod_AnimMap( pseq[i].eventindex, numcuts );
+		pseq[i].iklockindex = Mod_AnimMap( pseq[i].iklockindex, numcuts );
+		pseq[i].autolayerindex = Mod_AnimMap( pseq[i].autolayerindex, numcuts );
+		pseq[i].keyvalueindex = Mod_AnimMap( pseq[i].keyvalueindex, numcuts );
 
 		if( pseq[i].seqgroup == 0 && !anim_seqdata[i] )
 			pseq[i].animindex = Mod_AnimMap( pseq[i].animindex, numcuts );

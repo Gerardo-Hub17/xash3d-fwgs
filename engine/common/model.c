@@ -386,6 +386,16 @@ static const char *Mod_ShareName( const char *filename, char *out, size_t outsiz
 }
 #endif
 
+#if XASH_OGC
+// the model is loaded as another one (see above): there is nothing to compare its file with
+qboolean Mod_IsShareAlias( const char *name )
+{
+	char shared[MAX_QPATH];
+
+	return Mod_ShareName( name, shared, sizeof( shared )) != name;
+}
+#endif
+
 /*
 ==================
 Mod_FindName
@@ -460,6 +470,7 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	char		tempname[MAX_QPATH];
 	fs_offset_t		length = 0;
 	qboolean		loaded, loaded2 = false;
+	uint32_t		diskCRC = 0;
 
 	if( !mod )
 	{
@@ -506,6 +517,16 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	Con_Reportf( "loading %s\n", mod->name );
 	mod->needload = NL_PRESENT;
 	mod->type = mod_bad;
+
+	// the CRC is the one of the file as it is on the disk: the loaders swap the buffer in place on a
+	// big endian CPU (Wii), the CRC of the buffer afterwards is not the one of the file and the
+	// consistency check of the servers (CS 1.6) rejected every model that was loaded
+	if( FBitSet( mod_crcinfo[mod - mod_known].flags, FCRC_SHOULD_CHECKSUM ))
+	{
+		CRC32_Init( &diskCRC );
+		CRC32_ProcessBuffer( &diskCRC, buf, length );
+		diskCRC = CRC32_Final( diskCRC );
+	}
 
 	// call the apropriate loader
 	switch( *(uint *)buf )
@@ -576,11 +597,7 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 
 	if( FBitSet( p->flags, FCRC_SHOULD_CHECKSUM ))
 	{
-		uint32_t currentCRC;
-
-		CRC32_Init( &currentCRC );
-		CRC32_ProcessBuffer( &currentCRC, buf, length );
-		currentCRC = CRC32_Final( currentCRC );
+		const uint32_t currentCRC = diskCRC;
 
 		if( FBitSet( p->flags, FCRC_CHECKSUM_DONE ))
 		{
@@ -823,14 +840,10 @@ qboolean Mod_ValidateCRC( const char *name, uint32_t crc )
 	model_info_t *p;
 
 #if XASH_OGC
-	{
-		// a model that is loaded as another one (Mod_ShareName) is never loaded under its own name:
-		// there is no CRC of it to compare, and the one of the replacement is not its CRC
-		char shared[MAX_QPATH];
-
-		if( Mod_ShareName( name, shared, sizeof( shared )) != name )
-			return true;
-	}
+	// a model that is loaded as another one (Mod_ShareName) is never loaded under its own name:
+	// there is no CRC of it to compare, and the one of the replacement is not its CRC
+	if( Mod_IsShareAlias( name ))
+		return true;
 #endif
 
 	mod = Mod_FindName( name, true );
