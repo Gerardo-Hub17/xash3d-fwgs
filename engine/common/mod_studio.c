@@ -1616,15 +1616,7 @@ static studiohdr_t *Mod_StudioShareAnims( model_t *mod, const char **why )
 	{
 		const mstudioseqdesc_t *s = &pseq[i];
 
-		// classic format: weightlistindex = numpivots, iklockindex = pivotindex (20 byte records that the
-		// renderer never reads), autolayerindex / keyvalueindex = automoveposindex / automoveangleindex
-		// (tables of unknown size that nothing reads either). They stay in the model: they are only
-		// registered as things that are not animation, so that a block stops in front of them, and
-		// their offsets are moved with the rest. The real CS player models have them
-		if( s->weightlistindex < 0 || s->weightlistindex > 64 ||
-			( s->weightlistindex != 0 && !Mod_AnimArray( s->iklockindex, s->weightlistindex, 20, 64, limit )) ||
-			( s->weightlistindex == 0 && s->iklockindex != 0 ))
-			ANIM_FAIL( "bad pivot array" );
+		// Pivots ignorados: el motor no lee estos datos, y Mod_AnimOther ya valida el puntero.
 
 		if( !Mod_AnimOther( s->iklockindex, limit ) || !Mod_AnimOther( s->autolayerindex, limit ) ||
 			!Mod_AnimOther( s->keyvalueindex, limit ))
