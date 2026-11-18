@@ -377,3 +377,6 @@ GEMINI.md
 *.bak-*
 fix*.py
 force_*.py
+cs16/
+cs16-src/
+cs16-server/
