@@ -701,7 +701,7 @@ void SV_SplitInfo_f( void );
 void SV_SplitPrintInfo( int player );
 qboolean SV_SplitTakeAngles( int player, vec3_t angles );
 void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg );
-void SV_SplitSniffScore( sizebuf_t *msg );
+void SV_SplitSniffScore( const sizebuf_t *multicast );
 qboolean SV_SplitGetScore( int client, int *frags, int *deaths );
 void SV_SplitClearScores( void );
 qboolean SV_SplitGetAmmo( int player, int *weapon, int *clip, int *reserve1, int *reserve2 );

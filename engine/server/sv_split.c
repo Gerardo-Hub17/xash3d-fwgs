@@ -409,8 +409,12 @@ static struct
 	qboolean	valid;
 } sv_split_score[MAX_CLIENTS];
 
-void SV_SplitSniffScore( sizebuf_t *msg )
+void SV_SplitSniffScore( const sizebuf_t *multicast )
 {
+	// read from a copy: a sizebuf has ONE cursor for writing and reading (iCurBit is also the number of
+	// bits written), so moving the cursor of sv.multicast would cut or empty the message that
+	// SV_Multicast sends right after this
+	sizebuf_t rd;
 	const char *name = NULL;
 	int i, cmd, size = 0, idx;
 
@@ -420,12 +424,15 @@ void SV_SplitSniffScore( sizebuf_t *msg )
 	if( i >= SPLIT_MAX_PLAYERS )
 		return;
 
-	MSG_SeekToBit( msg, 0, SEEK_SET );
-
-	if( MSG_GetNumBitsWritten( msg ) < 16 )
+	if( !multicast || multicast->iCurBit < 16 )
 		return;
 
-	cmd = MSG_ReadCmd( msg, NS_SERVER );
+	rd = *multicast;
+	rd.nDataBits = multicast->iCurBit;	// what was written
+	rd.iCurBit = 0;
+	rd.bOverflow = false;
+
+	cmd = MSG_ReadCmd( &rd, NS_SERVER );
 
 	if( cmd <= svc_lastmsg )
 		return;
@@ -444,19 +451,19 @@ void SV_SplitSniffScore( sizebuf_t *msg )
 		return;
 
 	if( size == -1 )
-		MSG_ReadWord( msg );
+		MSG_ReadWord( &rd );
 
-	if( MSG_GetNumBitsLeft( msg ) < 40 )
+	if( MSG_GetNumBitsLeft( &rd ) < 40 )
 		return;
 
-	idx = MSG_ReadByte( msg ) - 1; // client index + 1
+	idx = MSG_ReadByte( &rd ) - 1; // client index + 1
 
 	if( idx < 0 || idx >= MAX_CLIENTS )
 		return;
 
-	sv_split_score[idx].frags = (short)MSG_ReadShort( msg );
-	sv_split_score[idx].deaths = (short)MSG_ReadShort( msg );
-	sv_split_score[idx].valid = true;
+	sv_split_score[idx].frags = (short)MSG_ReadShort( &rd );
+	sv_split_score[idx].deaths = (short)MSG_ReadShort( &rd );
+	sv_split_score[idx].valid = !rd.bOverflow;
 }
 
 qboolean SV_SplitGetScore( int client, int *frags, int *deaths )
