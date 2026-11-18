@@ -38,8 +38,16 @@ int KB_ConvertString( char *in, char **ppout );
 
 void Touch_CloseMenu()
 {
-	gMobileAPI.pfnTouchRemoveButton( "_menu_*" );
-	gMobileAPI.pfnTouchSetClientOnly( 0 );
+	// no touch screen (Wii, a statically linked client): the engine never filled gMobileAPI in and
+	// calling a null pointer ended in a red screen the first time the team menu showed up
+	if( !g_iMobileAPIVersion )
+		return;
+
+	if( gMobileAPI.pfnTouchRemoveButton )
+		gMobileAPI.pfnTouchRemoveButton( "_menu_*" );
+
+	if( gMobileAPI.pfnTouchSetClientOnly )
+		gMobileAPI.pfnTouchSetClientOnly( 0 );
 }
 
 int CHudMenu :: Init( void )

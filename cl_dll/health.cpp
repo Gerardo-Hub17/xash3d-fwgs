@@ -161,7 +161,7 @@ int CHudHealth:: MsgFunc_Damage(const char *pszName,  int iSize, void *pbuf )
 	if ( damageTaken > 0 || armor > 0 )
 	{
 		CalcDamageDirection(vecFrom);
-		if( g_iXash )
+		if( g_iXash && g_iMobileAPIVersion && gMobileAPI.pfnVibrate )
 		{
 			float time = damageTaken * 4.0f + armor * 2.0f;
 

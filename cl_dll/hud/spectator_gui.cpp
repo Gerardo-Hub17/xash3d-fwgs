@@ -504,7 +504,8 @@ void CHudSpectatorGui::UserCmd_ToggleSpectatorMenu()
 		m_menuFlags &= ~MENU_OPTIONS;
 		m_menuFlags &= ~MENU_OPTIONS_SETTINGS;
 		m_menuFlags &= ~MENU_SPEC_OPTIONS;
-		gMobileAPI.pfnTouchRemoveButton( "_spec_*" );
+		if( g_iMobileAPIVersion )
+			gMobileAPI.pfnTouchRemoveButton( "_spec_*" );
 	}
 }
 
@@ -535,7 +536,8 @@ void CHudSpectatorGui::UserCmd_ToggleSpectatorMenuOptions()
 	{
 		m_menuFlags &= ~MENU_OPTIONS;
 		m_menuFlags &= ~MENU_OPTIONS_SETTINGS;
-		gMobileAPI.pfnTouchRemoveButton( "_spec_opt_*" );
+		if( g_iMobileAPIVersion )
+			gMobileAPI.pfnTouchRemoveButton( "_spec_opt_*" );
 	}
 }
 
@@ -561,7 +563,8 @@ void CHudSpectatorGui::UserCmd_ToggleSpectatorMenuOptionsSettings()
 	else
 	{
 		m_menuFlags &= ~MENU_OPTIONS_SETTINGS;
-		gMobileAPI.pfnTouchRemoveButton( "_spec_opt_set_*" );
+		if( g_iMobileAPIVersion )
+			gMobileAPI.pfnTouchRemoveButton( "_spec_opt_set_*" );
 	}
 }
 
@@ -591,6 +594,7 @@ void CHudSpectatorGui::UserCmd_ToggleSpectatorMenuSpectateOptions()
 	else
 	{
 		m_menuFlags &= ~MENU_SPEC_OPTIONS;
-		gMobileAPI.pfnTouchRemoveButton( "_spec_spec_*" );
+		if( g_iMobileAPIVersion )
+			gMobileAPI.pfnTouchRemoveButton( "_spec_spec_*" );
 	}
 }
