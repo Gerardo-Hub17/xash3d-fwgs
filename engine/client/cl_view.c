@@ -112,7 +112,7 @@ static void V_SetupViewModel( void )
 	view->curstate.colormap = (info->topcolor & 0xFFFF)|((info->bottomcolor << 8) & 0xFFFF);
 	view->curstate.number = cl.playernum + 1;
 	view->index = cl.playernum + 1;
-	view->model = CL_ModelHandle( cl.local.viewmodel );
+	view->model = CL_WiiLazyModel( cl.local.viewmodel );
 	view->curstate.modelindex = cl.local.viewmodel;
 	view->curstate.sequence = cl.local.weaponsequence;
 	view->curstate.rendermode = kRenderNormal;

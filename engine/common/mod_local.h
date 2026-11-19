@@ -159,6 +159,10 @@ model_t *Mod_ForName( const char *name, qboolean crash, qboolean trackCRC );
 qboolean Mod_ValidateCRC( const char *name, uint32_t crc );
 #if XASH_OGC
 qboolean Mod_IsShareAlias( const char *name );
+qboolean Mod_LazyWanted( const char *name );
+model_t *Mod_LazyRegister( const char *name );
+model_t *Mod_LazyTouch( model_t *mod );
+size_t Mod_LazyFlush( void );
 #endif
 void Mod_NeedCRC( const char *name, qboolean needCRC );
 void Mod_FreeUnused( void );

@@ -100,7 +100,11 @@ static wavdata_t *S_CreateDefaultSound( void )
 }
 
 #if XASH_OGC
-extern convar_t wii_lazy_sounds, wii_sound_cache_kb;
+extern convar_t wii_lazy_sounds, wii_sound_cache_kb, wii_mem_budget_kb;
+
+// KB of samples that are kept when the RAM budget is on (wii_mem_budget_kb). The config.cfg that older versions
+// saved says 8192 and would win over the new default of wii_sound_cache_kb
+#define S_BUDGET_CACHE_KB 4096
 
 /*
 =================
@@ -113,10 +117,13 @@ S_LoadSound reads it again from disk the next time it is needed.
 */
 static void S_TrimCache( size_t incoming )
 {
-	const size_t limit = (size_t)Q_max( 0.0f, wii_sound_cache_kb.value ) * 1024;
+	size_t limit = (size_t)Q_max( 0.0f, wii_sound_cache_kb.value ) * 1024;
 	size_t used = 0;
 	sfx_t *sfx;
 	int i, c;
+
+	if( wii_mem_budget_kb.value > 0.0f && ( !limit || limit > S_BUDGET_CACHE_KB * 1024 ))
+		limit = S_BUDGET_CACHE_KB * 1024;
 
 	if( !limit || !snd.initialized )
 		return;

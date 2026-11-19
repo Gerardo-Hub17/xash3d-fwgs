@@ -29,6 +29,62 @@ GNU General Public License for more details.
 #include <ogc/system.h>
 void OGC_DebugFlush( void );
 void OGC_WMCheck( const char *file, int line );
+size_t Mod_LazyFlush( void );
+static void Mem_MemReport( const char *tag );
+
+/*
+A request can fail with megabytes "free inside heap" when none of the free pieces is big enough
+(the 256 KB buffer of a texture that is being decoded, the 2 MB file of a model): the heap is
+fragmented. The reserve is a block that is taken at boot, handed back for the request that
+failed and taken again (Mem_RearmReserve) as soon as memory allows it. It turns a crash into
+a hiccup; it is not a substitute for using less memory.
+*/
+#define MEM_RESERVE_SIZE ( 640 * 1024 )
+static void *mem_reserve;
+static unsigned mem_relief_count;
+
+static qboolean Mem_ReleaseReserve( size_t size )
+{
+	size_t kb;
+
+	// the weapon models that are not being drawn come back from the disk when they are needed
+	if(( kb = Mod_LazyFlush( )) > 0 )
+	{
+		Con_Printf( S_WARN "[OOM] %u B do not fit in any free piece of the heap: %u KB of weapon models were freed\n",
+			(unsigned)size, (unsigned)kb );
+		return true;
+	}
+
+	if( mem_reserve == NULL )
+		return false;
+
+	free( mem_reserve );
+	mem_reserve = NULL;
+	mem_relief_count++;
+	Con_Printf( S_WARN "[OOM] %u B do not fit in any free piece of the heap: the reserve was released (#%u)\n",
+		(unsigned)size, mem_relief_count );
+	return true;
+}
+
+static void *Mem_MallocRelief( size_t size )
+{
+	void *p = malloc( size );
+
+	while( p == NULL && Mem_ReleaseReserve( size ))
+		p = malloc( size );
+
+	return p;
+}
+
+static void *Mem_ReallocRelief( void *mem, size_t size )
+{
+	void *p = realloc( mem, size );
+
+	while( p == NULL && size != 0 && Mem_ReleaseReserve( size ))
+		p = realloc( mem, size );
+
+	return p;
+}
 
 static void Mem_ReportOOM( size_t size )
 {
@@ -45,6 +101,7 @@ static void Mem_ReportOOM( size_t size )
         (unsigned)(( u32 )SYS_GetArena1Hi() - ( u32 )SYS_GetArena1Lo()) / 1024,
         (unsigned)(( u32 )SYS_GetArena2Hi() - ( u32 )SYS_GetArena2Lo()) / 1024 );
     Mem_PrintStats();
+    Mem_MemReport( "OOM" );
 #if XASH_OGC_ALLOCTRACE
     OGC_AllocDump();
 #endif
@@ -78,9 +135,14 @@ static void *Q_realloc( void *mem, size_t size )
 	return newmem;
 }
 #else
+#if XASH_OGC
+#define Q_malloc Mem_MallocRelief
+#define Q_realloc Mem_ReallocRelief
+#else
 #define Q_malloc malloc
-#define Q_free free
 #define Q_realloc realloc
+#endif
+#define Q_free free
 #endif
 
 // big header: full debug info, used for every allocation in pools without MEM_SMALL_ALLOC_OPT,
@@ -694,6 +756,113 @@ void Mem_PrintStats( void )
 }
 
 #if XASH_OGC
+CVAR_DEFINE_AUTO( wii_mem_budget_kb, "32768", FCVAR_ARCHIVE, "Wii: KB of heap that the engine itself should hold at most (models, textures, entities...). The [MEM] lines of the log say how close it is, the model policies (wii_cs_sharemodels 3, wii_lazy_models) use it" );
+
+extern int CL_WiiTexKB( void ); // cl_main.c: KB of texture data in the renderer
+
+static size_t mem_boot_free_kb; // free memory (not yet taken from MEM2 + free pieces of the heap) when the engine started
+
+size_t Mem_FreeKB( void )
+{
+	struct mallinfo mi = mallinfo();
+
+	return (( (size_t)SYS_GetArena2Hi() - (size_t)SYS_GetArena2Lo()) + (size_t)mi.fordblks ) / 1024;
+}
+
+// KB that the engine holds since it started: what was taken from MEM2 minus the free pieces of the heap
+size_t Mem_HeapUsedKB( void )
+{
+	const size_t freekb = Mem_FreeKB();
+
+	return ( mem_boot_free_kb > freekb ) ? mem_boot_free_kb - freekb : 0;
+}
+
+// [MEM] lines while the player is in the game: the weapons, sounds and entities are not there at the load
+static qboolean mem_ingame_on;
+static double mem_ingame_base;
+static int mem_ingame_step;
+
+void Mem_ArmInGameReport( void )
+{
+	mem_ingame_on = true;
+	mem_ingame_base = host.realtime;
+	mem_ingame_step = 0;
+	Mem_MemReport( "in game" );
+}
+
+// the reserve (see Mem_MallocRelief) is taken again when there is memory for it. Cheap: called every frame
+void Mem_RearmReserve( void )
+{
+	static const int report_at[] = { 15, 60, 180 };
+	static unsigned tick;
+
+	if( mem_ingame_on && mem_ingame_step < (int)ARRAYSIZE( report_at ) &&
+		host.realtime - mem_ingame_base >= report_at[mem_ingame_step] )
+	{
+		char tag[32];
+
+		Q_snprintf( tag, sizeof( tag ), "in game +%i s", report_at[mem_ingame_step++] );
+		Mem_MemReport( tag );
+	}
+
+	if( mem_reserve != NULL || ( tick++ & 127 ) != 0 )
+		return;
+
+	if( Mem_FreeKB() < MEM_RESERVE_SIZE / 1024 + 3072 )
+		return;
+
+	mem_reserve = malloc( MEM_RESERVE_SIZE );
+}
+
+/*
+===========
+Mem_MemReport
+
+[MEM] line: where the heap of the engine is, by kind of thing, against the budget (wii_mem_budget_kb).
+Pools are accounted by what they hold (the models name their pool after the file); the textures
+are not in any pool (GX data comes straight from memalign), the renderer says how many they are.
+===========
+*/
+static void Mem_MemReport( const char *tag )
+{
+	size_t studio = 0, player = 0, weapon = 0, sprite = 0, bsp = 0, sound = 0, ents = 0, other = 0;
+	int nstudio = 0, nplayer = 0, nweapon = 0, nsprite = 0;
+	const size_t used = Mem_HeapUsedKB();
+	const size_t budget = (size_t)Q_max( 0.0f, wii_mem_budget_kb.value );
+
+	for( size_t i = 0; i < poolcount; i++ )
+	{
+		const mempool_t *pool = &poolchain[i];
+		const size_t bytes = pool->realsize;
+
+		if( !pool->filename )
+			continue;
+
+		if( Q_strstr( pool->name, ".mdl" ))
+		{
+			if( Q_strstr( pool->name, "models/player" )) { player += bytes; nplayer++; }
+			else if( Q_strstr( pool->name, "models/v_" ) || Q_strstr( pool->name, "models/p_" ) || Q_strstr( pool->name, "models/shield/" ))
+			{ weapon += bytes; nweapon++; }
+			else { studio += bytes; nstudio++; }
+		}
+		else if( !Q_strncmp( pool->name, "animation share", 15 )) player += bytes;
+		else if( !Q_strncmp( pool->name, "Studio Cache", 12 )) studio += bytes;
+		else if( Q_strstr( pool->name, ".spr" )) { sprite += bytes; nsprite++; }
+		else if( Q_strstr( pool->name, ".bsp" )) bsp += bytes;
+		else if( !Q_strncmp( pool->name, "Sound", 5 )) sound += bytes;
+		else if( Q_strstr( pool->name, "Edicts" )) ents += bytes;
+		else other += bytes;
+	}
+
+	Con_Printf( "[MEM] %s: engine heap %u KB of %u KB%s | free %u KB | textures %d KB | players %u KB (%d models) |"
+		" weapons %u KB (%d loaded) | other models %u KB (%d) | sprites %u KB (%d) | bsp %u KB | sound %u KB | entities %u KB | other pools %u KB |"
+		" reserve %s, used %u times\n", tag, (unsigned)used, (unsigned)budget,
+		( budget && used > budget ) ? " OVER BUDGET" : "", (unsigned)Mem_FreeKB(), CL_WiiTexKB(),
+		(unsigned)( player / 1024 ), nplayer, (unsigned)( weapon / 1024 ), nweapon, (unsigned)( studio / 1024 ), nstudio, (unsigned)( sprite / 1024 ), nsprite,
+		(unsigned)( bsp / 1024 ), (unsigned)( sound / 1024 ), (unsigned)( ents / 1024 ), (unsigned)( other / 1024 ),
+		mem_reserve ? "armed" : "released", mem_relief_count );
+}
+
 /*
 ===========
 Mem_PhysReport
@@ -721,6 +890,7 @@ void Mem_PhysReport( const char *tag )
 	Con_Printf( "[MEMPHYS] %s: MEM1 left %u KB, MEM2 left %u KB, free inside heap %u KB | pools %u KB"
 		" | since last: left %+d KB, pools %+d KB\n", tag, a1, a2, (unsigned)mi.fordblks / 1024, pools,
 		prev_left ? (int)left - (int)prev_left : 0, prev_left ? (int)pools - (int)prev_pools : 0 );
+	Mem_MemReport( tag );
 	OGC_DebugFlush(); // a checkpoint is useless if the line dies with the game
 	prev_left = left;
 	prev_pools = pools;
@@ -736,7 +906,10 @@ static void Mem_PhysReport_f( void )
 
 void Mem_PhysInit( void )
 {
-	Cmd_AddCommand( "memphys", Mem_PhysReport_f, "Wii: physical memory left (MEM1/MEM2) vs mempool usage" );
+	Cvar_RegisterVariable( &wii_mem_budget_kb );
+	Cmd_AddCommand( "memphys", Mem_PhysReport_f, "Wii: physical memory left (MEM1/MEM2) vs mempool usage, and the [MEM] report against the budget" );
+	mem_boot_free_kb = Mem_FreeKB();
+	mem_reserve = malloc( MEM_RESERVE_SIZE );
 }
 #endif
 

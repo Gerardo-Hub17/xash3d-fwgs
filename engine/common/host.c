@@ -652,6 +652,7 @@ void Host_Frame( double time )
 {
 #if XASH_OGC
 	OGC_WMCheck( "Host_Frame", 0 );
+	Mem_RearmReserve();
 #endif
 #if XASH_OGC_MEMCHECK
 	// Walk every pool sentinel each frame. Corruption on this port shows up

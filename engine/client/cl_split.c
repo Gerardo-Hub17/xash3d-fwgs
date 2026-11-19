@@ -773,7 +773,7 @@ static qboolean CL_SplitSetupViewModel( int player, int entindex, const vec3_t o
 	if( !SV_SplitGetViewModel( player, &modelindex, &sequence, &body, &animcount ))
 		return false;
 
-	mod = CL_ModelHandle( modelindex );
+	mod = CL_WiiLazyModel( modelindex );
 
 	if( !mod || mod->type != mod_studio )
 		return false;

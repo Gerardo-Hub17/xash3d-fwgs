@@ -831,7 +831,14 @@ static void SV_SetupClients( void )
 #endif
 
 	svs.clients = Z_Realloc( svs.clients, sizeof( sv_client_t ) * svs.maxclients );
+#if XASH_OGC
+	// The states that are sent to the clients stay in a ring shared by all of them (for the deltas). A Wii does
+	// not host more than a few players and the bots are not sent anything: with 32 slots the ring would be 5.6 MB.
+	// If more than eight real players connect, the one whose frame was overwritten gets a full update.
+	svs.num_client_entities = Q_min( svs.maxclients, 8 ) * SV_UPDATE_BACKUP * NUM_PACKET_ENTITIES;
+#else
 	svs.num_client_entities = svs.maxclients * SV_UPDATE_BACKUP * NUM_PACKET_ENTITIES;
+#endif
 	svs.packet_entities = Z_Realloc( svs.packet_entities, sizeof( entity_state_t ) * svs.num_client_entities );
 	Con_Reportf( "%s alloced by server packet entities\n", Q_memprint( sizeof( entity_state_t ) * svs.num_client_entities ));
 

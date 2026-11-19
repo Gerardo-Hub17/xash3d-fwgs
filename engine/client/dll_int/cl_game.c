@@ -1086,7 +1086,14 @@ void CL_InitEdicts( int maxclients )
 	// iba lento y a saltos. cl.frames/commands ya tienen MULTIPLAYER_BACKUP (16) entradas.
 	CL_UPDATE_BACKUP = ( maxclients <= 1 ) ? SINGLEPLAYER_BACKUP : MULTIPLAYER_BACKUP;
 #endif
+#if XASH_OGC
+	// A delta can be taken from a frame while (num_client_entities - CL_NUM_PACKET_ENTITIES) states have not
+	// been written after it (CL_ValidateDeltaPacket). In multiplayer, half of the ring is still 15 frames
+	// of 200 entities and saves 1.4 MB of the heap; if a frame is too old the server sends a full update.
+	cls.num_client_entities = Q_max( SINGLEPLAYER_BACKUP, CL_UPDATE_BACKUP / 2 ) * CL_NUM_PACKET_ENTITIES;
+#else
 	cls.num_client_entities = CL_UPDATE_BACKUP * CL_NUM_PACKET_ENTITIES;
+#endif
 	cls.packet_entities = Mem_Realloc( clgame.mempool, cls.packet_entities, sizeof( entity_state_t ) * cls.num_client_entities );
 	clgame.entities = Mem_Calloc( clgame.mempool, sizeof( cl_entity_t ) * clgame.maxEntities );
 	clgame.static_entities = NULL; // will be initialized later
@@ -2829,7 +2836,7 @@ model_t *CL_LoadModel( const char *modelname, int *index )
 
 	if( index ) *index = i;
 
-	return CL_ModelHandle( i );
+	return CL_WiiLazyModel( i );
 }
 
 static int GAME_EXPORT CL_AddEntity( int entityType, cl_entity_t *pEnt )
@@ -4048,7 +4055,7 @@ static cl_enginefunc_t gEngfuncs =
 	(void*)Cmd_GetName,
 	pfnGetClientOldTime,
 	pfnGetGravity,
-	CL_ModelHandle,
+	CL_WiiLazyModel,
 	pfnEnableTexSort,
 	pfnSetLightmapColor,
 	pfnSetLightmapScale,
@@ -4146,7 +4153,7 @@ static engine_studio_api_t gStudioAPI =
 	.LoadCacheFile           = Mod_LoadCacheFile,
 	.Mod_ForName             = pfnStudio_Mod_ForName,
 	.Mod_Extradata           = pfnStudio_Mod_Extradata,
-	.GetModelByIndex         = CL_ModelHandle,
+	.GetModelByIndex         = CL_WiiLazyModel,
 	.GetCvar                 = CL_CvarGetPointer,
 	.GetChromeSprite         = pfnStudio_GetChromeSprite,
 	.GetAliasScale           = pfnStudio_GetAliasScale,

@@ -193,7 +193,11 @@ Default build-depended cvar and constant values
 #endif // DEFAULT_FULLSCREEN
 
 #ifndef DEFAULT_MAX_EDICTS
-	#define DEFAULT_MAX_EDICTS 1200 // was 900 before HL25
+	#if XASH_OGC
+		#define DEFAULT_MAX_EDICTS 900 // the limit of GoldSrc: every edict costs ~2.4 KB between the server and the client
+	#else
+		#define DEFAULT_MAX_EDICTS 1200 // was 900 before HL25
+	#endif
 #endif // DEFAULT_MAX_EDICTS
 
 

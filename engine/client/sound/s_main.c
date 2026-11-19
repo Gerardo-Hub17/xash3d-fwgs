@@ -57,7 +57,7 @@ CVAR_DEFINE_AUTO( s_samplecount, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "sample co
 CVAR_DEFINE_AUTO( s_warn_late_precache, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "warn about late precached sounds on client-side" );
 #if XASH_OGC
 CVAR_DEFINE_AUTO( wii_lazy_sounds, "1", FCVAR_ARCHIVE, "Wii: load a sound the first time it plays instead of loading every precached sound when the level starts (hundreds in Counter-Strike)" );
-CVAR_DEFINE_AUTO( wii_sound_cache_kb, "8192", FCVAR_ARCHIVE, "Wii: most KB of sound samples kept in memory; the ones nobody is playing are dropped (and reloaded when needed) above this. 0 = no limit" );
+CVAR_DEFINE_AUTO( wii_sound_cache_kb, "4096", FCVAR_ARCHIVE, "Wii: most KB of sound samples kept in memory; the ones nobody is playing are dropped (and reloaded when needed) above this. 0 = no limit. With wii_mem_budget_kb on it is never more than 4096" );
 #endif
 
 /*

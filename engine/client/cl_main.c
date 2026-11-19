@@ -350,6 +350,7 @@ static void CL_CheckClientState( void )
 		cls.state = ca_active;
 #if XASH_OGC
 		OGC_LoadMark( 2 );
+		Mem_ArmInGameReport();
 #endif
 		cls.changelevel = false;		// changelevel is done
 		cls.changedemo = false;		// changedemo is done
@@ -3360,6 +3361,42 @@ static qboolean CL_ShouldRescanFilesystem( void )
 	return retval;
 }
 
+#if XASH_OGC
+// KB of texture data that the renderer holds (the [MEM] report of zone.c)
+int CL_WiiTexKB( void )
+{
+	if( !ref.dllFuncs.RefGetParm )
+		return 0;
+
+	return ref.dllFuncs.RefGetParm( PARM_TEX_MEMORY, 0 ) / 1024;
+}
+
+/*
+==================
+CL_WiiLazyModel
+
+model_t of a model index. The weapon models (v_, p_ and shields) are loaded here, when they are drawn
+for the first time (wii_lazy_models, see Mod_LazyTouch). One that cannot be loaded is forgotten: its
+slot is free and may hold another model.
+==================
+*/
+model_t *CL_WiiLazyModel( int modelindex )
+{
+	model_t *mod = CL_ModelHandle( modelindex );
+	model_t *ret;
+
+	if( mod == NULL )
+		return NULL;
+
+	ret = Mod_LazyTouch( mod );
+
+	if( ret == NULL )
+		cl.models[modelindex] = NULL;
+
+	return ret;
+}
+#endif
+
 qboolean CL_PrecacheResources( void )
 {
 	resource_t	*pRes;
@@ -3476,6 +3513,14 @@ qboolean CL_PrecacheResources( void )
 				{
 					if( pRes->nIndex != -1 )
 					{
+#if XASH_OGC
+						if( Mod_LazyWanted( pRes->szFileName ))
+						{
+							// a weapon: it is loaded when it is drawn (wii_lazy_models)
+							cl.models[pRes->nIndex] = Mod_LazyRegister( pRes->szFileName );
+							break;
+						}
+#endif
 						CL_LoadLog( "model", pRes->szFileName );
 						cl.models[pRes->nIndex] = Mod_ForName( pRes->szFileName, false, true );
 

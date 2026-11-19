@@ -197,10 +197,14 @@ void Mod_Init( void )
 		extern convar_t wii_preload_anims;
 		extern void Mod_MapCRC_f( void );
 		extern convar_t wii_preload_kb, wii_preload_reserve;
-		extern convar_t wii_cs_sharemodels, wii_cs_modelreserve, wii_cs_ctmodel, wii_cs_tmodel;
+		extern convar_t wii_cs_sharemodels, wii_cs_modelreserve, wii_cs_modelfuture, wii_cs_ctmodel, wii_cs_tmodel;
+		extern convar_t wii_lazy_models, wii_lazy_kb;
 		extern convar_t wii_share_anims, wii_share_anims_kb;
 		Cvar_RegisterVariable( &wii_cs_sharemodels );
 		Cvar_RegisterVariable( &wii_cs_modelreserve );
+		Cvar_RegisterVariable( &wii_cs_modelfuture );
+		Cvar_RegisterVariable( &wii_lazy_models );
+		Cvar_RegisterVariable( &wii_lazy_kb );
 		Cvar_RegisterVariable( &wii_cs_ctmodel );
 		Cvar_RegisterVariable( &wii_cs_tmodel );
 		Cvar_RegisterVariable( &wii_share_anims );
@@ -286,7 +290,14 @@ the model that replaces the requested one exists.
 ==================
 */
 CVAR_DEFINE_AUTO( wii_cs_sharemodels, "3", FCVAR_ARCHIVE, "Wii: player models of CS 1.6: 0 = all of them, 1 = one per team, 2 = one for everybody, 3 = all of them while there is memory (wii_cs_modelreserve)" );
-CVAR_DEFINE_AUTO( wii_cs_modelreserve, "16384", FCVAR_ARCHIVE, "Wii: free KB under which a new player model is loaded as the model of its team (wii_cs_sharemodels 3)" );
+CVAR_DEFINE_AUTO( wii_cs_modelreserve, "16384", FCVAR_ARCHIVE, "Wii: free KB that must be left after a player model that stays on its own (wii_cs_sharemodels 3)" );
+CVAR_DEFINE_AUTO( wii_cs_modelfuture, "12288", FCVAR_ARCHIVE, "Wii: KB that still load after the player models (client textures and entities, third person weapons...). With wii_mem_budget_kb it decides how many player models stay on their own (wii_cs_sharemodels 3)" );
+
+// KB of heap that the last player model took (measured in Mod_LoadModel): with the animations shared it
+// is a fraction of the 2 MB of the file, without them it is all of it, and the policy below follows
+size_t mod_player_cost_kb;
+
+extern convar_t wii_mem_budget_kb;
 CVAR_DEFINE_AUTO( wii_cs_ctmodel, "gign", FCVAR_ARCHIVE, "Wii: the model that every CT player uses when models are shared (gign, gsg9, sas, urban)" );
 CVAR_DEFINE_AUTO( wii_cs_tmodel, "terror", FCVAR_ARCHIVE, "Wii: the model that every terrorist uses when models are shared (terror, leet, arctic, guerilla)" );
 
@@ -374,13 +385,24 @@ static const char *Mod_ShareName( const char *filename, char *out, size_t outsiz
 
 	// first time this model is asked for: decide now and do not change it in the middle of a level
 	if( level >= 3 )
-		useout = Mod_FreeMemoryKB() < (size_t)Q_max( 0.0f, wii_cs_modelreserve.value );
+	{
+		// a model costs what the last one cost (until there is one, the 2 MB of the file); it stays on its
+		// own while the engine would still be inside its budget once everything that loads later is in
+		// (wii_cs_modelfuture), and while it leaves the free memory above wii_cs_modelreserve
+		const size_t cost = mod_player_cost_kb ? mod_player_cost_kb : 2300;
+		const size_t budget = (size_t)Q_max( 0.0f, wii_mem_budget_kb.value );
+		const size_t future = (size_t)Q_max( 0.0f, wii_cs_modelfuture.value );
+		const size_t reserve = (size_t)Q_max( 0.0f, wii_cs_modelreserve.value );
+
+		useout = ( budget && Mem_HeapUsedKB() + cost + future > budget ) || Mod_FreeMemoryKB() < reserve + cost;
+	}
 	else useout = true;
 
 	Q_strncpy( seen[numseen], filename, sizeof( seen[0] ));
 	alias[numseen++] = useout;
 
-	Con_Printf( "[SHARE] %s %s %s (free %i KB)\n", filename, useout ? "->" : "kept, not", out, (int)Mod_FreeMemoryKB( ));
+	Con_Printf( "[SHARE] %s %s %s (free %i KB, engine heap %i KB, a model costs %i KB)\n", filename, useout ? "->" : "kept, not",
+		out, (int)Mod_FreeMemoryKB(), (int)Mem_HeapUsedKB(), (int)( mod_player_cost_kb ? mod_player_cost_kb : 2300 ));
 
 	return useout ? out : filename;
 }
@@ -502,6 +524,10 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	Q_strncpy( tempname, mod->name, sizeof( tempname ));
 	COM_FixSlashes( tempname );
 
+#if XASH_OGC
+	const size_t heap0 = Mem_HeapUsedKB();
+#endif
+
 	byte *buf = FS_LoadFile( tempname, &length, false );
 
 	if( !buf || length < sizeof( uint ))
@@ -612,6 +638,17 @@ static model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	}
 	Mem_Free( buf );
 
+#if XASH_OGC
+	// what a player model really costs (see Mod_ShareName): the heap after minus the heap before, file buffer gone
+	if( !Q_strnicmp( mod->name, "models/player", 13 ))
+	{
+		const size_t heap1 = Mem_HeapUsedKB();
+
+		mod_player_cost_kb = ( heap1 > heap0 ) ? Q_max( heap1 - heap0, (size_t)64 ) : 64;
+		Con_Printf( "[MEM] %s took %i KB of heap\n", mod->name, (int)mod_player_cost_kb );
+	}
+#endif
+
 	return mod;
 }
 
@@ -645,6 +682,278 @@ model_t *Mod_ForName( const char *name, qboolean crash, qboolean trackCRC )
     return Mod_LoadModel( mod, crash );
 #endif
 }
+
+#if XASH_OGC
+/*
+==================
+Weapon models on demand (wii_lazy_models)
+
+Counter-Strike has about thirty weapons and the game precaches the first person (v_), third person
+(p_) and shield models of all of them on every map: 10 to 13 MB of the heap of the Wii for models of
+which a player sees two or three at a time. With wii_lazy_models the server and the client only
+register them (name, slot and CRC flag: Mod_LazyRegister) and the model is loaded when it is drawn
+(Mod_LazyTouch, from CL_WiiLazyModel). The models that are loaded stay up to wii_lazy_kb KB of heap:
+after each load the ones that were drawn the longest time ago are freed (the slot and the name stay,
+so they come back when they are needed again). The server never loads them: it only needs the index.
+==================
+*/
+CVAR_DEFINE_AUTO( wii_lazy_models, "1", FCVAR_ARCHIVE, "Wii: weapon models of CS 1.6 (v_, p_ and shields) are loaded when they are drawn and the ones that are not used are freed (0 = all of them at the start)" );
+CVAR_DEFINE_AUTO( wii_lazy_kb, "3072", FCVAR_ARCHIVE, "Wii: KB of heap that the weapon models loaded on demand may use before the ones that were drawn the longest time ago are freed (wii_lazy_models)" );
+
+#define MOD_LAZY_MAX	48	// loaded weapon models that are tracked: more than can be on the screen
+#define MOD_LAZY_HOT	3	// frames in which a model that was drawn is not freed (it may still be in use)
+
+static struct
+{
+	model_t	*mod;
+	uint	frame;	// host.framecount of the last time that it was asked for
+	size_t	kb;	// KB of heap that it took when it was loaded
+} mod_lazy[MOD_LAZY_MAX];
+
+static qboolean Mod_IsCounterStrike( void )
+{
+	return !Q_strnicmp( GI->gamefolder, "cstrike", 7 ) || !Q_strnicmp( GI->gamefolder, "czero", 5 );
+}
+
+// the name of a model that is drawn by the weapons of the players and nothing else
+static qboolean Mod_IsLazyName( const char *name )
+{
+	if( !name || Q_strnicmp( name, "models/", 7 ))
+		return false;
+
+	name += 7;
+
+	if(( name[0] == 'v' || name[0] == 'V' || name[0] == 'p' || name[0] == 'P' ) && name[1] == '_' )
+		return true;
+
+	return !Q_strnicmp( name, "shield/", 7 );
+}
+
+/*
+==================
+Mod_LazyWanted
+
+true if the model is going to be loaded when it is drawn instead of when it is precached. A file that
+does not exist takes the normal way (with its error).
+==================
+*/
+qboolean Mod_LazyWanted( const char *name )
+{
+	if( wii_lazy_models.value <= 0.0f || !Mod_IsLazyName( name ) || !Mod_IsCounterStrike( ))
+		return false;
+
+	return FS_FileExists( name, false ) != 0;
+}
+
+/*
+==================
+Mod_LazyRegister
+
+the model has a slot, a name and a CRC flag but it is not loaded
+==================
+*/
+model_t *Mod_LazyRegister( const char *name )
+{
+	model_t *mod = Mod_FindName( name, true );
+
+	// never loaded: a zeroed slot looks like a brush model (type 0) to the code that scans the models
+	if( mod && !mod->mempool && mod->name[0] != '*' )
+		mod->type = mod_bad;
+
+	return mod;
+}
+
+static int Mod_LazyFind( const model_t *mod )
+{
+	for( int i = 0; i < MOD_LAZY_MAX; i++ )
+	{
+		if( mod_lazy[i].mod == mod )
+			return i;
+	}
+
+	return -1;
+}
+
+// the slot of the table that still holds a loaded weapon model, else it is released
+static qboolean Mod_LazyLive( int i )
+{
+	const model_t *mod = mod_lazy[i].mod;
+
+	if( !mod )
+		return false;
+
+	if( mod->mempool && Mod_IsLazyName( mod->name ))
+		return true;
+
+	mod_lazy[i].mod = NULL; // freed with the level, or its slot was reused
+	return false;
+}
+
+// frees the heap of a model but not its slot, its name or its CRC: it is registered again
+static void Mod_LazyUnload( int i )
+{
+	model_t *mod = mod_lazy[i].mod;
+	const int kb = (int)mod_lazy[i].kb;
+	char name[MAX_QPATH];
+
+	mod_lazy[i].mod = NULL; // first: the print below may need memory, and the allocator may call Mod_LazyFlush
+
+	Q_strncpy( name, mod->name, sizeof( name ));
+	Mod_FreeModel( mod );
+	Q_strncpy( mod->name, name, sizeof( mod->name ));
+	mod->needload = NL_NEEDS_LOADED;
+	mod->type = mod_bad;
+
+	Con_Printf( "[LAZY] free %s (%i KB)\n", name, kb );
+}
+
+// the model that was drawn the longest time ago and is not in use now, -1 if all of them are
+static int Mod_LazyOldest( const model_t *keep )
+{
+	int oldest = -1;
+
+	for( int i = 0; i < MOD_LAZY_MAX; i++ )
+	{
+		if( !Mod_LazyLive( i ) || mod_lazy[i].mod == keep )
+			continue;
+
+		if( host.framecount - mod_lazy[i].frame < MOD_LAZY_HOT )
+			continue;
+
+		if( oldest < 0 || mod_lazy[i].frame < mod_lazy[oldest].frame )
+			oldest = i;
+	}
+
+	return oldest;
+}
+
+// keeps the heap of the weapon models under wii_lazy_kb by freeing the ones that are not used
+static void Mod_LazyTrim( const model_t *keep )
+{
+	const size_t budget = (size_t)Q_max( 256.0f, wii_lazy_kb.value );
+
+	for( ;; )
+	{
+		size_t used = 0;
+		int oldest;
+
+		for( int i = 0; i < MOD_LAZY_MAX; i++ )
+		{
+			if( Mod_LazyLive( i ))
+				used += mod_lazy[i].kb;
+		}
+
+		if( used <= budget || ( oldest = Mod_LazyOldest( keep )) < 0 )
+			break;
+
+		Mod_LazyUnload( oldest );
+	}
+}
+
+/*
+==================
+Mod_LazyFlush
+
+frees every weapon model that is not in use: the last resort before an allocation fails. Returns
+the KB that were freed.
+==================
+*/
+size_t Mod_LazyFlush( void )
+{
+	size_t freed = 0;
+	int i;
+
+	while(( i = Mod_LazyOldest( NULL )) >= 0 )
+	{
+		freed += mod_lazy[i].kb;
+		Mod_LazyUnload( i );
+	}
+
+	return freed;
+}
+
+// a free entry of the table: the oldest model is freed if there is none
+static int Mod_LazySlot( void )
+{
+	int i, oldest;
+
+	for( i = 0; i < MOD_LAZY_MAX; i++ )
+	{
+		if( !Mod_LazyLive( i ))
+			return i;
+	}
+
+	if(( oldest = Mod_LazyOldest( NULL )) < 0 )
+		return -1;
+
+	Mod_LazyUnload( oldest );
+	return oldest;
+}
+
+/*
+==================
+Mod_LazyTouch
+
+the model is going to be drawn: loads it if it is not loaded and marks it as in use. NULL if it
+cannot be loaded (its slot is then free: the caller forgets the pointer).
+==================
+*/
+model_t *Mod_LazyTouch( model_t *mod )
+{
+	char name[MAX_QPATH];
+	size_t heap0, kb;
+	double t0;
+	int i;
+
+	// the other games load their weapons as always: only a model that Mod_LazyRegister left unloaded
+	// (CS) is loaded here, and the ones that are loaded join the table
+	if( !mod || mod->name[0] == '*' || !Mod_IsLazyName( mod->name ) || !Mod_IsCounterStrike( ))
+		return mod;
+
+	if( mod->mempool )
+	{
+		// a model that was loaded some other way joins the table
+		if(( i = Mod_LazyFind( mod )) < 0 && ( i = Mod_LazySlot( )) >= 0 )
+		{
+			mod_lazy[i].mod = mod;
+			mod_lazy[i].kb = 0;
+		}
+
+		if( i >= 0 )
+			mod_lazy[i].frame = host.framecount;
+
+		return mod;
+	}
+
+	if( mod->needload != NL_NEEDS_LOADED )
+		return NULL; // freed with the level
+
+	Q_strncpy( name, mod->name, sizeof( name ));
+	heap0 = Mem_HeapUsedKB();
+	t0 = Platform_DoubleTime();
+
+	if( !Mod_LoadModel( mod, false ))
+	{
+		Con_Printf( S_ERROR "[LAZY] %s cannot be loaded\n", name );
+		return NULL;
+	}
+
+	kb = Mem_HeapUsedKB();
+	kb = ( kb > heap0 ) ? Q_max( kb - heap0, (size_t)16 ) : 16;
+
+	if(( i = Mod_LazySlot( )) >= 0 )
+	{
+		mod_lazy[i].mod = mod;
+		mod_lazy[i].frame = host.framecount;
+		mod_lazy[i].kb = kb;
+	}
+
+	Con_Printf( "[LAZY] load %s: %i KB, %i ms\n", name, (int)kb, (int)(( Platform_DoubleTime() - t0 ) * 1000.0 ));
+	Mod_LazyTrim( mod );
+
+	return mod;
+}
+#endif
 
 /*
 ==================

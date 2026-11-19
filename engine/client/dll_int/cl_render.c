@@ -281,7 +281,7 @@ static render_api_t gRenderAPI =
 	pfnFileBufferCRC32,
 	pfnCompareFileTime,
 	Host_Error,
-	(void*)CL_ModelHandle,
+	(void*)CL_WiiLazyModel,
 	Sys_FloatTime,
 	Cvar_Set,
 	S_MusicFade,

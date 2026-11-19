@@ -505,6 +505,15 @@ static void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, cons
 		}
 		else GameInfo->falldir[0] = 0;
 	}
+
+#if XASH_OGC
+	// Wii: these tables are allocated in the 55 MB of the heap. A game can ask for more (gameinfo.txt) but
+	// the console does not have the memory: 900 edicts is the limit that the CS 1.6 maps were made for,
+	// every temp entity is ~3 KB
+	GameInfo->max_edicts    = Q_min( GameInfo->max_edicts, 900 );
+	GameInfo->max_tents     = Q_min( GameInfo->max_tents, 256 );
+	GameInfo->max_particles = Q_min( GameInfo->max_particles, 2048 );
+#endif
 }
 
 /*

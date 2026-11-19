@@ -1308,6 +1308,19 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 			SCR_WiiLoading( 0, sv.name, sv.model_precache[i], i, 0 );
 	}
 #endif
+#if XASH_OGC
+	if( Mod_LazyWanted( sv.model_precache[i] ))
+	{
+		// a weapon model is drawn by the clients, the server only needs its index: it is
+		// loaded by the client when it is drawn (wii_lazy_models)
+		sv.models[i] = NULL;
+
+		if( !optional )
+			SetBits( sv.model_precache_flags[i], RES_FATALIFMISSING );
+
+		return i;
+	}
+#endif
 	sv.models[i] = Mod_ForName( sv.model_precache[i], false, true );
 
 	if( !optional )

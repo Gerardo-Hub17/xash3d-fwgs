@@ -931,6 +931,14 @@ static inline model_t *CL_ModelHandle( int modelindex )
 	return likely( modelindex >= 0 && modelindex < MAX_MODELS ) ? cl.models[modelindex] : NULL;
 }
 
+#if XASH_OGC
+// the weapon models are loaded when they are drawn (wii_lazy_models): whoever draws or hands out
+// a model by index asks here, the code that only scans the models uses CL_ModelHandle
+model_t *CL_WiiLazyModel( int modelindex );
+#else
+#define CL_WiiLazyModel CL_ModelHandle
+#endif
+
 static inline qboolean CL_IsThirdPerson( void )
 {
 	return clgame.dllFuncs.CL_IsThirdPerson();

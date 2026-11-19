@@ -613,6 +613,10 @@ static inline model_t *CL_ModelHandle( int index )
 	return gp_cl->models[index];
 }
 
+// the weapon models are loaded when they are drawn (wii_lazy_models): the one that draws a model by
+// its index asks the engine, the code that scans all of them uses CL_ModelHandle
+extern model_t *CL_WiiLazyModel( int index );
+
 static inline byte TextureToGamma( byte b )
 {
 	return !FBitSet( gp_host->features, ENGINE_LINEAR_GAMMA_SPACE ) ? tr.texgammatable[b] : b;

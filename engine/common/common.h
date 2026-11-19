@@ -382,6 +382,10 @@ void Mem_PrintStats( void );
 #if XASH_OGC
 void Mem_PhysReport( const char *tag );
 void Mem_PhysInit( void );
+size_t Mem_FreeKB( void );		// not taken from MEM2 yet + free pieces of the heap
+size_t Mem_HeapUsedKB( void );		// what the engine holds since it started (see wii_mem_budget_kb)
+void Mem_RearmReserve( void );		// the OOM reserve is taken again when there is memory
+void Mem_ArmInGameReport( void );	// [MEM] lines when the player gets in the game and 15, 60 and 180 s later
 #define MEM_PHYS( tag ) Mem_PhysReport( tag )
 #if XASH_OGC_ALLOCTRACE
 void OGC_AllocDump( void );

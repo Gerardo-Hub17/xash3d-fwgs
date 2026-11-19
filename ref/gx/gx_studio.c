@@ -2515,14 +2515,18 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		if( pplayer->weaponmodel )
 		{
 			cl_entity_t	saveent = *RI.currententity;
-			model_t		*pweaponmodel = CL_ModelHandle( pplayer->weaponmodel );
+			// the weapon models are loaded when they are drawn (wii_lazy_models)
+			model_t		*pweaponmodel = CL_WiiLazyModel( pplayer->weaponmodel );
 
-			m_pStudioHeader = (studiohdr_t *)gEngfuncs.Mod_Extradata( mod_studio, pweaponmodel );
+			if( pweaponmodel && pweaponmodel->type == mod_studio )
+			{
+				m_pStudioHeader = (studiohdr_t *)gEngfuncs.Mod_Extradata( mod_studio, pweaponmodel );
 
-			R_StudioMergeBones( RI.currententity, pweaponmodel );
-			R_StudioSetupLighting( &lighting );
-			R_StudioRenderModel( );
-			R_StudioCalcAttachments( );
+				R_StudioMergeBones( RI.currententity, pweaponmodel );
+				R_StudioSetupLighting( &lighting );
+				R_StudioRenderModel( );
+				R_StudioCalcAttachments( );
+			}
 
 			*RI.currententity = saveent;
 		}

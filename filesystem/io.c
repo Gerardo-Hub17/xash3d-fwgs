@@ -37,7 +37,11 @@ GNU General Public License for more details.
 #include "filesystem_internal.h"
 #include "common/com_strings.h"
 
+#if XASH_OGC
+#define FILE_COPY_SIZE		(64 * 1024)	// Wii: a block of 1 MB is hard to find in a fragmented heap
+#else
 #define FILE_COPY_SIZE		(1024 * 1024)
+#endif
 
 static void FS_Purge( file_t *file )
 {
