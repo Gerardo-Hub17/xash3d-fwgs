@@ -315,6 +315,12 @@ void CHud :: Init( void )
 	gEngfuncs.pfnHookUserMsg( "ReceiveW", __MsgFunc_ReceiveW );
 
 	CVAR_CREATE( "_vgui_menus", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );
+
+	// no menu object to draw the VGUI menus (Wii): ask the server for the old text menus, which
+	// CHudMenu draws and the engine lets you pick with the controller. Forced on every start,
+	// config.cfg may still carry the old "1"
+	if( !HUD_HasNativeMenu( ))
+		gEngfuncs.Cvar_Set( "_vgui_menus", "0" );
 	CVAR_CREATE( "_cl_autowepswitch", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );
 	CVAR_CREATE( "_ah", "0", FCVAR_ARCHIVE | FCVAR_USERINFO );
 

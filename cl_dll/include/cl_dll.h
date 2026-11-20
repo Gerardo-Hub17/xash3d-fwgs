@@ -103,4 +103,5 @@ extern mobile_engfuncs_t gMobileAPI;
 extern IGameMenuExports *g_pMenu;
 extern int g_iXash; // indicates buildnum
 extern int g_iMobileAPIVersion; // indicates version. 0 if no mobile API
+bool HUD_HasNativeMenu( void ); // false when nothing can draw the VGUI/touch menus (Wii)
 #endif // CL_DLL_H

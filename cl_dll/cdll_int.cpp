@@ -60,6 +60,19 @@ static IGameMenuExports *GetNativeMenuExports( void )
 	return static_cast<IGameMenuExports *>( menuFactory( GAMEMENUEXPORTS_INTERFACE_VERSION, NULL ) );
 }
 
+// true when something can draw the client's own menus (the MenuFactory object of the main menu);
+// the Wii has none: the engine ships no touch screen and the static menu exports no CreateInterface
+bool HUD_HasNativeMenu( void )
+{
+	if( g_pMenu )
+		return true;
+
+	if( !g_iMobileAPIVersion || !gMobileAPI.pfnGetNativeObject )
+		return false;
+
+	return gMobileAPI.pfnGetNativeObject( "MenuFactory" ) != nullptr;
+}
+
 static bool HUD_MessageBox( const char *msg )
 {
 	gEngfuncs.Con_Printf( "%s", msg );

@@ -64,6 +64,10 @@ int CHudMenu :: Init( void )
 
 	_extended_menus = CVAR_CREATE("_extended_menus", "1", FCVAR_ARCHIVE);
 
+	// the extended menus are touch scripts (nothing on the Wii): keep the numbered text menu
+	if( !HUD_HasNativeMenu( ))
+		gEngfuncs.Cvar_SetValue( "_extended_menus", 0.0f );
+
 	InitHUDData();
 
 	m_bAllowSpec = true; // by default, spectating is allowed
