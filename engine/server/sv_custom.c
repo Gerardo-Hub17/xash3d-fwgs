@@ -80,6 +80,50 @@ static qboolean SV_FileInConsistencyList( const char *filename, consistency_t **
 	return false;
 }
 
+/*
+============
+the bounds travel as little-endian floats (in the resource list and in the answer of the client).
+On a big-endian CPU (Wii) the raw bytes of a vec3_t are reversed: convert them
+============
+*/
+static void SV_PutBoundsLE( byte *dst, const vec3_t v )
+{
+	for( int i = 0; i < 3; i++ )
+	{
+		float f = LittleFloat( v[i] );
+		memcpy( dst + i * sizeof( float ), &f, sizeof( float ));
+	}
+}
+
+static void SV_GetBoundsLE( vec3_t out, const byte *src )
+{
+	for( int i = 0; i < 3; i++ )
+	{
+		float f;
+		memcpy( &f, src + i * sizeof( float ), sizeof( float ));
+		out[i] = LittleFloat( f );
+	}
+}
+
+#if XASH_OGC
+// the CPU of the Wii and the one of the client do not round the bones the same way (fused
+// multiply-add): the bounds of the same model can differ in the last bits
+#define SV_BOUNDS_EPS 0.01f
+#else
+#define SV_BOUNDS_EPS 0.0f
+#endif
+
+static qboolean SV_BoundsEqual( const vec3_t a, const vec3_t b )
+{
+	for( int i = 0; i < 3; i++ )
+	{
+		if( fabsf( a[i] - b[i] ) > SV_BOUNDS_EPS )
+			return false;
+	}
+
+	return true;
+}
+
 void SV_ParseConsistencyResponse( sv_client_t *cl, sizebuf_t *msg )
 {
 	int		c;
@@ -124,8 +168,11 @@ void SV_ParseConsistencyResponse( sv_client_t *cl, sizebuf_t *msg )
 			byte		resbuffer[32];
 			FORCE_TYPE	ft;
 
-			MSG_ReadBytes( msg, cmins, sizeof( cmins ), sizeof( cmins ));
-			MSG_ReadBytes( msg, cmaxs, sizeof( cmaxs ), sizeof( cmaxs ));
+			for( int i = 0; i < 3; i++ )
+				cmins[i] = MSG_ReadFloat( msg );
+
+			for( int i = 0; i < 3; i++ )
+				cmaxs[i] = MSG_ReadFloat( msg );
 
 			memcpy( resbuffer, r->rguc_reserved, 32 );
 			ft = resbuffer[0];
@@ -133,19 +180,26 @@ void SV_ParseConsistencyResponse( sv_client_t *cl, sizebuf_t *msg )
 			switch( ft )
 			{
 			case force_model_samebounds:
-				memcpy( mins, &resbuffer[0x01], sizeof( mins ));
-				memcpy( maxs, &resbuffer[0x0D], sizeof( maxs ));
+				SV_GetBoundsLE( mins, &resbuffer[0x01] );
+				SV_GetBoundsLE( maxs, &resbuffer[0x0D] );
 
-				if( !VectorCompare( cmins, mins ) || !VectorCompare( cmaxs, maxs ))
+				if( !SV_BoundsEqual( cmins, mins ) || !SV_BoundsEqual( cmaxs, maxs ))
+				{
 					badresindex = idx + 1;
+#if XASH_OGC
+					Con_Printf( "[CONSIST] %s: cliente mins(%g %g %g) maxs(%g %g %g), servidor mins(%g %g %g) maxs(%g %g %g)\n",
+						r->szFileName, cmins[0], cmins[1], cmins[2], cmaxs[0], cmaxs[1], cmaxs[2],
+						mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2] );
+#endif
+				}
 				break;
 			case force_model_specifybounds:
-				memcpy( mins, &resbuffer[0x01], sizeof( mins ));
-				memcpy( maxs, &resbuffer[0x0D], sizeof( maxs ));
+				SV_GetBoundsLE( mins, &resbuffer[0x01] );
+				SV_GetBoundsLE( maxs, &resbuffer[0x0D] );
 
 				for( int i = 0; i < 3; i++ )
 				{
-					if( cmins[i] < mins[i] || cmaxs[i] > maxs[i] )
+					if( cmins[i] < mins[i] - SV_BOUNDS_EPS || cmaxs[i] > maxs[i] + SV_BOUNDS_EPS )
 					{
 						badresindex = idx + 1;
 						break;
@@ -223,13 +277,13 @@ void SV_TransferConsistencyInfo( void )
 			case force_model_samebounds:
 				if( !Mod_GetStudioBounds( filepath, mins, maxs ))
 					Host_Error( "%s: couldn't get bounds for %s\n", __func__, filepath );
-				memcpy( &pResource->rguc_reserved[0x01], mins, sizeof( mins ));
-				memcpy( &pResource->rguc_reserved[0x0D], maxs, sizeof( maxs ));
+				SV_PutBoundsLE( &pResource->rguc_reserved[0x01], mins );
+				SV_PutBoundsLE( &pResource->rguc_reserved[0x0D], maxs );
 				pResource->rguc_reserved[0] = pc->check_type;
 				break;
 			case force_model_specifybounds:
-				memcpy( &pResource->rguc_reserved[0x01], pc->mins, sizeof( pc->mins ));
-				memcpy( &pResource->rguc_reserved[0x0D], pc->maxs, sizeof( pc->maxs ));
+				SV_PutBoundsLE( &pResource->rguc_reserved[0x01], pc->mins );
+				SV_PutBoundsLE( &pResource->rguc_reserved[0x0D], pc->maxs );
 				pResource->rguc_reserved[0] = pc->check_type;
 				break;
 			}

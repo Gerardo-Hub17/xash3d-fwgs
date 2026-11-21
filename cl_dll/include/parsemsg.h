@@ -90,6 +90,32 @@ inline T BufferReader::Read( void )
 	memcpy( &t, m_pBuf + m_iRead, sizeof( T ) );
 	m_iRead += sizeof( T );
 
+	// el servidor escribe los mensajes en little-endian; en la Wii (big-endian)
+	// hay que invertir los bytes o un short 0x0033 llega como 0x3300
+#if defined( __BYTE_ORDER__ ) && defined( __ORDER_BIG_ENDIAN__ ) && ( __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ )
+	if( sizeof( T ) == 2 )
+	{
+		uint16_t u;
+		memcpy( &u, &t, 2 );
+		u = __builtin_bswap16( u );
+		memcpy( &t, &u, 2 );
+	}
+	else if( sizeof( T ) == 4 )
+	{
+		uint32_t u;
+		memcpy( &u, &t, 4 );
+		u = __builtin_bswap32( u );
+		memcpy( &t, &u, 4 );
+	}
+	else if( sizeof( T ) == 8 )
+	{
+		uint64_t u;
+		memcpy( &u, &t, 8 );
+		u = __builtin_bswap64( u );
+		memcpy( &t, &u, 8 );
+	}
+#endif
+
 	return t;
 }
 
@@ -136,8 +162,12 @@ inline float BufferReader::Read( void )
 		return -1.0f;
 	}
 
-	for( int i = 0; i < 4; i++ )
-		tr.b[i] = m_pBuf[m_iRead + i];
+	// float little-endian en el cable, sea cual sea el orden del procesador
+	{
+		uint32_t u = (uint32_t)m_pBuf[m_iRead] | ( (uint32_t)m_pBuf[m_iRead + 1] << 8 ) |
+			( (uint32_t)m_pBuf[m_iRead + 2] << 16 ) | ( (uint32_t)m_pBuf[m_iRead + 3] << 24 );
+		memcpy( &tr.f, &u, 4 );
+	}
 
 	m_iRead += 4;
 

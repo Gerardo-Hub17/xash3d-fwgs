@@ -57,7 +57,12 @@ static CVAR_DEFINE_AUTO( sv_allow_dlfile, "1", 0, "compatibility cvar, does noth
 CVAR_DEFINE_AUTO( sv_uploadmax, "0.5", FCVAR_SERVER, "max size to upload custom resources (500 kB as default)" );
 CVAR_DEFINE_AUTO( sv_upload_penalty_time, "60", FCVAR_ARCHIVE, "allow custom resource updates only once in this timewindow (set 0 to disable)" );
 CVAR_DEFINE_AUTO( sv_downloadurl, "", FCVAR_PROTECTED, "location from which clients can download missing files" );
+#if XASH_OGC
+// the files of the other devices of a LAN are not the ones of the SD card of the Wii: do not expel them
+CVAR_DEFINE( sv_consistency, "mp_consistency", "0", FCVAR_SERVER, "enbale consistency check in multiplayer" );
+#else
 CVAR_DEFINE( sv_consistency, "mp_consistency", "1", FCVAR_SERVER, "enbale consistency check in multiplayer" );
+#endif
 CVAR_DEFINE_AUTO( mp_logecho, "1", 0, "log multiplayer frags to server logfile" );
 CVAR_DEFINE_AUTO( mp_logfile, "1", 0, "log multiplayer frags to console" );
 CVAR_DEFINE_AUTO( sv_log_singleplayer, "0", FCVAR_ARCHIVE, "allows logging in singleplayer games" );

@@ -573,6 +573,7 @@ private:
 	void PanelMove( int dir );
 	bool SlotValid( int slot ) const { return slot >= 1 && slot <= 10 && ( m_bitsValidSlots & ( 1 << ( slot - 1 ))); }
 	void SetPanelOpen( bool open );
+	void SetTextMul( int mul );
 	static int PanelKnownMenu( const char *key );
 
 	bool m_bPanel;
@@ -583,6 +584,7 @@ private:
 	panelline_t m_Lines[MENU_PANEL_LINES];
 	char m_szMapInfo[720];
 	cvar_t *m_pMenuOpen;
+	cvar_t *m_pTextMul;
 };
 
 //

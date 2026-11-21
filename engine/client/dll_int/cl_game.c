@@ -2140,9 +2140,52 @@ pfnDrawConsoleString
 drawing string like a console string
 =============
 */
+/*
+=============
+CL_TextFont
+
+The client asks for bigger console text through the _wii_textmul cvar (0 or 1 = normal size).
+A font of 8 pixels is not legible on a TV: the glyphs are drawn a whole number of times bigger
+(nearest neighbour, so they stay sharp) using a scaled copy of the font.
+=============
+*/
+static cl_font_t *CL_TextFont( cl_font_t *font )
+{
+	static cl_font_t scaled;
+	static const cl_font_t *srcFont;
+	static int srcTex, srcHeight, srcMul;
+	static float srcScale;
+	int mul = (int)Cvar_VariableValue( "_wii_textmul" );
+
+	if( mul <= 1 || !font || !font->valid )
+		return font;
+
+	if( mul > 3 )
+		mul = 3;
+
+	if( !scaled.valid || srcFont != font || srcTex != font->hFontTexture || srcHeight != font->charHeight ||
+		srcScale != font->scale || srcMul != mul )
+	{
+		scaled = *font;
+		scaled.scale = font->scale * mul;
+		scaled.charHeight = font->charHeight * mul;
+
+		for( int i = 0; i < ARRAYSIZE( scaled.charWidths ); i++ )
+			scaled.charWidths[i] = (byte)Q_min( 255, font->charWidths[i] * mul );
+
+		srcFont = font;
+		srcTex = font->hFontTexture;
+		srcHeight = font->charHeight;
+		srcScale = font->scale;
+		srcMul = mul;
+	}
+
+	return &scaled;
+}
+
 int GAME_EXPORT pfnDrawConsoleString( int x, int y, char *string )
 {
-	cl_font_t *font = Con_GetFont( con_fontsize.value );
+	cl_font_t *font = CL_TextFont( Con_GetFont( con_fontsize.value ));
 	rgba_t color;
 	Vector4Copy( clgame.ds.textColor, color );
 	Vector4Set( clgame.ds.textColor, 255, 255, 255, 255 );
@@ -2175,7 +2218,7 @@ compute string length in screen pixels
 */
 void GAME_EXPORT pfnDrawConsoleStringLen( const char *pText, int *length, int *height )
 {
-	cl_font_t *font = Con_GetFont( con_fontsize.value );
+	cl_font_t *font = CL_TextFont( Con_GetFont( con_fontsize.value ));
 
 	if( height ) *height = font->charHeight;
 	CL_DrawStringLen( font, pText, length, NULL, FONT_DRAW_UTF8 | FONT_DRAW_HUD );

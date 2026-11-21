@@ -68,6 +68,7 @@ int CHudMenu :: Init( void )
 
 	_extended_menus = CVAR_CREATE("_extended_menus", "1", FCVAR_ARCHIVE);
 	m_pMenuOpen = CVAR_CREATE( "_wii_menu_open", "0", 0 ); // the engine reads it to switch the controller buttons
+	m_pTextMul = CVAR_CREATE( "_wii_textmul", "0", 0 ); // the engine draws the console strings this many times bigger (0 = normal)
 
 	// the extended menus are touch scripts (nothing on the Wii): keep the numbered text menu
 	m_bPanel = !HUD_HasNativeMenu();
@@ -517,10 +518,14 @@ static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, 
 	// false when the next line would not fit
 	auto put = [&]( const char *str ) -> bool
 	{
+		char fit[256];
+
 		if( y - y0 + lh > maxH )
 			return false;
 
-		PanelText( x, y, str, r, g, b );
+		// a word longer than the box (an address, say) is cut, not drawn over the frame
+		PanelFit( str, fit, sizeof( fit ), w );
+		PanelText( x, y, fit, r, g, b );
 		y += lh;
 		return true;
 	};
@@ -593,6 +598,13 @@ int CHudMenu::PanelKnownMenu( const char *key )
 		return MENU_CLASS_CT;
 
 	return 0;
+}
+
+// 8 pixel letters are not legible on a TV: the panel asks the engine for double size glyphs
+void CHudMenu::SetTextMul( int mul )
+{
+	if( m_pTextMul )
+		m_pTextMul->value = mul > 1 ? (float)mul : 0.0f;
 }
 
 void CHudMenu::SetPanelOpen( bool open )
@@ -869,71 +881,94 @@ void CHudMenu::DrawPanel( float flTime )
 		return;
 	}
 
-	int dummy, lh;
-	DrawUtils::ConsoleStringSize( "Wg", &dummy, &lh );
-	if( lh < 10 )
-		lh = 12;
-
 	const int sw = ScreenWidth, sh = ScreenHeight;
 	const int mx = sw / 16, my = sh / 14; // keep clear of the edge of the TV
-	const int pad = lh / 2 + 3;
-	const int rowH = lh + lh / 2 + 2;
-	const int numW = DrawUtils::ConsoleStringLen( "00" );
+	const bool wantInfo = m_bTeamMenu && m_szMapInfo[0];
 	const char *title = m_iTitleLine >= 0 ? m_Lines[m_iTitleLine].text : "MENU";
 
-	// width of the option column
-	int labelW = 0;
-	for( int i = 0; i < m_nLines; i++ )
-	{
-		if( m_Lines[i].slot )
-			labelW = max( labelW, DrawUtils::ConsoleStringLen( m_Lines[i].text ));
-	}
+	// layout: double size letters (legible on a TV) when everything fits, normal size if not
+	int mul, lh, lhS, pad, rowH, numW, colW, pw, ph;
+	bool info;
 
-	int colW = max( labelW + numW + pad, DrawUtils::ConsoleStringLen( title )) + pad;
-	colW = max( colW, lh * 14 );
-
-	bool info = m_bTeamMenu && m_szMapInfo[0];
-	int pw;
-	if( info )
+	for( mul = 2;; mul = 1 )
 	{
+		int dummy;
+
+		SetTextMul( 1 );
+		DrawUtils::ConsoleStringSize( "Wg", &dummy, &lhS );
+		if( lhS < 8 )
+			lhS = 12;
+
+		SetTextMul( mul );
+		DrawUtils::ConsoleStringSize( "Wg", &dummy, &lh );
+		if( lh < lhS )
+			lh = lhS;
+
+		pad = lh / 2 + 3;
+		rowH = lh + lh / 2 + 2;
+		numW = DrawUtils::ConsoleStringLen( "00" );
+
+		// width of the option column
+		int labelW = 0;
+		for( int i = 0; i < m_nLines; i++ )
+		{
+			if( m_Lines[i].slot )
+				labelW = max( labelW, DrawUtils::ConsoleStringLen( m_Lines[i].text ));
+		}
+
+		colW = max( labelW + numW + pad, DrawUtils::ConsoleStringLen( title )) + pad;
+		colW = max( colW, lh * 8 );
+
 		pw = sw - mx * 2;
-		colW = min( colW, pw * 42 / 100 );
-		if( pw - colW - pad * 3 < lh * 12 )
-			info = false;
+		info = wantInfo;
+		if( info )
+		{
+			colW = min( colW, pw * 56 / 100 );
+			if( pw - colW - pad * 3 < lhS * 10 )
+				info = false;
+		}
+
+		if( !info )
+		{
+			pw = min( sw - mx * 2, max( colW + pad * 2, sw * 40 / 100 ));
+			colW = pw - pad * 2;
+		}
+
+		// height: title, rows, hint
+		int bodyH = rowH + 8;
+		for( int i = 0; i < m_nLines; i++ )
+		{
+			if( i == m_iTitleLine )
+				continue;
+
+			if( m_Lines[i].slot )
+				bodyH += rowH + 3;
+			else if( m_Lines[i].text[0] )
+				bodyH += lh + 2;
+			else
+				bodyH += lh / 2;
+		}
+
+		const int phRows = pad * 2 + bodyH + lh + pad;
+
+		ph = phRows;
+		if( info ) // room for the description: ~16 lines of normal size text (the screen clamps it)
+			ph = max( ph, ( pad + rowH + 8 ) + ( lhS * 16 + pad ) + pad + lh + 4 );
+
+		// big text whenever the options fit; the description is the one that gives way
+		if( mul == 1 || phRows <= sh - my * 2 )
+			break;
 	}
-	if( !info )
-		pw = min( sw - mx * 2, max( colW + pad * 2, sw * 40 / 100 ));
 
-	if( !info )
-		colW = pw - pad * 2;
-
-	// height: title, rows, hint
-	int bodyH = rowH + 8;
-	for( int i = 0; i < m_nLines; i++ )
-	{
-		if( i == m_iTitleLine )
-			continue;
-
-		if( m_Lines[i].slot )
-			bodyH += rowH + 3;
-		else if( m_Lines[i].text[0] )
-			bodyH += lh + 2;
-		else
-			bodyH += lh / 2;
-	}
-
-	int ph = pad * 2 + bodyH + lh + pad;
-	if( info )
-		ph = max( ph, lh * 18 + pad * 2 ); // room for the description
 	ph = min( ph, sh - my * 2 );
 
 	const int px = ( sw - pw ) / 2;
 	const int py = ( sh - ph ) / 2;
 
-	FillRGBABlend( px, py, pw, ph, 0, 0, 0, 175 );
+	FillRGBABlend( px, py, pw, ph, 0, 0, 0, 185 );
 	PanelFrame( px, py, pw, ph, 120, 120, 120 );
 
-	// title
+	// title (the text size of the layout is still selected)
 	PanelText( px + pad, py + pad, title, 255, 176, 0 );
 	FillRGBA( px + pad, py + pad + rowH + 1, pw - pad * 2, 1, 150, 150, 150, 255 );
 
@@ -956,9 +991,9 @@ void CHudMenu::DrawPanel( float flTime )
 			char num[4];
 
 			if( sel )
-				FillRGBABlend( x0, y, colW, rowH, 255, 140, 0, 120 );
+				FillRGBABlend( x0, y, colW, rowH, 255, 140, 0, 150 );
 			else
-				FillRGBABlend( x0, y, colW, rowH, 0, 0, 0, 110 );
+				FillRGBABlend( x0, y, colW, rowH, 0, 0, 0, 120 );
 
 			if( sel )
 				PanelFrame( x0, y, colW, rowH, 255, 200, 60 );
@@ -967,9 +1002,9 @@ void CHudMenu::DrawPanel( float flTime )
 			else
 				PanelFrame( x0, y, colW, rowH, 70, 70, 70 );
 
-			const int r = sel ? 255 : valid ? 255 : 110;
-			const int g = sel ? 255 : valid ? 176 : 110;
-			const int b = sel ? 255 : valid ? 0 : 110;
+			const int r = sel ? 255 : valid ? 255 : 120;
+			const int g = sel ? 255 : valid ? 190 : 120;
+			const int b = sel ? 255 : valid ? 40 : 120;
 
 			snprintf( num, sizeof( num ), "%d", pl.slot == 10 ? 0 : pl.slot );
 			PanelFit( pl.text, fit, sizeof( fit ), colW - numW - pad * 2 );
@@ -982,27 +1017,39 @@ void CHudMenu::DrawPanel( float flTime )
 		else if( pl.text[0] )
 		{
 			PanelFit( pl.text, fit, sizeof( fit ), pw - pad * 2 );
-			PanelText( px + pad, y, fit, 210, 210, 210 );
+			PanelText( px + pad, y, fit, 225, 225, 225 );
 			y += lh + 2;
 		}
 		else y += lh / 2;
 	}
 
-	// map description next to the buttons
+	// what the buttons do: big if it fits
+	const char *hint = SlotValid( 10 ) ? "Cruz: elegir   A: aceptar   B: cancelar" : "Cruz: elegir   A: aceptar";
+	char fit[96];
+
+	if( DrawUtils::ConsoleStringLen( hint ) > pw - pad * 2 )
+	{
+		SetTextMul( 1 );
+		lh = lhS;
+	}
+
+	const int hw = PanelFit( hint, fit, sizeof( fit ), pw - pad * 2 );
+	const int hintY = py + ph - pad - lh + 2;
+	PanelText( px + ( pw - hw ) / 2, hintY, fit, 210, 210, 210 );
+
+	// map description next to the buttons: normal size, lighter colour
 	if( info )
 	{
 		const int ix = px + pad + colW + pad;
 		const int iw = pw - ( ix - px ) - pad;
-		const int ih = py + ph - pad - lh - 4 - top;
+		const int ih = hintY - 4 - top;
 
-		FillRGBABlend( ix, top, iw, ih, 0, 0, 0, 110 );
+		FillRGBABlend( ix, top, iw, ih, 0, 0, 0, 130 );
 		PanelFrame( ix, top, iw, ih, 170, 105, 0 );
-		PanelWrap( m_szMapInfo, ix + pad / 2 + 2, top + pad / 2, iw - pad - 4, lh, ih - pad, 255, 176, 0 );
+
+		SetTextMul( 1 );
+		PanelWrap( m_szMapInfo, ix + pad / 2 + 2, top + pad / 2, iw - pad - 4, lhS, ih - pad, 255, 222, 140 );
 	}
 
-	// what the buttons do
-	const char *hint = SlotValid( 10 ) ? "Cruceta: elegir    A: aceptar    B: cancelar" : "Cruceta: elegir    A: aceptar";
-	char fit[96];
-	const int hw = PanelFit( hint, fit, sizeof( fit ), pw - pad * 2 );
-	PanelText( px + ( pw - hw ) / 2, py + ph - pad - lh + 2, fit, 175, 175, 175 );
+	SetTextMul( 1 );
 }

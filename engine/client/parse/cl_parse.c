@@ -1520,6 +1520,17 @@ static const char *CL_CheckTypeToString( int check_type )
 	return "unknown";
 }
 
+// the wire is little-endian: MSG_WriteFloat sends the value, not the bytes of this CPU (a Wii would
+// send them reversed and the server would see a different model)
+static void CL_WriteConsistencyBounds( sizebuf_t *msg, const vec3_t mins, const vec3_t maxs )
+{
+	for( int i = 0; i < 3; i++ )
+		MSG_WriteFloat( msg, mins[i] );
+
+	for( int i = 0; i < 3; i++ )
+		MSG_WriteFloat( msg, maxs[i] );
+}
+
 static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 {
 	byte md5[16] = { 0 };
@@ -1602,8 +1613,7 @@ static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 				VectorCopy( mins, maxs );
 			}
 
-			MSG_WriteBytes( msg, mins, 12 );
-			MSG_WriteBytes( msg, maxs, 12 );
+			CL_WriteConsistencyBounds( msg, mins, maxs );
 			break;
 		case force_model_samebounds:
 		case force_model_specifybounds:
@@ -1614,8 +1624,7 @@ static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 				VectorSet( mins, -9999.9f, -9999.9f, -9999.9f );
 				VectorSet( maxs, 9999.9f, 9999.9f, 9999.9f );
 			}
-			MSG_WriteBytes( msg, mins, 12 );
-			MSG_WriteBytes( msg, maxs, 12 );
+			CL_WriteConsistencyBounds( msg, mins, maxs );
 			break;
 		default:
 			Host_Error( "Unknown consistency type %i\n", pc->check_type );
