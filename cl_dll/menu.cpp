@@ -61,11 +61,17 @@ int CHudMenu :: Init( void )
 	HOOK_COMMAND( gHUD.m_Menu, "client_buy_open", OldStyleMenuOpen );
 	HOOK_COMMAND( gHUD.m_Menu, "client_buy_close", OldStyleMenuClose );
 	HOOK_COMMAND( gHUD.m_Menu, "showvguimenu", ShowVGUIMenu );
+	HOOK_COMMAND( gHUD.m_Menu, "menu_prev", MenuPrev );
+	HOOK_COMMAND( gHUD.m_Menu, "menu_next", MenuNext );
+	HOOK_COMMAND( gHUD.m_Menu, "menu_ok", MenuOk );
+	HOOK_COMMAND( gHUD.m_Menu, "menu_cancel", MenuCancel );
 
 	_extended_menus = CVAR_CREATE("_extended_menus", "1", FCVAR_ARCHIVE);
+	m_pMenuOpen = CVAR_CREATE( "_wii_menu_open", "0", 0 ); // the engine reads it to switch the controller buttons
 
 	// the extended menus are touch scripts (nothing on the Wii): keep the numbered text menu
-	if( !HUD_HasNativeMenu( ))
+	m_bPanel = !HUD_HasNativeMenu();
+	if( m_bPanel )
 		gEngfuncs.Cvar_SetValue( "_extended_menus", 0.0f );
 
 	InitHUDData();
@@ -79,6 +85,12 @@ void CHudMenu :: InitHUDData( void )
 {
 	m_fMenuDisplayed = 0;
 	m_bitsValidSlots = 0;
+	m_nLines = 0;
+	m_iTitleLine = -1;
+	m_iSelLine = -1;
+	m_bTeamMenu = false;
+	m_szMapInfo[0] = 0;
+	SetPanelOpen( false );
 	Reset();
 }
 
@@ -90,6 +102,14 @@ void CHudMenu :: Reset( void )
 
 int CHudMenu :: VidInit( void )
 {
+	// new map: whatever menu was open belongs to the old one
+	if( m_bPanel )
+	{
+		m_fMenuDisplayed = 0;
+		m_iFlags &= ~HUD_DRAW;
+		SetPanelOpen( false );
+	}
+
 	return 1;
 }
 
@@ -104,6 +124,10 @@ int CHudMenu :: Draw( float flTime )
 			return 1;
 		}
 	}
+
+	// the panel draws itself (DrawPanel) so it also shows with the HUD hidden
+	if ( m_bPanel )
+		return 1;
 
 	// don't draw the menu if the scoreboard is being shown
 	//if ( gViewPort && gViewPort->IsScoreBoardVisible() )
@@ -233,6 +257,18 @@ int CHudMenu :: MsgFunc_ShowMenu( const char *pszName, int iSize, void *pbuf )
 
 	m_fWaitingForMore = NeedMore;
 
+	if( m_bPanel && !NeedMore )
+	{
+		// the stock team/class menus are shown from our own table (titles.txt may not even be
+		// there); any other numbered menu (buy, votes, AMX Mod X...) is shown from its text
+		int known = PanelKnownMenu( g_szPrelocalisedMenuString );
+
+		gEngfuncs.Con_Printf( "[MENU] ShowMenu teclas=0x%x tipo=%d '%.32s'\n", m_bitsValidSlots, known, g_szPrelocalisedMenuString );
+
+		if( !known || !ShowPanelFor( known ))
+			OpenPanel( g_szMenuString, false );
+	}
+
 	return 1;
 }
 
@@ -241,7 +277,13 @@ int CHudMenu::MsgFunc_VGUIMenu( const char *pszName, int iSize, void *pbuf )
 	BufferReader reader( pszName, pbuf, iSize );
 
 	int menuType = reader.ReadByte();
-	m_bitsValidSlots = reader.ReadShort(); // is ignored
+	m_bitsValidSlots = reader.ReadShort(); // the VGUI menus ignore it; the panel needs it
+
+	if( m_bPanel )
+	{
+		m_flShutoffTime = -1;
+		gEngfuncs.Con_Printf( "[MENU] VGUIMenu tipo=%d teclas=0x%x\n", menuType, m_bitsValidSlots );
+	}
 
 	ShowVGUIMenu(menuType);
 	return 1;
@@ -250,6 +292,9 @@ int CHudMenu::MsgFunc_VGUIMenu( const char *pszName, int iSize, void *pbuf )
 int CHudMenu::MsgFunc_BuyClose(const char *pszName, int iSize, void *pbuf)
 {
 	Touch_CloseMenu();
+
+	if( m_bPanel )
+		UserCmd_OldStyleMenuClose();
 
 	if (g_pMenu)
 		g_pMenu->HideVGUIMenu();
@@ -277,6 +322,7 @@ void CHudMenu::UserCmd_OldStyleMenuClose()
 	m_fMenuDisplayed = 0; // no valid slots means that the menu should be turned off
 	m_iFlags &= ~HUD_DRAW;
 
+	SetPanelOpen( false );
 	Touch_CloseMenu();
 }
 
@@ -287,6 +333,9 @@ void CHudMenu::ShowVGUIMenu( int menuType )
 {
 	int team = g_PlayerExtraInfo[gHUD.m_Scoreboard.m_iPlayerNum].teamnumber;
 	int haveCancel = team != TEAM_UNASSIGNED ? 1 : 0;
+
+	if( m_bPanel && ShowPanelFor( menuType ))
+		return;
 
 	if( g_pMenu && !UseOldTouchMenusEnabled() )
 	{
@@ -417,4 +466,543 @@ void CHudMenu::UserCmd_ShowVGUIMenu()
 
 	int menuType = atoi(gEngfuncs.Cmd_Argv(1));
 	ShowVGUIMenu(menuType);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Menu panel (Wii)
+//
+// The stock client draws the team / class / buy menus with VGUI, or hands them to the touch
+// UI of the main menu. A statically linked client on the Wii has neither, so those menus never
+// showed up. This draws the same menus with plain rectangles and text (no textures, so it costs
+// no RAM) and lets the controller choose: the engine turns the D-pad, A and B into the
+// menu_prev / menu_next / menu_ok / menu_cancel commands while _wii_menu_open is 1.
+// ---------------------------------------------------------------------------------------------
+
+static const char *const g_szPanelClassT[] = { "PHOENIX CONNEXION", "L337 KREW", "ARCTIC AVENGERS", "GUERILLA WARFARE" };
+static const char *const g_szPanelClassCT[] = { "SEAL TEAM 6", "GSG-9", "SAS", "GIGN" };
+
+static void PanelText( int x, int y, const char *str, int r, int g, int b )
+{
+	DrawUtils::SetConsoleTextColor( r / 255.0f, g / 255.0f, b / 255.0f );
+	DrawUtils::DrawConsoleString( x, y, str );
+}
+
+// copy as much of the string as fits in maxw pixels; returns its width
+static int PanelFit( const char *in, char *out, int outsize, int maxw )
+{
+	strlcpy( out, in, outsize );
+
+	int len = (int)strlen( out );
+	while( len > 1 && DrawUtils::ConsoleStringLen( out ) > maxw )
+		out[--len] = 0;
+
+	return DrawUtils::ConsoleStringLen( out );
+}
+
+static void PanelFrame( int x, int y, int w, int h, int r, int g, int b )
+{
+	FillRGBA( x, y, w, 1, r, g, b, 255 );
+	FillRGBA( x, y + h - 1, w, 1, r, g, b, 255 );
+	FillRGBA( x, y, 1, h, r, g, b, 255 );
+	FillRGBA( x + w - 1, y, 1, h, r, g, b, 255 );
+}
+
+// greedy word wrap into a box maxH pixels tall
+static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, int r, int g, int b )
+{
+	char para[256], cur[256], test[256], word[96];
+	const int y0 = y;
+
+	// false when the next line would not fit
+	auto put = [&]( const char *str ) -> bool
+	{
+		if( y - y0 + lh > maxH )
+			return false;
+
+		PanelText( x, y, str, r, g, b );
+		y += lh;
+		return true;
+	};
+
+	while( *text )
+	{
+		const char *eol = strchr( text, '\n' );
+		int plen = eol ? (int)( eol - text ) : (int)strlen( text );
+		if( plen > (int)sizeof( para ) - 1 )
+			plen = sizeof( para ) - 1;
+
+		memcpy( para, text, plen );
+		para[plen] = 0;
+		text = eol ? eol + 1 : text + strlen( text );
+
+		if( !para[0] )
+		{
+			y += lh / 2;
+			continue;
+		}
+
+		cur[0] = 0;
+		for( char *tok = para; tok && *tok; )
+		{
+			char *sp = strchr( tok, ' ' );
+			int wl = sp ? (int)( sp - tok ) : (int)strlen( tok );
+			if( wl > (int)sizeof( word ) - 1 )
+				wl = sizeof( word ) - 1;
+
+			memcpy( word, tok, wl );
+			word[wl] = 0;
+			tok = sp ? sp + 1 : NULL;
+
+			if( !word[0] )
+				continue;
+
+			if( cur[0] )
+				snprintf( test, sizeof( test ), "%s %s", cur, word );
+			else
+				strlcpy( test, word, sizeof( test ));
+
+			if( cur[0] && DrawUtils::ConsoleStringLen( test ) > w )
+			{
+				if( !put( cur ))
+					return;
+
+				strlcpy( cur, word, sizeof( cur ));
+			}
+			else strlcpy( cur, test, sizeof( cur ));
+		}
+
+		if( cur[0] && !put( cur ))
+			return;
+	}
+}
+
+// the stock text menus the server asks for by name (titles.txt key)
+int CHudMenu::PanelKnownMenu( const char *key )
+{
+	if( !key )
+		return 0;
+
+	if( !strncmp( key, "#Team_Select", 12 ) || !strncmp( key, "#IG_Team_Select", 15 ) || !strncmp( key, "#IG_VIP_Team_Select", 19 ))
+		return MENU_TEAM;
+
+	if( !strncmp( key, "#Terrorist_Select", 17 ))
+		return MENU_CLASS_T;
+
+	if( !strncmp( key, "#CT_Select", 10 ))
+		return MENU_CLASS_CT;
+
+	return 0;
+}
+
+void CHudMenu::SetPanelOpen( bool open )
+{
+	if( !m_bPanel || !m_pMenuOpen )
+		return;
+
+	if(( m_pMenuOpen->value != 0.0f ) != open )
+		gEngfuncs.Cvar_SetValue( "_wii_menu_open", open ? 1.0f : 0.0f );
+}
+
+// builds the team / class menus from their table, with the keys the server allows
+bool CHudMenu::ShowPanelFor( int menuType )
+{
+	char text[MAX_MENU_STRING];
+	char line[96];
+	bool any = false;
+
+	text[0] = 0;
+
+	switch( menuType )
+	{
+	case MENU_TEAM:
+		strlcpy( text, "SELECT TEAM\n\n", sizeof( text ));
+		if( SlotValid( 1 )) { strlcat( text, "1. TERRORIST FORCES\n", sizeof( text )); any = true; }
+		if( SlotValid( 2 )) { strlcat( text, "2. CT FORCES\n", sizeof( text )); any = true; }
+		if( SlotValid( 3 )) { strlcat( text, "3. VIP\n", sizeof( text )); any = true; }
+		if( SlotValid( 5 )) { strlcat( text, "5. AUTO ASSIGN\n", sizeof( text )); any = true; }
+		if( SlotValid( 6 )) { strlcat( text, "6. SPECTATE\n", sizeof( text )); any = true; }
+		if( SlotValid( 10 )) { strlcat( text, "0. CANCEL\n", sizeof( text )); any = true; }
+		break;
+
+	case MENU_CLASS_T:
+	case MENU_CLASS_CT:
+	{
+		const bool t = menuType == MENU_CLASS_T;
+		const char *const *names = t ? g_szPanelClassT : g_szPanelClassCT;
+		const bool six = SlotValid( 6 ); // Condition Zero has a fifth class and auto select moves to 6
+
+		strlcpy( text, "SELECT CLASS\n\n", sizeof( text ));
+
+		for( int i = 1; i <= 4; i++ )
+		{
+			if( !SlotValid( i ))
+				continue;
+
+			snprintf( line, sizeof( line ), "%d. %s\n", i, names[i - 1] );
+			strlcat( text, line, sizeof( text ));
+			any = true;
+		}
+
+		if( SlotValid( 5 ))
+		{
+			snprintf( line, sizeof( line ), "5. %s\n", six ? ( t ? "MILITIA" : "SPETSNAZ" ) : "AUTO SELECT" );
+			strlcat( text, line, sizeof( text ));
+			any = true;
+		}
+
+		if( six ) { strlcat( text, "6. AUTO SELECT\n", sizeof( text )); any = true; }
+		if( SlotValid( 10 )) { strlcat( text, "0. CANCEL\n", sizeof( text )); any = true; }
+		break;
+	}
+
+	default:
+		return false;
+	}
+
+	if( !any )
+		return false;
+
+	OpenPanel( text, menuType == MENU_TEAM );
+	return true;
+}
+
+void CHudMenu::OpenPanel( const char *text, bool teamMenu )
+{
+	BuildPanel( text );
+
+	m_bTeamMenu = teamMenu;
+	if( teamMenu )
+		LoadMapInfo();
+	else
+		m_szMapInfo[0] = 0;
+
+	m_fMenuDisplayed = 1;
+	m_iFlags |= HUD_DRAW;
+
+	// with nothing to choose the controller keeps playing
+	SetPanelOpen( m_iSelLine >= 0 );
+}
+
+// text with one option per line ("1. Option", optionally preceded by "->") into panel lines
+void CHudMenu::BuildPanel( const char *text )
+{
+	char buf[MAX_MENU_STRING];
+	int o = 0;
+
+	m_nLines = 0;
+	m_iTitleLine = -1;
+	m_iSelLine = -1;
+
+	// AMX Mod X colour codes (\y \w \r \d \R) are not text
+	for( int i = 0; text[i] && o < (int)sizeof( buf ) - 1; i++ )
+	{
+		if( text[i] == '\\' && text[i + 1] && strchr( "ywrdR", text[i + 1] ))
+		{
+			i++;
+			continue;
+		}
+
+		buf[o++] = text[i];
+	}
+	buf[o] = 0;
+
+	char *next;
+	for( char *line = buf; line && m_nLines < MENU_PANEL_LINES; line = next )
+	{
+		next = strchr( line, '\n' );
+		if( next )
+			*next++ = 0;
+
+		while( *line == ' ' || *line == '\t' || *line == '\r' )
+			line++;
+
+		if( line[0] == '-' && line[1] == '>' )
+			line += 2;
+
+		while( *line == ' ' )
+			line++;
+
+		int len = (int)strlen( line );
+		while( len > 0 && ( line[len - 1] == ' ' || line[len - 1] == '\r' ))
+			line[--len] = 0;
+
+		panelline_t &pl = m_Lines[m_nLines];
+		pl.slot = 0;
+		pl.text[0] = 0;
+
+		if( !*line )
+		{
+			// a blank line is a gap: never at the top, never two in a row
+			if( m_nLines > 0 && ( m_Lines[m_nLines - 1].slot || m_Lines[m_nLines - 1].text[0] ))
+				m_nLines++;
+			continue;
+		}
+
+		const char *label = line;
+		if( line[0] >= '0' && line[0] <= '9' && ( line[1] == '.' || line[1] == ')' ))
+		{
+			pl.slot = line[0] == '0' ? 10 : line[0] - '0';
+			label = line + 2;
+			while( *label == ' ' )
+				label++;
+		}
+
+		strlcpy( pl.text, label, sizeof( pl.text ));
+		m_nLines++;
+	}
+
+	while( m_nLines > 0 && !m_Lines[m_nLines - 1].slot && !m_Lines[m_nLines - 1].text[0] )
+		m_nLines--;
+
+	// the first plain line above the options is the title; start on the first choosable option
+	for( int i = 0; i < m_nLines; i++ )
+	{
+		if( m_Lines[i].slot )
+		{
+			if( m_iSelLine < 0 && SlotValid( m_Lines[i].slot ))
+				m_iSelLine = i;
+		}
+		else if( m_iTitleLine < 0 && m_iSelLine < 0 && m_Lines[i].text[0] )
+		{
+			bool optionsBelow = false;
+			for( int j = i + 1; j < m_nLines; j++ )
+				if( m_Lines[j].slot )
+					optionsBelow = true;
+
+			if( optionsBelow )
+				m_iTitleLine = i;
+		}
+	}
+}
+
+// maps/<map>.txt is the description the stock team menu shows next to the buttons
+void CHudMenu::LoadMapInfo( void )
+{
+	char path[96];
+	const char *level = gEngfuncs.pfnGetLevelName();
+
+	m_szMapInfo[0] = 0;
+
+	if( !level || strncmp( level, "maps/", 5 ))
+		return;
+
+	strlcpy( path, level, sizeof( path ));
+
+	char *dot = strrchr( path, '.' );
+	if( !dot )
+		return;
+
+	strlcpy( dot, ".txt", sizeof( path ) - ( dot - path ));
+
+	int len = 0;
+	char *file = (char *)gEngfuncs.COM_LoadFile( path, 5, &len );
+	if( !file )
+		return;
+
+	int o = 0;
+	for( int i = 0; i < len && file[i] && o < (int)sizeof( m_szMapInfo ) - 1; i++ )
+	{
+		if( file[i] != '\r' )
+			m_szMapInfo[o++] = file[i];
+	}
+	m_szMapInfo[o] = 0;
+
+	gEngfuncs.COM_FreeFile( file );
+}
+
+void CHudMenu::PanelMove( int dir )
+{
+	if( !m_bPanel || !m_fMenuDisplayed || m_nLines <= 0 )
+		return;
+
+	int i = m_iSelLine;
+	for( int n = 0; n < m_nLines; n++ )
+	{
+		i += dir;
+		if( i >= m_nLines )
+			i = 0;
+		if( i < 0 )
+			i = m_nLines - 1;
+
+		if( m_Lines[i].slot && SlotValid( m_Lines[i].slot ))
+		{
+			m_iSelLine = i;
+			return;
+		}
+	}
+}
+
+void CHudMenu::UserCmd_MenuPrev()
+{
+	PanelMove( -1 );
+}
+
+void CHudMenu::UserCmd_MenuNext()
+{
+	PanelMove( 1 );
+}
+
+void CHudMenu::UserCmd_MenuOk()
+{
+	if( !m_bPanel || !m_fMenuDisplayed || m_iSelLine < 0 )
+		return;
+
+	if( SlotValid( m_Lines[m_iSelLine].slot ))
+		SelectMenuItem( m_Lines[m_iSelLine].slot );
+}
+
+void CHudMenu::UserCmd_MenuCancel()
+{
+	if( m_bPanel && m_fMenuDisplayed && SlotValid( 10 ))
+		SelectMenuItem( 10 );
+}
+
+void CHudMenu::DrawPanel( float flTime )
+{
+	if( !m_bPanel || !m_fMenuDisplayed || m_nLines <= 0 )
+		return;
+
+	if( m_flShutoffTime > 0 && m_flShutoffTime <= gHUD.m_flTime )
+	{
+		UserCmd_OldStyleMenuClose();
+		return;
+	}
+
+	int dummy, lh;
+	DrawUtils::ConsoleStringSize( "Wg", &dummy, &lh );
+	if( lh < 10 )
+		lh = 12;
+
+	const int sw = ScreenWidth, sh = ScreenHeight;
+	const int mx = sw / 16, my = sh / 14; // keep clear of the edge of the TV
+	const int pad = lh / 2 + 3;
+	const int rowH = lh + lh / 2 + 2;
+	const int numW = DrawUtils::ConsoleStringLen( "00" );
+	const char *title = m_iTitleLine >= 0 ? m_Lines[m_iTitleLine].text : "MENU";
+
+	// width of the option column
+	int labelW = 0;
+	for( int i = 0; i < m_nLines; i++ )
+	{
+		if( m_Lines[i].slot )
+			labelW = max( labelW, DrawUtils::ConsoleStringLen( m_Lines[i].text ));
+	}
+
+	int colW = max( labelW + numW + pad, DrawUtils::ConsoleStringLen( title )) + pad;
+	colW = max( colW, lh * 14 );
+
+	bool info = m_bTeamMenu && m_szMapInfo[0];
+	int pw;
+	if( info )
+	{
+		pw = sw - mx * 2;
+		colW = min( colW, pw * 42 / 100 );
+		if( pw - colW - pad * 3 < lh * 12 )
+			info = false;
+	}
+	if( !info )
+		pw = min( sw - mx * 2, max( colW + pad * 2, sw * 40 / 100 ));
+
+	if( !info )
+		colW = pw - pad * 2;
+
+	// height: title, rows, hint
+	int bodyH = rowH + 8;
+	for( int i = 0; i < m_nLines; i++ )
+	{
+		if( i == m_iTitleLine )
+			continue;
+
+		if( m_Lines[i].slot )
+			bodyH += rowH + 3;
+		else if( m_Lines[i].text[0] )
+			bodyH += lh + 2;
+		else
+			bodyH += lh / 2;
+	}
+
+	int ph = pad * 2 + bodyH + lh + pad;
+	if( info )
+		ph = max( ph, lh * 18 + pad * 2 ); // room for the description
+	ph = min( ph, sh - my * 2 );
+
+	const int px = ( sw - pw ) / 2;
+	const int py = ( sh - ph ) / 2;
+
+	FillRGBABlend( px, py, pw, ph, 0, 0, 0, 175 );
+	PanelFrame( px, py, pw, ph, 120, 120, 120 );
+
+	// title
+	PanelText( px + pad, py + pad, title, 255, 176, 0 );
+	FillRGBA( px + pad, py + pad + rowH + 1, pw - pad * 2, 1, 150, 150, 150, 255 );
+
+	const int top = py + pad + rowH + 8;
+	int y = top;
+
+	for( int i = 0; i < m_nLines; i++ )
+	{
+		const panelline_t &pl = m_Lines[i];
+		char fit[96];
+
+		if( i == m_iTitleLine )
+			continue;
+
+		if( pl.slot )
+		{
+			const bool valid = SlotValid( pl.slot );
+			const bool sel = i == m_iSelLine;
+			const int x0 = px + pad;
+			char num[4];
+
+			if( sel )
+				FillRGBABlend( x0, y, colW, rowH, 255, 140, 0, 120 );
+			else
+				FillRGBABlend( x0, y, colW, rowH, 0, 0, 0, 110 );
+
+			if( sel )
+				PanelFrame( x0, y, colW, rowH, 255, 200, 60 );
+			else if( valid )
+				PanelFrame( x0, y, colW, rowH, 170, 105, 0 );
+			else
+				PanelFrame( x0, y, colW, rowH, 70, 70, 70 );
+
+			const int r = sel ? 255 : valid ? 255 : 110;
+			const int g = sel ? 255 : valid ? 176 : 110;
+			const int b = sel ? 255 : valid ? 0 : 110;
+
+			snprintf( num, sizeof( num ), "%d", pl.slot == 10 ? 0 : pl.slot );
+			PanelFit( pl.text, fit, sizeof( fit ), colW - numW - pad * 2 );
+
+			PanelText( x0 + pad / 2 + 2, y + ( rowH - lh ) / 2, num, r, g, b );
+			PanelText( x0 + pad / 2 + numW + 4, y + ( rowH - lh ) / 2, fit, r, g, b );
+
+			y += rowH + 3;
+		}
+		else if( pl.text[0] )
+		{
+			PanelFit( pl.text, fit, sizeof( fit ), pw - pad * 2 );
+			PanelText( px + pad, y, fit, 210, 210, 210 );
+			y += lh + 2;
+		}
+		else y += lh / 2;
+	}
+
+	// map description next to the buttons
+	if( info )
+	{
+		const int ix = px + pad + colW + pad;
+		const int iw = pw - ( ix - px ) - pad;
+		const int ih = py + ph - pad - lh - 4 - top;
+
+		FillRGBABlend( ix, top, iw, ih, 0, 0, 0, 110 );
+		PanelFrame( ix, top, iw, ih, 170, 105, 0 );
+		PanelWrap( m_szMapInfo, ix + pad / 2 + 2, top + pad / 2, iw - pad - 4, lh, ih - pad, 255, 176, 0 );
+	}
+
+	// what the buttons do
+	const char *hint = SlotValid( 10 ) ? "Cruceta: elegir    A: aceptar    B: cancelar" : "Cruceta: elegir    A: aceptar";
+	char fit[96];
+	const int hw = PanelFit( hint, fit, sizeof( fit ), pw - pad * 2 );
+	PanelText( px + ( pw - hw ) / 2, py + ph - pad - lh + 2, fit, 175, 175, 175 );
 }

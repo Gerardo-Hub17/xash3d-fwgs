@@ -2299,11 +2299,6 @@ void CL_ParseUserMessage( sizebuf_t *msg, int svc_num, connprotocol_t proto )
 			clgame.msg[i].name, iSize, clgame.msg[i].number );
 	}
 
-	if( !Q_strcmp( clgame.msg[i].name, "ShowMenu" ))
-		CL_MenuPickMessage( pbuf, iSize );
-	else if( !Q_strcmp( clgame.msg[i].name, "VGUIMenu" ) || !Q_strcmp( clgame.msg[i].name, "BuyClose" ))
-		CL_MenuPickClear();	// el juego cierra o cambia su menu: que A no acabe como "slotN" de armas
-
 	if( clgame.msg[i].func )
 	{
 		clgame.msg[i].func( clgame.msg[i].name, iSize, pbuf );

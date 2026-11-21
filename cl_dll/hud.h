@@ -519,6 +519,8 @@ private:
 //
 //-----------------------------------------------------
 //
+#define MENU_PANEL_LINES 24
+
 class CHudMenu : public CHudBase
 {
 public:
@@ -527,6 +529,7 @@ public:
 	int VidInit( void );
 	void Reset( void );
 	int Draw( float flTime );
+	void DrawPanel( float flTime ); // own menu panel (Wii), drawn even when the HUD is hidden
 
 	CHudMsgFunc(ShowMenu);
 	CHudMsgFunc(BuyClose);
@@ -537,6 +540,12 @@ public:
 	CHudUserCmd(OldStyleMenuClose);
 	CHudUserCmd(OldStyleMenuOpen);
 	CHudUserCmd(ShowVGUIMenu);
+
+	// controller input (the engine turns the D-pad / A / B into these while _wii_menu_open is 1)
+	CHudUserCmd(MenuPrev);
+	CHudUserCmd(MenuNext);
+	CHudUserCmd(MenuOk);
+	CHudUserCmd(MenuCancel);
 
 	void ShowVGUIMenu( int menuType ); // cs16client extension
 
@@ -549,6 +558,31 @@ public:
 	float m_flShutoffTime;
 	int m_fWaitingForMore;
 
+private:
+	// there is no menu object to draw the VGUI menus (Wii): the client draws a plain panel itself
+	struct panelline_t
+	{
+		char text[80];
+		signed char slot;	// 1..10 selectable option, 0 plain text (empty = gap)
+	};
+
+	bool ShowPanelFor( int menuType );
+	void OpenPanel( const char *text, bool teamMenu );
+	void BuildPanel( const char *text );
+	void LoadMapInfo( void );
+	void PanelMove( int dir );
+	bool SlotValid( int slot ) const { return slot >= 1 && slot <= 10 && ( m_bitsValidSlots & ( 1 << ( slot - 1 ))); }
+	void SetPanelOpen( bool open );
+	static int PanelKnownMenu( const char *key );
+
+	bool m_bPanel;
+	bool m_bTeamMenu;
+	int m_nLines;
+	int m_iTitleLine;
+	int m_iSelLine;
+	panelline_t m_Lines[MENU_PANEL_LINES];
+	char m_szMapInfo[720];
+	cvar_t *m_pMenuOpen;
 };
 
 //

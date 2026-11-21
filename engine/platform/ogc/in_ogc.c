@@ -233,35 +233,43 @@ static const ogc_btn_t ogc_osk_gamecube[] =
 };
 
 /*
-Menus por numero del servidor (ShowMenu). Mientras hay uno abierto estos
-botones pasan a elegir opcion; el resto sigue con la tabla normal, asi no se
-pierde el control del jugador. "Cancelar" cierra la seleccion y devuelve todo.
+Menu abierto del juego (equipo, clase, compra, votaciones del servidor...).
+Mientras lo hay estos botones pasan a manejarlo: la cruceta elige, A (o 2 en el
+Wiimote) acepta y B cancela; el resto sigue con la tabla normal, asi no se
+pierde el control del jugador. Es lo mismo en los tres mandos.
 */
 static const ogc_btn_t ogc_pick_wiimote[] =
 {
+    { WPAD_BUTTON_UP,        OGC_ACT_PICK_PREV   },
     { WPAD_BUTTON_LEFT,      OGC_ACT_PICK_PREV   },
+    { WPAD_BUTTON_DOWN,      OGC_ACT_PICK_NEXT   },
     { WPAD_BUTTON_RIGHT,     OGC_ACT_PICK_NEXT   },
     { WPAD_BUTTON_A,         OGC_ACT_PICK_OK     },
     { WPAD_BUTTON_2,         OGC_ACT_PICK_OK     },
-    { WPAD_BUTTON_UP,        OGC_ACT_PICK_CANCEL },
+    { WPAD_BUTTON_B,         OGC_ACT_PICK_CANCEL },
+    { WPAD_BUTTON_1,         OGC_ACT_PICK_CANCEL },
 };
 
 static const ogc_btn_t ogc_pick_classic[] =
 {
+    { WPAD_CLASSIC_BUTTON_UP,    OGC_ACT_PICK_PREV   },
     { WPAD_CLASSIC_BUTTON_LEFT,  OGC_ACT_PICK_PREV   },
+    { WPAD_CLASSIC_BUTTON_DOWN,  OGC_ACT_PICK_NEXT   },
     { WPAD_CLASSIC_BUTTON_RIGHT, OGC_ACT_PICK_NEXT   },
     { WPAD_CLASSIC_BUTTON_A,     OGC_ACT_PICK_OK     },
-    { WPAD_CLASSIC_BUTTON_B,     OGC_ACT_PICK_OK     },
-    { WPAD_CLASSIC_BUTTON_UP,    OGC_ACT_PICK_CANCEL },
+    { WPAD_CLASSIC_BUTTON_B,     OGC_ACT_PICK_CANCEL },
+    { WPAD_CLASSIC_BUTTON_X,     OGC_ACT_PICK_CANCEL },
 };
 
 static const ogc_btn_t ogc_pick_gamecube[] =
 {
+    { PAD_BUTTON_UP,     OGC_ACT_PICK_PREV   },
     { PAD_BUTTON_LEFT,   OGC_ACT_PICK_PREV   },
+    { PAD_BUTTON_DOWN,   OGC_ACT_PICK_NEXT   },
     { PAD_BUTTON_RIGHT,  OGC_ACT_PICK_NEXT   },
     { PAD_BUTTON_A,      OGC_ACT_PICK_OK     },
-    { PAD_BUTTON_B,      OGC_ACT_PICK_OK     },
-    { PAD_BUTTON_UP,     OGC_ACT_PICK_CANCEL },
+    { PAD_BUTTON_B,      OGC_ACT_PICK_CANCEL },
+    { PAD_BUTTON_X,      OGC_ACT_PICK_CANCEL },
 };
 
 // estado por mando: lo que estaba apretado, lo que se mando como "pulsado" y la tabla en uso
@@ -1127,19 +1135,6 @@ static void OGC_EmitButtons( const ogc_btn_t *map, int count, const ogc_btn_t *o
 Teclado en pantalla: el Wiimote elige tecla con el puntero IR, el raton USB con
 su cursor; Classic y GameCube con la cruceta. Tambien dice que boton hace que.
 */
-static void OGC_PickFrame( void )
-{
-	if( !CL_MenuPickActive( ))
-		return;
-
-	if( ogc_src == OGC_SRC_CLASSIC )
-		CL_MenuPickSetHint( "Izq/Der: elegir   A o B: aceptar   Arriba: cancelar" );
-	else if( ogc_src == OGC_SRC_GC )
-		CL_MenuPickSetHint( "Izq/Der: elegir   A o B: aceptar   Arriba: cancelar" );
-	else
-		CL_MenuPickSetHint( "Izq/Der: elegir   A o 2: aceptar   Arriba: cancelar" );
-}
-
 static void OGC_OskFrame( void )
 {
 	static const char *hint_wii = "A/B: escribir  2: borrar  1: mayus  -: espacio  +: enviar  Home: salir";
@@ -1401,7 +1396,6 @@ OGC_PollNunchuk();
 
 	OGC_HomeFrame();
 	OGC_OskFrame();
-	OGC_PickFrame();
 
         // Sticks del Classic Controller y del GameCube (el del Nunchuk va aparte)
         OGC_PollSticks( type );

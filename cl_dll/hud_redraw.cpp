@@ -116,6 +116,9 @@ int CHud :: Redraw( float flTime, int intermission )
 		}
 	}
 
+	// the menu panel is not a HUD element: team selection happens with the HUD hidden
+	m_Menu.DrawPanel( flTime );
+
 	// are we in demo mode? do we need to draw the logo in the top corner?
 	if (m_iLogo)
 	{
