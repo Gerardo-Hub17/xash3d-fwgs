@@ -301,6 +301,11 @@ void OGC_Init( void )
 	// OGC_InputInit, once the video mode is known.
 	WPAD_SetDataFormat( WPAD_CHAN_ALL, WPAD_FMT_BTNS_ACC_IR );
 
+	// GameCube pads: nobody else starts them (SDL does not run its event loop on
+	// the Wii), and OGC_ButtonsFrame scans them every frame from here on
+	printf( "OGC_Init: PAD\n" );
+	PAD_Init();
+
 	printf( "OGC_Init: USB keyboard\n" );
 	ogc_usb_kbd_ret = KEYBOARD_Init( NULL );
 	ogc_usb_kbd_ok = ( ogc_usb_kbd_ret == 0 );

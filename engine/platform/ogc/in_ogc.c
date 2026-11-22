@@ -1351,6 +1351,25 @@ void OGC_ButtonsFrame( void )
 	// teclado y raton USB, y la vibracion, no dependen de wii_buttons
 	OGC_KeyboardFrame();
 	OGC_MouseFrame();
+
+	// Los mandos de GameCube: en la Wii Platform_RunEvents no procesa los eventos de SDL
+	// (host_sdl2.c), asi que SDL nunca escanea los PAD y PAD_ButtonsHeld / PAD_StickX
+	// devolvian siempre cero: el mando no hacia nada. Se escanean aqui, una vez por frame.
+	// PAD_Init es idempotente (tambien se llama al arrancar, en OGC_Init).
+	{
+		static u32 last_pads = 0xffffffffu;
+		u32 pads;
+
+		PAD_Init();
+		pads = PAD_ScanPads();
+
+		if( pads != last_pads )
+		{
+			Con_Printf( "[PAD] puertos de GameCube conectados: 0x%x\n", (unsigned)pads );
+			last_pads = pads;
+		}
+	}
+
 	OGC_RumbleFrame();
 
 	if( !wii_buttons.value )
@@ -1360,9 +1379,7 @@ void OGC_ButtonsFrame( void )
 	// calls it: it takes the remote through WPAD_ReadPending and WPAD_Data
 	// instead, which leaves that buffer untouched. Without this the reads
 	// below always come back empty and no remote button does anything.
-	//
-	// PAD is the other way round - SDL does call PAD_ScanPads every frame, so
-	// scanning it again here would only race it.
+	// (the GameCube pads are scanned above, for the same reason)
 	WPAD_ScanPads();
 OGC_PollNunchuk();
 
@@ -3180,14 +3197,13 @@ static void OGC_ReadPort( int port, ogc_port_t *ps )
 	if( port < 0 || port >= SPLIT_MAX_PLAYERS )
 		return;
 
-	// GameCube pad (SDL already scans the pads every frame)
+	// GameCube pad (OGC_ButtonsFrame scans the pads every frame)
 	gh = PAD_ButtonsHeld( port );
 	gx = bound( -1.0f, PAD_StickX( port ) / 80.0f, 1.0f );
 	gy = bound( -1.0f, PAD_StickY( port ) / 80.0f, 1.0f );
 	cx = bound( -1.0f, PAD_SubStickX( port ) / 80.0f, 1.0f );
 	cy = bound( -1.0f, PAD_SubStickY( port ) / 80.0f, 1.0f );
 
-	// there is no cheap "connected" query that doesn't race SDL's scan:
 	// the pad counts once it has reported any input
 	if( gh || fabsf( gx ) > 0.3f || fabsf( gy ) > 0.3f || fabsf( cx ) > 0.3f || fabsf( cy ) > 0.3f )
 		ogc_gc_seen[port] = true;
