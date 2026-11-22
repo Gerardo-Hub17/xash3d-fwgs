@@ -12,13 +12,29 @@ static FILE *g_log_fp = NULL;
 
 static void OGC_DebugOpen(void)
 {
+    static int fat_done;
+    static time_t last_try;
+    time_t now;
+
     if (g_log_fp) return;
+
+    /* sin SD y con el USB aun sin montar no hay donde escribir, y esto se llama en
+       CADA printf: no volver a montar FAT cada vez (con un disco USB cada intento
+       arranca el USB y compite con el montaje real y con KEYBOARD_Init/MOUSE_Init),
+       y reintentar abrir el archivo como mucho una vez por segundo */
+    now = time(NULL);
+    if (fat_done && now == last_try) return;
+    last_try = now;
 
     /* la SD no está montada cuando corren los constructores: montarla ahora.
        Cache de libfat de 32 paginas (~128 KB, antes 4 paginas): con la
        cache por defecto las lecturas grandes (texturas, modelos) expulsan los
        directorios y cada busqueda de archivo vuelve a leerlos de la SD. */
-    fatInit( 32, true );
+    if (!fat_done)
+    {
+        fat_done = 1;
+        fatInit( 32, true );
+    }
 
     g_log_fp = fopen("sd:/xash_debug.log", "w");
     if (!g_log_fp) g_log_fp = fopen("usb:/xash_debug.log", "w");

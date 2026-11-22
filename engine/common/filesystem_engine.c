@@ -342,6 +342,8 @@ base directory lookup need it. Whichever runs first does the mount; the other
 gets the cached answer.
 ==================
 */
+extern void OGC_DebugPrint( const char *fmt, ... );
+
 // carpeta de datos (sd:/xash3d o usb:/xash3d) elegida al montar
 static char ogc_basedir[32] = "sd:/xash3d";
 static const char *ogc_argv0;
@@ -402,21 +404,30 @@ qboolean OGC_MountSD( void )
 
         if( !OGC_FindBase( first, second ))
         {
-            // fatInitDefault no siempre deja el USB listo a la primera
-            for( tries = 0; tries < 8; tries++ )
+            qboolean found = false;
+
+            // fatInitDefault no siempre deja el USB listo a la primera, y un disco duro
+            // tarda en arrancar: hasta ~12 s
+            OGC_DebugPrint( "[fs] no se encontro xash3d/ en %s:/ ni en %s:/, esperando al USB...\n", first, second );
+
+            for( tries = 0; tries < 24 && !found; tries++ )
             {
                 if( OGC_IsDir( "usb:/" ) || fatMountSimple( "usb", &__io_usbstorage ))
-                {
-                    if( OGC_FindBase( first, second ))
-                    {
-                        mounted = 1;
-                        break;
-                    }
-                }
+                    found = OGC_FindBase( first, second );
 
-                usleep( 500000 );
+                if( !found )
+                    usleep( 500000 );
             }
+
+            if( found )
+                mounted = 1;
+            else if( OGC_IsDir( "usb:/" ))
+                OGC_DebugPrint( "[fs] usb:/ montado, pero sin la carpeta xash3d/valve ni xash3d/\n" );
+            else
+                OGC_DebugPrint( "[fs] usb:/ no se pudo montar tras %d intentos\n", tries );
         }
+
+        OGC_DebugPrint( "[fs] carpeta de datos: %s (montado=%d)\n", ogc_basedir, mounted );
     }
 
     return mounted == 1 ? true : false;

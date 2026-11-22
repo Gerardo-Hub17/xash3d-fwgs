@@ -2636,6 +2636,17 @@ conectar, se reinicia el driver de libogc para que lo busque.
 */
 #define OGC_USB_MAXDEV 8
 
+// El juego esta en un disco USB (usb:/xash3d). Abrir con USB_OpenDevice el disco que
+// usa libogc para leer los archivos (o reiniciar el driver del raton, que recorre y
+// abre todos los dispositivos) lo deja sin responder: el motor pierde los archivos y
+// vuelve al Homebrew Channel. En ese caso solo se lista, no se toca nada.
+static qboolean OGC_StorageOnUsb( void )
+{
+	const char *base = OGC_BaseDir();
+
+	return base != NULL && ( base[0] == 'u' || base[0] == 'U' );
+}
+
 // recorre los dispositivos USB. dump imprime lo que hay; si open es falso solo
 // se lista (abrir un dispositivo que ya usa el driver del raton no conviene).
 // devuelve cuantos dispositivos hay (<0: error de IOS) y en *mice los
@@ -2649,6 +2660,9 @@ static int OGC_UsbScan( qboolean dump, qboolean open, int *mice )
 
 	if( mice )
 		*mice = 0;
+
+	if( open && OGC_StorageOnUsb( ))
+		open = false;
 
 	memset( list, 0, sizeof( list ));
 	ret = USB_GetDeviceList( list, OGC_USB_MAXDEV, 0, &cnt );
@@ -2756,7 +2770,8 @@ static void OGC_UsbReport_f( void )
 	}
 
 	// el informe manual tambien reinicia el driver si hay un raton sin conectar
-	if( !connected && mice )
+	// (no con el juego en un disco USB, ver OGC_StorageOnUsb)
+	if( !connected && mice && !OGC_StorageOnUsb( ))
 	{
 		MOUSE_Deinit();
 		ogc_usb_mouse_ret = MOUSE_Init();
@@ -2783,6 +2798,10 @@ static void OGC_UsbPoll( void )
 		return;
 
 	next = host.realtime + 2.0;
+
+	// con el juego en un disco USB no se sondea el bus (ver OGC_StorageOnUsb)
+	if( OGC_StorageOnUsb( ))
+		return;
 
 	// MOUSE_IsConnected solo es seguro si MOUSE_Init termino bien
 	if( ogc_usb_mouse_ok && MOUSE_IsConnected( ))
@@ -2860,7 +2879,8 @@ static void OGC_MouseFrame( void )
 	if( !ogc_usb_mouse_ok )
 	{
 		// si el USB no estaba listo al arrancar, se reintenta unas veces
-		if( retries < 5 && host.realtime >= next_retry )
+		// (no con el juego en un disco USB: MOUSE_Init abre todos los dispositivos)
+		if( retries < 5 && host.realtime >= next_retry && !OGC_StorageOnUsb( ))
 		{
 			next_retry = host.realtime + 3.0;
 			retries++;
