@@ -635,6 +635,7 @@ void V_PostRender( void )
 		Touch_Draw();
 		OSK_Draw();
 		CL_MenuPickDraw();
+		CL_WiiMenuDraw();
 
 		S_ExtraUpdate();
 		PT_END( 42 );

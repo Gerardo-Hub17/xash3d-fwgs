@@ -188,6 +188,16 @@ qboolean OGC_AimIsPointer( void );
 float OGC_GetAspect( void );
 qboolean OGC_PlayerInput( int port, int player, float dt, const ogc_psettings_t *cfg, ogc_pinput_t *out );
 unsigned OGC_PortUI( int port, int *kind );
+// menu de ajustes de un jugador (+): remapeo de botones por mando
+int OGC_MapProfileNow( void );
+const char *OGC_MapProfileName( int profile );
+qboolean OGC_MapHasNunchuk( void );
+int OGC_MapActionCount( void );
+const char *OGC_MapActionName( int action );
+const char *OGC_MapButtonName( int profile, int action );
+void OGC_MapCycle( int profile, int action, int dir );
+void OGC_MapReset( int profile );
+void OGC_MenuOpened( void );
 void OGC_PlayerAssist( int player, const vec3_t eye, int self, const vec3_t aim, float percent, float dt, qboolean pointer, qboolean moving, float *dyaw, float *dpitch, float *speed );
 void OGC_ApplyPointerToViewModel( struct cl_entity_s *view );
 void OGC_GetAimDelta( float *dyaw, float *dpitch );

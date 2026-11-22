@@ -1239,6 +1239,12 @@ void CL_SplitDrawHUD( void );
 qboolean CL_SplitGrab( int player );
 void CL_SplitMenuToggle( int player );
 
+// menu de ajustes de un jugador (+): sensibilidad, zona muerta, botones, palanca por gesto
+void CL_WiiMenuOpen( int profile );
+qboolean CL_WiiMenuActive( void );
+void CL_WiiMenuFrame( void );
+void CL_WiiMenuDraw( void );
+
 // menus por numero del servidor (ShowMenu) elegidos con el mando
 void CL_MenuPickMessage( const byte *buf, int size );
 qboolean CL_MenuPickActive( void );

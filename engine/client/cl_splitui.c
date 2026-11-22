@@ -1116,7 +1116,7 @@ void CL_SplitUIDrawHUD( int player, int x, int y, int w, int h )
 
 qboolean CL_SplitGrab( int player )
 {
-	return CL_SplitLobbyActive() || ( CL_SplitActive() && CL_SplitMenuOpen( player ));
+	return CL_SplitLobbyActive() || ( CL_SplitActive() && CL_SplitMenuOpen( player )) || ( player == 0 && CL_WiiMenuActive( ));
 }
 
 /*
@@ -2090,3 +2090,566 @@ void CL_MenuPickDraw( void )
 	CL_SplitDrawText( ( W - CL_SplitTextWidth( line )) / 2, y + 4, line, 255, 220, 80, 255 );
 	CL_SplitDrawText( ( W - CL_SplitTextWidth( menupick.hint )) / 2, y + 8 + th, menupick.hint, 190, 190, 190, 255 );
 }
+
+/*
+=============
+Menu de ajustes de un jugador (+)
+
+Se abre con + (Wiimote, Classic) o B (GameCube) y se maneja con la cruz, A y B del
+mismo mando. Con un solo jugador pausa la partida mientras esta abierto. Las
+sensibilidades y zonas muertas son los cvars de siempre (wii_ir_*, wii_stick_*,
+wii_nunchuk_*), asi que tambien se pueden tocar desde la consola. La pagina de
+botones cambia la asignacion del mando que abrio el menu (in_ogc.c).
+=============
+*/
+#if XASH_OGC
+enum { WM_PAGE_MAIN, WM_PAGE_BUTTONS };
+
+enum
+{
+	WMR_SENS_A,	// puntero (Wiimote) o palanca (Classic, GameCube)
+	WMR_DZ_A,
+	WMR_SENS_B,	// palanca del Nunchuk
+	WMR_DZ_B,
+	WMR_EDGE,	// seguir girando al salir el puntero por un borde
+	WMR_SWING,	// palanca por gesto
+	WMR_SWING_DEV,
+	WMR_SWING_SENS,
+	WMR_PAUSE,
+	WMR_BUTTONS,
+	WMR_SAVE,
+	WMR_CHAT,
+	WMR_RESET,
+	WMR_CLOSE,
+	WMR_COUNT
+};
+
+#define WM_MAXROWS	( WMR_COUNT + 20 )	// las acciones de la pagina de botones son mas
+
+static struct
+{
+	qboolean	open;
+	int		page;
+	int		sel, bsel;	// fila elegida en cada pagina
+	int		scroll;
+	int		profile;
+	unsigned	prev;
+	double		repeat;
+	double		opened;
+	qboolean	paused;		// el menu pauso la partida
+} wm;
+
+qboolean CL_WiiMenuActive( void )
+{
+	return wm.open;
+}
+
+static void WM_Close( void )
+{
+	if( !wm.open )
+		return;
+
+	wm.open = false;
+
+	if( wm.paused )
+	{
+		// pause es un conmutador: si aun no llego a pausar, se deshace igual
+		if( cl.paused || host.realtime - wm.opened < 0.5 )
+			Cbuf_AddText( "pause\n" );
+
+		wm.paused = false;
+	}
+}
+
+void CL_WiiMenuOpen( int profile )
+{
+	unsigned ui;
+	int kind;
+
+	if( wm.open || CL_SplitActive( ))
+		return;
+
+	wm.open = true;
+	wm.page = WM_PAGE_MAIN;
+	wm.sel = wm.bsel = wm.scroll = 0;
+	wm.profile = profile;
+	wm.repeat = 0.0;
+	wm.opened = host.realtime;
+	wm.paused = false;
+
+	// lo que ya esta apretado (el propio +) no cuenta como pulsacion nueva del menu
+	ui = OGC_PortUI( 0, &kind );
+	wm.prev = ui;
+	OGC_MenuOpened();
+
+	if( Cvar_VariableValue( "wii_menu_pause" ) != 0.0f && cl.maxclients <= 1 && !cl.paused && !cls.demoplayback )
+	{
+		Cbuf_AddText( "pause\n" );
+		wm.paused = true;
+	}
+}
+
+// que filas se ven segun el mando
+static int WM_Rows( int *ids )
+{
+	const qboolean wii = wm.profile == 0;
+	const qboolean nun = wii && OGC_MapHasNunchuk();
+	int n = 0;
+
+	ids[n++] = WMR_SENS_A;
+	ids[n++] = WMR_DZ_A;
+
+	if( nun )
+	{
+		ids[n++] = WMR_SENS_B;
+		ids[n++] = WMR_DZ_B;
+	}
+
+	if( wii )
+	{
+		ids[n++] = WMR_EDGE;
+		ids[n++] = WMR_SWING;
+
+		if( (int)Cvar_VariableValue( "wii_swing" ) > 0 )
+		{
+			ids[n++] = WMR_SWING_DEV;
+			ids[n++] = WMR_SWING_SENS;
+		}
+	}
+
+	if( cl.maxclients <= 1 )
+		ids[n++] = WMR_PAUSE;
+
+	ids[n++] = WMR_BUTTONS;
+	ids[n++] = WMR_SAVE;
+
+	if( cl.maxclients > 1 )
+		ids[n++] = WMR_CHAT;
+
+	ids[n++] = WMR_RESET;
+	ids[n++] = WMR_CLOSE;
+
+	return n;
+}
+
+// filas con un numero: cvar, factor (valor mostrado = cvar * factor), limites y paso
+static qboolean WM_Num( int id, const char **cvar, float *mul, int *lo, int *hi, int *step )
+{
+	const qboolean wii = wm.profile == 0;
+
+	switch( id )
+	{
+	case WMR_SENS_A:
+		*cvar = wii ? "wii_ir_sens" : "wii_stick_sens";
+		*mul = 100.0f; *lo = 50; *hi = 200; *step = 10;
+		return true;
+	case WMR_DZ_A:
+		*cvar = wii ? "wii_ir_deadzone" : "wii_stick_deadzone";
+		*mul = 100.0f; *lo = 0; *hi = wii ? 60 : 40; *step = wii ? 5 : 2;
+		return true;
+	case WMR_SENS_B:
+		*cvar = "wii_nunchuk_sens";	// 320 = 100%
+		*mul = 100.0f / 320.0f; *lo = 40; *hi = 160; *step = 10;
+		return true;
+	case WMR_DZ_B:
+		*cvar = "wii_nunchuk_deadzone";
+		*mul = 100.0f; *lo = 0; *hi = 50; *step = 2;
+		return true;
+	case WMR_SWING_SENS:
+		*cvar = "wii_swing_sens";
+		*mul = 1.0f; *lo = 50; *hi = 200; *step = 10;
+		return true;
+	}
+
+	return false;
+}
+
+static const char *WM_RowLabel( int id )
+{
+	const qboolean wii = wm.profile == 0;
+
+	switch( id )
+	{
+	case WMR_SENS_A:	return wii ? "Sensibilidad del puntero" : "Sensibilidad de la palanca";
+	case WMR_DZ_A:		return wii ? "Zona muerta del puntero" : "Zona muerta de la palanca";
+	case WMR_SENS_B:	return "Sensibilidad del Nunchuk";
+	case WMR_DZ_B:		return "Zona muerta del Nunchuk";
+	case WMR_EDGE:		return "Seguir girando en el borde";
+	case WMR_SWING:		return "Palanca por gesto";
+	case WMR_SWING_DEV:	return "Gesto con";
+	case WMR_SWING_SENS:	return "Sensibilidad del gesto";
+	case WMR_PAUSE:		return "Pausar al abrir el menu";
+	case WMR_BUTTONS:	return "Configurar botones";
+	case WMR_SAVE:		return "Guardado rapido";
+	case WMR_CHAT:		return "Escribir chat";
+	case WMR_RESET:		return "Restaurar ajustes";
+	case WMR_CLOSE:		return "Cerrar";
+	}
+
+	return "";
+}
+
+// el valor de una fila; false si la fila es un boton (A la ejecuta) y no tiene valor
+static qboolean WM_RowValue( int id, char *out, size_t size )
+{
+	const char *cvar;
+	float mul;
+	int lo, hi, step;
+
+	if( WM_Num( id, &cvar, &mul, &lo, &hi, &step ))
+	{
+		Q_snprintf( out, size, "%d%%", (int)( Cvar_VariableValue( cvar ) * mul + 0.5f ));
+		return true;
+	}
+
+	switch( id )
+	{
+	case WMR_EDGE:
+		Q_strncpy( out, Cvar_VariableValue( "wii_ir_edgehold" ) > 0.0f ? "Si" : "No", size );
+		return true;
+	case WMR_SWING:
+		switch( (int)Cvar_VariableValue( "wii_swing" ))
+		{
+		case 1:		Q_strncpy( out, "Boton o gesto", size ); break;
+		case 2:		Q_strncpy( out, "Solo gesto", size ); break;
+		default:	Q_strncpy( out, "No", size ); break;
+		}
+		return true;
+	case WMR_SWING_DEV:
+		switch( (int)Cvar_VariableValue( "wii_swing_dev" ))
+		{
+		case 1:		Q_strncpy( out, "Wiimote", size ); break;
+		case 2:		Q_strncpy( out, "Los dos", size ); break;
+		default:	Q_strncpy( out, "Nunchuk", size ); break;
+		}
+		return true;
+	case WMR_PAUSE:
+		Q_strncpy( out, Cvar_VariableValue( "wii_menu_pause" ) != 0.0f ? "Si" : "No", size );
+		return true;
+	}
+
+	out[0] = 0;
+	return false;
+}
+
+static void WM_RowAdjust( int id, int dir )
+{
+	const char *cvar;
+	float mul;
+	int lo, hi, step, v;
+
+	if( WM_Num( id, &cvar, &mul, &lo, &hi, &step ))
+	{
+		v = (int)( Cvar_VariableValue( cvar ) * mul + 0.5f );
+		v = bound( lo, v + dir * step, hi );
+		Cvar_SetValue( cvar, v / mul );
+		return;
+	}
+
+	switch( id )
+	{
+	case WMR_EDGE:
+		Cvar_SetValue( "wii_ir_edgehold", Cvar_VariableValue( "wii_ir_edgehold" ) > 0.0f ? 0.0f : 3.0f );
+		break;
+	case WMR_SWING:
+		v = ( (int)Cvar_VariableValue( "wii_swing" ) + dir + 3 ) % 3;
+		Cvar_SetValue( "wii_swing", (float)v );
+		break;
+	case WMR_SWING_DEV:
+		v = ( (int)Cvar_VariableValue( "wii_swing_dev" ) + dir + 3 ) % 3;
+		Cvar_SetValue( "wii_swing_dev", (float)v );
+		break;
+	case WMR_PAUSE:
+		Cvar_SetValue( "wii_menu_pause", Cvar_VariableValue( "wii_menu_pause" ) != 0.0f ? 0.0f : 1.0f );
+		break;
+	}
+}
+
+static void WM_ResetSettings( void )
+{
+	Cvar_SetValue( "wii_ir_sens", 1.0f );
+	Cvar_SetValue( "wii_ir_deadzone", 0.35f );
+	Cvar_SetValue( "wii_stick_sens", 1.0f );
+	Cvar_SetValue( "wii_stick_deadzone", 0.16f );
+	Cvar_SetValue( "wii_nunchuk_sens", 320.0f );
+	Cvar_SetValue( "wii_nunchuk_deadzone", 0.2441f );
+	Cvar_SetValue( "wii_ir_edgehold", 3.0f );
+	Cvar_SetValue( "wii_swing", 0.0f );
+	Cvar_SetValue( "wii_swing_dev", 0.0f );
+	Cvar_SetValue( "wii_swing_sens", 100.0f );
+	Cvar_SetValue( "wii_menu_pause", 1.0f );
+}
+
+void CL_WiiMenuFrame( void )
+{
+	int ids[WMR_COUNT];
+	unsigned ui, pressed, repeat = 0;
+	int kind, n, rows, *sel;
+
+	if( !wm.open )
+		return;
+
+	// Inicio (menu del juego), cambio de mapa, desconexion...: el menu se cierra solo
+	if( cls.state != ca_active || cls.key_dest != key_game || CL_SplitActive( ))
+	{
+		WM_Close();
+		return;
+	}
+
+	ui = OGC_PortUI( 0, &kind );
+
+	if( kind == OGC_KIND_NONE )
+	{
+		WM_Close();
+		return;
+	}
+
+	pressed = ui & ~wm.prev;
+	wm.prev = ui;
+
+	if( ui & ( OGC_UI_LEFT | OGC_UI_RIGHT ))
+	{
+		if( pressed & ( OGC_UI_LEFT | OGC_UI_RIGHT ))
+			wm.repeat = host.realtime + UI_EDGE_DELAY;
+		else if( host.realtime >= wm.repeat )
+		{
+			repeat = ui & ( OGC_UI_LEFT | OGC_UI_RIGHT );
+			wm.repeat = host.realtime + UI_EDGE_RATE;
+		}
+	}
+
+	if( wm.page == WM_PAGE_MAIN )
+	{
+		n = WM_Rows( ids );
+		sel = &wm.sel;
+	}
+	else
+	{
+		n = OGC_MapActionCount() + 2;	// acciones, restaurar, volver
+		sel = &wm.bsel;
+	}
+
+	rows = n;
+	*sel = bound( 0, *sel, rows - 1 );
+
+	// + (o Start en un Classic) cierra el menu en cualquier pagina
+	if( pressed & OGC_UI_START )
+	{
+		WM_Close();
+		return;
+	}
+
+	if(( pressed | repeat ) & OGC_UI_UP )
+		*sel = ( *sel + rows - 1 ) % rows;
+	if(( pressed | repeat ) & OGC_UI_DOWN )
+		*sel = ( *sel + 1 ) % rows;
+
+	if( wm.page == WM_PAGE_MAIN )
+	{
+		const int id = ids[*sel];
+		char tmp[32];
+		const qboolean adjustable = WM_RowValue( id, tmp, sizeof( tmp ));
+
+		if(( pressed | repeat ) & OGC_UI_LEFT && adjustable )
+			WM_RowAdjust( id, -1 );
+		if(( pressed | repeat ) & OGC_UI_RIGHT && adjustable )
+			WM_RowAdjust( id, 1 );
+
+		if( pressed & OGC_UI_ACCEPT )
+		{
+			switch( id )
+			{
+			case WMR_BUTTONS:
+				wm.page = WM_PAGE_BUTTONS;
+				wm.bsel = 0;
+				wm.scroll = 0;
+				break;
+			case WMR_SAVE:
+				WM_Close();
+				Cbuf_AddText( "savequick\n" );
+				break;
+			case WMR_CHAT:
+				WM_Close();
+				Cbuf_AddText( "messagemode\n" );
+				break;
+			case WMR_RESET:
+				WM_ResetSettings();
+				break;
+			case WMR_CLOSE:
+				WM_Close();
+				break;
+			default:
+				if( adjustable )
+					WM_RowAdjust( id, 1 );
+				break;
+			}
+		}
+
+		if( pressed & OGC_UI_BACK )
+			WM_Close();
+	}
+	else
+	{
+		const int acts = OGC_MapActionCount();
+
+		if( *sel < acts )
+		{
+			if( pressed & OGC_UI_LEFT )
+				OGC_MapCycle( wm.profile, *sel, -1 );
+			if(( pressed & OGC_UI_RIGHT ) || ( pressed & OGC_UI_ACCEPT ))
+				OGC_MapCycle( wm.profile, *sel, 1 );
+		}
+		else if(( pressed & OGC_UI_ACCEPT ) && *sel == acts )
+			OGC_MapReset( wm.profile );
+		else if(( pressed & OGC_UI_ACCEPT ) && *sel == acts + 1 )
+		{
+			wm.page = WM_PAGE_MAIN;
+			wm.scroll = 0;
+		}
+
+		if( pressed & OGC_UI_BACK )
+		{
+			wm.page = WM_PAGE_MAIN;
+			wm.scroll = 0;
+		}
+	}
+}
+
+void CL_WiiMenuDraw( void )
+{
+	const int W = refState.width, H = refState.height;
+	char labels[WM_MAXROWS][40], values[WM_MAXROWS][32];
+	qboolean adjust[WM_MAXROWS];
+	char title[80], hint[2][96];
+	int ids[WMR_COUNT];
+	int n, i, th, rowh, margin, head, foot, maxrows, vis, pw, ph, px, py, sel, hints;
+
+	if( !wm.open || W <= 0 || H <= 0 )
+		return;
+
+	if( wm.page == WM_PAGE_MAIN )
+	{
+		n = WM_Rows( ids );
+
+		for( i = 0; i < n; i++ )
+		{
+			Q_strncpy( labels[i], WM_RowLabel( ids[i] ), sizeof( labels[i] ));
+			adjust[i] = WM_RowValue( ids[i], values[i], sizeof( values[i] ));
+		}
+
+		sel = wm.sel;
+		Q_snprintf( title, sizeof( title ), "AJUSTES  -  %s", OGC_MapProfileName( wm.profile ));
+	}
+	else
+	{
+		const int acts = OGC_MapActionCount();
+
+		n = acts + 2;
+
+		for( i = 0; i < acts; i++ )
+		{
+			Q_strncpy( labels[i], OGC_MapActionName( i ), sizeof( labels[i] ));
+			Q_strncpy( values[i], OGC_MapButtonName( wm.profile, i ), sizeof( values[i] ));
+			adjust[i] = true;
+		}
+
+		Q_strncpy( labels[acts], "Restaurar botones", sizeof( labels[acts] ));
+		values[acts][0] = 0;
+		adjust[acts] = false;
+		Q_strncpy( labels[acts + 1], "Volver", sizeof( labels[acts + 1] ));
+		values[acts + 1][0] = 0;
+		adjust[acts + 1] = false;
+
+		sel = wm.bsel;
+		Q_snprintf( title, sizeof( title ), "BOTONES  -  %s", OGC_MapProfileName( wm.profile ));
+	}
+
+	n = Q_min( n, WM_MAXROWS );
+	sel = bound( 0, sel, n - 1 );
+
+	// ayuda: cada mando tiene su boton de cerrar
+	if( wm.profile == 2 )
+	{
+		Q_strncpy( hint[0], "Cruz: elegir y cambiar   A: aceptar   B: volver", sizeof( hint[0] ));
+		Q_strncpy( hint[1], "Cruz   A   B", sizeof( hint[1] ));
+	}
+	else
+	{
+		Q_strncpy( hint[0], "Cruz: elegir y cambiar   A: aceptar   B: volver   +: cerrar", sizeof( hint[0] ));
+		Q_strncpy( hint[1], "Cruz   A   B   +", sizeof( hint[1] ));
+	}
+
+	th = CL_SplitTextHeight();
+	rowh = th + 6;
+	margin = 16;
+	pw = Q_min( W - 32, 520 );
+
+	if( CL_SplitTextWidth( hint[0] ) > pw - 16 )
+		hint[0][0] = 0, Q_strncpy( hint[0], hint[1], sizeof( hint[0] ));
+
+	hints = wm.page == WM_PAGE_BUTTONS ? 2 : 1;
+	head = th + 14;
+	foot = th * hints + 10;
+	maxrows = Q_max( 3, ( H - margin * 2 - head - foot ) / rowh );
+	vis = Q_min( n, maxrows );
+
+	// la fila elegida siempre dentro de la lista visible
+	if( sel < wm.scroll )
+		wm.scroll = sel;
+	if( sel >= wm.scroll + vis )
+		wm.scroll = sel - vis + 1;
+	wm.scroll = bound( 0, wm.scroll, n - vis );
+
+	ph = head + vis * rowh + foot;
+	px = ( W - pw ) / 2;
+	py = ( H - ph ) / 2;
+
+	CL_SplitFill( 0, 0, W, H, 0, 0, 0, 110 );
+	CL_SplitFill( px, py, pw, ph, 0, 0, 0, 225 );
+	CL_SplitFill( px, py, pw, 2, 255, 160, 0, 255 );
+	UI_TextCenter( px + pw / 2, py + 6, title, 255, 200, 40 );
+
+	for( i = 0; i < vis; i++ )
+	{
+		const int idx = wm.scroll + i;
+		const int ry = py + head + i * rowh;
+		const qboolean on = idx == sel;
+		const int r = on ? 255 : 205, g = on ? 220 : 205, b = on ? 60 : 205;
+		char val[48];
+
+		if( on )
+			CL_SplitFill( px + 3, ry, pw - 6, rowh - 1, 255, 160, 0, 70 );
+
+		CL_SplitDrawText( px + 10, ry + 3, labels[idx], r, g, b, 255 );
+
+		if( values[idx][0] )
+		{
+			Q_snprintf( val, sizeof( val ), on && adjust[idx] ? "< %s >" : "%s", values[idx] );
+			UI_TextRight( px + pw - 10, ry + 3, val, r, g, b );
+		}
+	}
+
+	// hay mas filas arriba o abajo
+	if( wm.scroll > 0 )
+		UI_TextRight( px + pw - 6, py + 6, "^", 255, 200, 40 );
+	if( wm.scroll + vis < n )
+		UI_TextRight( px + pw - 6, py + ph - th - 4, "v", 255, 200, 40 );
+
+	CL_SplitDrawText( px + ( pw - CL_SplitTextWidth( hint[0] )) / 2, py + head + vis * rowh + 5, hint[0], 190, 190, 190, 255 );
+
+	if( hints > 1 )
+	{
+		const char *fixed = wm.profile == 2 ? "Fijos: Start = menu del juego, B = este menu" : "Fijos: Inicio = menu del juego, + = este menu";
+
+		if( CL_SplitTextWidth( fixed ) > pw - 16 )
+			fixed = wm.profile == 2 ? "Fijos: Start, B" : "Fijos: Inicio, +";
+
+		CL_SplitDrawText( px + ( pw - CL_SplitTextWidth( fixed )) / 2, py + head + vis * rowh + 5 + th, fixed, 150, 150, 150, 255 );
+	}
+}
+#else
+qboolean CL_WiiMenuActive( void ) { return false; }
+void CL_WiiMenuOpen( int profile ) { }
+void CL_WiiMenuFrame( void ) { }
+void CL_WiiMenuDraw( void ) { }
+#endif
