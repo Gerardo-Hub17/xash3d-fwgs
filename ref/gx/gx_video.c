@@ -32,6 +32,7 @@ CVAR_DEFINE_AUTO( gl_texture_lodbias, "0.0", FCVAR_GLCONFIG, "LOD bias for mipma
 CVAR_DEFINE_AUTO( gl_texture_nearest, "0", FCVAR_GLCONFIG, "disable texture filter" );
 CVAR_DEFINE_AUTO( gl_lightmap_nearest, "0", FCVAR_GLCONFIG, "disable lightmap filter" );
 CVAR_DEFINE_AUTO( gl_keeptjunctions, "1", FCVAR_GLCONFIG, "removing tjuncs causes blinking pixels" );
+CVAR_DEFINE_AUTO( gx_tjunc, "1", FCVAR_ARCHIVE, "repair T-junctions when loading a map (white lines between faces); reload the map after changing it" );
 CVAR_DEFINE_AUTO( gl_check_errors, "1", FCVAR_GLCONFIG, "ignore video engine errors" );
 CVAR_DEFINE_AUTO( gl_polyoffset, "2", FCVAR_GLCONFIG, "polygon offset for decals" );
 CVAR_DEFINE_AUTO( gx_beamdiag, "0", 0, "dump beam endpoints to the console once" );
@@ -464,6 +465,7 @@ static void GX_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_anisotropy );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_lodbias );
 	gEngfuncs.Cvar_RegisterVariable( &gl_keeptjunctions );
+	gEngfuncs.Cvar_RegisterVariable( &gx_tjunc );
 	gEngfuncs.Cvar_RegisterVariable( &gl_finish );
 	gEngfuncs.Cvar_RegisterVariable( &gl_nosort );
 	gEngfuncs.Cvar_RegisterVariable( &gl_test );

@@ -431,6 +431,304 @@ static int GX_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 	return nColinElim;
 }
 
+// ---- reparacion de T-junctions ----
+/*
+Una pared partida en dos caras suele tener, en el borde que comparten, un vertice
+extra de un lado que el otro no tiene (T-junction). Un rasterizador no garantiza
+cubrir bien ese borde y quedan agujeros de subpixel por donde se ve el color de
+fondo (lineas claras entre caras, en esquinas y bordes). Aqui, al cargar el mapa,
+cada borde de cada cara recibe los vertices de otras caras que caen sobre el: asi
+las dos caras comparten exactamente los mismos puntos y no hay grieta.
+Se busca con una rejilla de 64 unidades; no toca agua ni cielo.
+*/
+#define TJ_CELL		64.0f	// tamano de celda de la rejilla
+#define TJ_STEP		32.0f	// separacion de las muestras a lo largo de un borde
+#define TJ_TOL		0.1f	// cuanto se puede apartar un vertice del borde (unidades)
+#define TJ_END		0.05f	// distancia minima a los extremos del borde
+#define TJ_MAXHITS	32	// vertices a insertar como mucho en un borde
+#define TJ_MAXVERTS	24	// vertices maximos por cara (las tablas de decals son de 32 y recortar anade)
+
+typedef struct { int ix, iy, iz, head; } tj_cell_t;
+typedef struct { float t; float pos[3]; } tj_hit_t;
+typedef struct { int edge; float pos[3]; } tj_ins_t;
+
+typedef struct
+{
+	float		(*vp)[3];	// posicion de cada vertice de cada cara
+	int		*next;		// siguiente vertice de la misma celda
+	tj_cell_t	*cells;
+	int		*table;		// tabla hash de celdas (-1 = vacia)
+	int		mask, ncells;
+} tj_grid_t;
+
+static unsigned TJ_Hash( int x, int y, int z )
+{
+	return ((unsigned)x * 73856093u) ^ ((unsigned)y * 19349663u) ^ ((unsigned)z * 83492791u);
+}
+
+static tj_cell_t *TJ_Cell( tj_grid_t *g, int x, int y, int z, qboolean create )
+{
+	unsigned h = TJ_Hash( x, y, z ) & g->mask;
+	tj_cell_t *c;
+
+	while( g->table[h] >= 0 )
+	{
+		c = &g->cells[g->table[h]];
+
+		if( c->ix == x && c->iy == y && c->iz == z )
+			return c;
+
+		h = ( h + 1 ) & g->mask;
+	}
+
+	if( !create )
+		return NULL;
+
+	g->table[h] = g->ncells;
+	c = &g->cells[g->ncells++];
+	c->ix = x;
+	c->iy = y;
+	c->iz = z;
+	c->head = -1;
+
+	return c;
+}
+
+static qboolean TJ_Usable( const msurface_t *fa )
+{
+	return fa->polys && fa->polys->numverts >= 3 && !FBitSet( fa->flags, SURF_DRAWTURB | SURF_DRAWSKY );
+}
+
+// vertices de otras caras que caen en el interior del borde a-b, ordenados a lo largo de el
+static int TJ_EdgeHits( const tj_grid_t *g, const float *a, const float *b, tj_hit_t *hits )
+{
+	const float r = TJ_STEP * 0.5f + TJ_TOL;
+	float d[3], dir[3], p[3], len;
+	int lo[3], hi[3], nsamp, nh = 0;
+	int i, j, k, x, y, z, v;
+
+	VectorSubtract( b, a, d );
+	len = sqrtf( DotProduct( d, d ));
+
+	if( len < TJ_END * 2.0f + 0.01f )
+		return 0;
+
+	VectorScale( d, 1.0f / len, dir );
+	nsamp = (int)ceilf( len / TJ_STEP ) + 1;
+
+	for( k = 0; k < nsamp; k++ )
+	{
+		VectorMA( a, len * (float)k / (float)( nsamp - 1 ), dir, p );
+
+		for( i = 0; i < 3; i++ )
+		{
+			lo[i] = (int)floorf(( p[i] - r ) / TJ_CELL );
+			hi[i] = (int)floorf(( p[i] + r ) / TJ_CELL );
+		}
+
+		for( x = lo[0]; x <= hi[0]; x++ )
+		for( y = lo[1]; y <= hi[1]; y++ )
+		for( z = lo[2]; z <= hi[2]; z++ )
+		{
+			const tj_cell_t *c = TJ_Cell( (tj_grid_t *)g, x, y, z, false );
+
+			if( !c )
+				continue;
+
+			for( v = c->head; v >= 0; v = g->next[v] )
+			{
+				const float *q = g->vp[v];
+				float e[3], perp[3], dd[3], t;
+
+				VectorSubtract( q, a, e );
+				t = DotProduct( e, dir );
+
+				if( t <= TJ_END || t >= len - TJ_END )
+					continue;
+
+				VectorMA( e, -t, dir, perp );
+
+				if( DotProduct( perp, perp ) > TJ_TOL * TJ_TOL )
+					continue;
+
+				// el mismo punto visto desde otra muestra o desde otra cara
+				for( j = 0; j < nh; j++ )
+				{
+					VectorSubtract( hits[j].pos, q, dd );
+
+					if( DotProduct( dd, dd ) < 1e-4f )
+						break;
+				}
+
+				if( j < nh || nh >= TJ_MAXHITS )
+					continue;
+
+				hits[nh].t = t;
+				VectorCopy( q, hits[nh].pos );
+				nh++;
+			}
+		}
+	}
+
+	for( i = 1; i < nh; i++ )
+	{
+		tj_hit_t h = hits[i];
+
+		for( j = i; j > 0 && hits[j - 1].t > h.t; j-- )
+			hits[j] = hits[j - 1];
+
+		hits[j] = h;
+	}
+
+	return nh;
+}
+
+static void GX_FixTJunctions( model_t *mod )
+{
+	tj_grid_t g;
+	tj_ins_t *ins = NULL;
+	int *fstart, *fcount;
+	int nverts = 0, tsize = 1, nins = 0, cap = 0, nfaces = 0;
+	int i, j, k, n;
+
+	if( !gx_tjunc.value || !mod || mod->numsurfaces <= 0 )
+		return;
+
+	for( j = 0; j < mod->numsurfaces; j++ )
+		if( TJ_Usable( &mod->surfaces[j] ))
+			nverts += mod->surfaces[j].polys->numverts;
+
+	if( nverts < 3 )
+		return;
+
+	while( tsize < nverts * 2 )
+		tsize <<= 1;
+
+	g.vp = Mem_Malloc( mod->mempool, nverts * sizeof( g.vp[0] ));
+	g.next = Mem_Malloc( mod->mempool, nverts * sizeof( int ));
+	g.cells = Mem_Malloc( mod->mempool, nverts * sizeof( tj_cell_t ));
+	g.table = Mem_Malloc( mod->mempool, tsize * sizeof( int ));
+	fstart = Mem_Calloc( mod->mempool, mod->numsurfaces * sizeof( int ));
+	fcount = Mem_Calloc( mod->mempool, mod->numsurfaces * sizeof( int ));
+	memset( g.table, 0xFF, tsize * sizeof( int ));
+	g.mask = tsize - 1;
+	g.ncells = 0;
+
+	for( j = 0, n = 0; j < mod->numsurfaces; j++ )
+	{
+		const glpoly2_t *poly;
+
+		if( !TJ_Usable( &mod->surfaces[j] ))
+			continue;
+
+		poly = mod->surfaces[j].polys;
+
+		for( i = 0; i < poly->numverts; i++, n++ )
+		{
+			tj_cell_t *c;
+
+			VectorCopy( poly->verts[i], g.vp[n] );
+			c = TJ_Cell( &g, (int)floorf( g.vp[n][0] / TJ_CELL ), (int)floorf( g.vp[n][1] / TJ_CELL ),
+				(int)floorf( g.vp[n][2] / TJ_CELL ), true );
+			g.next[n] = c->head;
+			c->head = n;
+		}
+	}
+
+	// primero se busca todo (las posiciones salen de la copia, no de las caras)
+	for( j = 0; j < mod->numsurfaces; j++ )
+	{
+		const glpoly2_t *poly;
+		tj_hit_t hits[TJ_MAXHITS];
+		int room, added = 0;
+
+		if( !TJ_Usable( &mod->surfaces[j] ))
+			continue;
+
+		poly = mod->surfaces[j].polys;
+		room = TJ_MAXVERTS - poly->numverts;
+		fstart[j] = nins;
+
+		for( i = 0; i < poly->numverts && added < room; i++ )
+		{
+			const int nh = TJ_EdgeHits( &g, poly->verts[i], poly->verts[( i + 1 ) % poly->numverts], hits );
+
+			for( k = 0; k < nh && added < room; k++ )
+			{
+				if( nins >= cap )
+				{
+					cap = cap ? cap * 2 : 1024;
+					ins = Mem_Realloc( mod->mempool, ins, cap * sizeof( tj_ins_t ));
+				}
+
+				ins[nins].edge = i;
+				VectorCopy( hits[k].pos, ins[nins].pos );
+				nins++;
+				added++;
+			}
+		}
+
+		fcount[j] = added;
+	}
+
+	// y despues se reconstruyen las caras con los vertices nuevos
+	for( j = 0; j < mod->numsurfaces; j++ )
+	{
+		msurface_t *fa = &mod->surfaces[j];
+		glpoly2_t *poly;
+		float sample_size, *nv;
+		int old, total, w = 0, m;
+
+		if( !fcount[j] )
+			continue;
+
+		poly = fa->polys;
+		sample_size = gEngfuncs.Mod_SampleSizeForFace( fa );
+		old = poly->numverts;
+		total = old + fcount[j];
+		m = fstart[j];
+		nv = Mem_Malloc( mod->mempool, total * VERTEXSIZE * sizeof( float ));
+
+		for( i = 0; i < old; i++ )
+		{
+			memcpy( nv + w * VERTEXSIZE, poly->verts[i], VERTEXSIZE * sizeof( float ));
+			w++;
+
+			while( m < fstart[j] + fcount[j] && ins[m].edge == i )
+			{
+				float *v = nv + w * VERTEXSIZE;
+
+				memset( v, 0, VERTEXSIZE * sizeof( float ));
+				VectorCopy( ins[m].pos, v );
+				R_TextureCoord( v, fa, &v[3] );
+				R_LightmapCoord( v, fa, sample_size, &v[5] );
+				w++;
+				m++;
+			}
+		}
+
+		poly = Mem_Realloc( mod->mempool, poly, sizeof( glpoly2_t ) + total * VERTEXSIZE * sizeof( float ));
+		memcpy( poly->verts[0], nv, total * VERTEXSIZE * sizeof( float ));
+		poly->numverts = total;
+		fa->polys = poly;
+		Mem_Free( nv );
+		nfaces++;
+	}
+
+	gEngfuncs.Con_Printf( "[TJUNC] %d vertices nuevos en %d caras (%d vertices en total)\n", nins, nfaces, nverts );
+
+	if( ins )
+		Mem_Free( ins );
+
+	Mem_Free( fcount );
+	Mem_Free( fstart );
+	Mem_Free( g.table );
+	Mem_Free( g.cells );
+	Mem_Free( g.next );
+	Mem_Free( g.vp );
+}
+// ---- fin reparacion de T-junctions ----
+
 static texture_t *R_TextureAnim( texture_t *b )
 {
 	texture_t *base = b;
@@ -2883,6 +3181,8 @@ void GX_BuildLightmaps( void )
 
 			nColinElim += GX_BuildPolygonFromSurface( m, m->surfaces + j );
 		}
+
+		GX_FixTJunctions( m );
 
 		for( int j = 0; j < m->numleafs; j++ )
 			m->leafs[j+1].visframe = 0;
