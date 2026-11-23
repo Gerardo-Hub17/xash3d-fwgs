@@ -78,3 +78,13 @@ Con **+** (Wiimote y Classic) o **B** (GameCube) se abre un menú sobre la parti
 Todo se guarda en la configuración (`wii_ir_sens`, `wii_ir_deadzone`, `wii_stick_sens`, `wii_stick_deadzone`, `wii_nunchuk_sens`, `wii_nunchuk_deadzone`, `wii_ir_edgehold`, `wii_swing`, `wii_swing_dev`, `wii_swing_sens`, `wii_map_*`).
 
 El menú reproduce media/gamestartup.mp3. Las versiones de Steam incluyen la banda sonora como media/Half-Life01.mp3 en adelante, sin ningún archivo gamestartup.mp3, por lo que el menú se inicia en silencio hasta que copies uno de ellos con ese nombre.
+
+### Campaña cooperativa (pantalla dividida, Half-Life)
+
+Se abre con `wii_splitlobby coop` o, dentro del lobby de pantalla dividida, con Arriba/Abajo del jugador 1 antes de que nadie se una. De 2 a 4 jugadores, todos son clones de Freeman (cada uno de un color) y juegan los mapas de la campaña (c0a0, c1a0...).
+
+- El jugador 1 manda: solo él cambia de nivel (los demás pueden interactuar con el mundo, recibir y hacer daño, también entre ellos y a sí mismos).
+- Todos regeneran vida (completa en 5 s como máximo desde el último golpe).
+- Quien muere reaparece a los pocos segundos junto al jugador vivo más cercano; solo si mueren todos se reinicia el nivel con lo que traían al empezarlo.
+- Guardado propio: `save/coop1.cop` a `coop3.cop` (no toca las partidas de un jugador). El jugador 1 elige la ranura con Izquierda/Derecha en el lobby. Se guarda el mapa y lo que lleva cada jugador (vida, chaleco, armas, munición) al cambiar de nivel; no se guarda el estado del mapa a medias. Comandos: `coop_save [ranura]`, `coop_load [ranura]`, cvar `wii_coop_slot`.
+- Necesita el hlsdk con `CHalfLifeCoop` (dlls/multiplay_gamerules.cpp).

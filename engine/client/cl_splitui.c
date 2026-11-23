@@ -1157,6 +1157,11 @@ static struct
 	int		winner;		// map the votes chose (set when the countdown starts)
 	char		maps[LOBBY_MAX_LIST][48];
 	int		nmaps;
+	qboolean	coop;		// campaign co-op instead of deathmatch
+	int		slot;		// co-op save slot (0 to SV_COOP_SLOTS - 1)
+	qboolean	fresh;		// start a new campaign even if the slot has a save
+	qboolean	slothas[SV_COOP_SLOTS];
+	char		slotmap[SV_COOP_SLOTS][48];
 } lobby;
 
 qboolean CL_SplitLobbyActive( void )
@@ -1297,6 +1302,15 @@ static qboolean Lobby_IsCampaignMap( const char *name )
 	return !Q_strnicmp( name, "hldemo", 6 ) || !Q_strnicmp( name, "ba_", 3 ) || !Q_stricmp( name, "background" );
 }
 
+// the single player campaign maps (c1a0, c2a1, t0a0...) are what the co-op mode plays
+static qboolean Lobby_IsCoopMap( const char *name )
+{
+	if(( name[0] == 'c' || name[0] == 't' ) && name[1] >= '0' && name[1] <= '9' && name[2] == 'a' )
+		return true;
+
+	return !Q_strnicmp( name, "ba_", 3 );
+}
+
 static void Lobby_ListMaps( void )
 {
 	search_t *t = FS_Search( "maps/*.bsp", true, false );
@@ -1312,7 +1326,7 @@ static void Lobby_ListMaps( void )
 
 			COM_FileBase( t->filenames[i], name, sizeof( name ));
 
-			if( Lobby_IsCampaignMap( name ))
+			if( lobby.coop ? !Lobby_IsCoopMap( name ) : Lobby_IsCampaignMap( name ))
 				continue;
 
 			for( j = 0; j < lobby.nmaps; j++ )
@@ -1503,16 +1517,50 @@ static qboolean Lobby_DrawBackground( int W, int H )
 	return true;
 }
 
+// the co-op saves and the map each player votes for when the mode (or the list of maps) changes
+static void Lobby_ResetChoices( void )
+{
+	int i, def = 0;
+	const char *last = Cvar_VariableString( lobby.coop ? "wii_coop_lastmap" : "wii_split_lastmap" );
+
+	// a new campaign begins at the first map of the game
+	if( lobby.coop && last[0] == 0 )
+		last = "c0a0";
+
+	for( i = 0; i < lobby.nmaps; i++ )
+	{
+		if( !Q_stricmp( lobby.maps[i], last ))
+			def = i;
+	}
+
+	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
+		lobby.p[i].map = def;
+
+	lobby.fresh = false;
+
+	for( i = 0; i < SV_COOP_SLOTS; i++ )
+		lobby.slothas[i] = SV_CoopSlotInfo( i + 1, lobby.slotmap[i], sizeof( lobby.slotmap[i] ));
+}
+
+static void Lobby_SetMode( qboolean coop )
+{
+	lobby.coop = coop;
+	Lobby_ListMaps();
+	Lobby_ResetChoices();
+}
+
 static void Lobby_Start_f( void )
 {
 #if XASH_OGC
-	int i, def;
+	int i;
 
 	if( lobby.active )
 		return;
 
 	memset( &lobby, 0, sizeof( lobby ));
 	lobby.layout = 1;
+	lobby.coop = ( Cmd_Argc() > 1 && !Q_stricmp( Cmd_Argv( 1 ), "coop" ));
+	lobby.slot = bound( 1, (int)Cvar_VariableValue( "wii_coop_slot" ), SV_COOP_SLOTS ) - 1;
 
 	Lobby_ListModels();
 	Lobby_ListMaps();
@@ -1520,20 +1568,18 @@ static void Lobby_Start_f( void )
 
 	if( !lobby.nmaps )
 	{
-		Con_Printf( "wii_splitlobby: no deathmatch maps found\n" );
+		// no campaign maps (a game with only deathmatch ones): the other mode
+		lobby.coop = !lobby.coop;
+		Lobby_ListMaps();
+	}
+
+	if( !lobby.nmaps )
+	{
+		Con_Printf( "wii_splitlobby: no maps found\n" );
 		return;
 	}
 
-	// start on the map picked last time
-	def = 0;
-	for( i = 0; i < lobby.nmaps; i++ )
-	{
-		if( !Q_stricmp( lobby.maps[i], Cvar_VariableString( "wii_split_lastmap" )))
-			def = i;
-	}
-
-	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
-		lobby.p[i].map = def;
+	Lobby_ResetChoices();
 
 	for( i = 0; i < lobby.nmodels; i++ )
 	{
@@ -1582,6 +1628,10 @@ static int Lobby_Tally( void )
 	int votes[SPLIT_MAX_PLAYERS], maps[SPLIT_MAX_PLAYERS], n = 0, i, j, best = 0;
 	int tied[SPLIT_MAX_PLAYERS], ntied = 0;
 
+	// co-op: player 1 leads the campaign and chooses where it starts
+	if( lobby.coop )
+		return lobby.p[0].map;
+
 	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
 	{
 		if( !lobby.p[i].joined )
@@ -1622,6 +1672,50 @@ static void Lobby_Launch( void )
 
 	// the map the votes chose when the countdown started
 	map = lobby.maps[bound( 0, lobby.winner, Q_max( lobby.nmaps - 1, 0 ))];
+
+	// co-op: a campaign of its own in the slot, Freeman for everybody
+	if( lobby.coop )
+	{
+		static char coopmap[48];
+		const int slot = bound( 0, lobby.slot, SV_COOP_SLOTS - 1 ) + 1;
+		int s;
+
+		Cvar_SetValue( "wii_coop_slot", (float)slot );
+
+		if( !lobby.fresh && lobby.slothas[slot - 1] && SV_CoopLoad( slot ))
+			Q_strncpy( coopmap, Cvar_VariableString( "coop_map" ), sizeof( coopmap ));
+		else
+		{
+			Q_strncpy( coopmap, map, sizeof( coopmap ));
+			SV_CoopNew( slot, coopmap );
+		}
+
+		map = coopmap;
+		Cvar_Set( "wii_coop_lastmap", map );
+
+		// player i of the game uses controller port ui_port[i], in the order they joined
+		for( i = 0, s = 0; i < SPLIT_MAX_PLAYERS; i++ )
+		{
+			if( !lobby.p[i].joined )
+				continue;
+
+			ui_port[s++] = i;
+		}
+
+		Cvar_Set( "model", "gordon" );
+		Cvar_Set( "wii_split_model1", "gordon" );
+		Cvar_Set( "wii_split_model2", "gordon" );
+		Cvar_Set( "wii_split_model3", "gordon" );
+
+		Cvar_SetValue( "wii_split", nplayers == 2 ? (float)lobby.layout : 1.0f );
+		Cvar_SetValue( "wii_split_players", (float)nplayers );
+
+		Lobby_Stop( false );
+
+		Q_snprintf( cmd, sizeof( cmd ), "disconnect\nmaxplayers %d\ncoop 1\nmap %s\n", Q_max( nplayers, 2 ), map );
+		Cbuf_AddText( cmd );
+		return;
+	}
 
 	// the models and controllers: slots go to the players in the order they joined
 	{
@@ -1693,6 +1787,10 @@ static void Lobby_Frame( void )
 
 		if( !p->joined )
 		{
+			// player 1, while nobody has joined: Up / Down changes the mode (deathmatch / co-op campaign)
+			if( i == 0 && ( pressed & ( OGC_UI_UP | OGC_UI_DOWN )) && Lobby_Joined() == 0 )
+				Lobby_SetMode( !lobby.coop );
+
 			// first confirmation: + / Start takes the place
 			if( pressed & OGC_UI_START )
 			{
@@ -1718,14 +1816,47 @@ static void Lobby_Frame( void )
 			continue;
 		}
 
-		if(( pressed | repeat ) & OGC_UI_LEFT )
-			p->model = ( p->model + lobby.nmodels - 1 ) % lobby.nmodels;
-		if(( pressed | repeat ) & OGC_UI_RIGHT )
-			p->model = ( p->model + 1 ) % lobby.nmodels;
-		if(( pressed | repeat ) & OGC_UI_UP )
-			p->map = ( p->map + lobby.nmaps - 1 ) % lobby.nmaps;
-		if(( pressed | repeat ) & OGC_UI_DOWN )
-			p->map = ( p->map + 1 ) % lobby.nmaps;
+		if( lobby.coop )
+		{
+			// everybody is Freeman; player 1 picks the save slot and, for a new campaign, the first map
+			if( i == 0 )
+			{
+				if( pressed & OGC_UI_LEFT )
+				{
+					lobby.slot = ( lobby.slot + SV_COOP_SLOTS - 1 ) % SV_COOP_SLOTS;
+					lobby.fresh = false;
+				}
+				if( pressed & OGC_UI_RIGHT )
+				{
+					lobby.slot = ( lobby.slot + 1 ) % SV_COOP_SLOTS;
+					lobby.fresh = false;
+				}
+				if(( pressed | repeat ) & OGC_UI_UP )
+				{
+					p->map = ( p->map + lobby.nmaps - 1 ) % lobby.nmaps;
+					lobby.fresh = true;
+				}
+				if(( pressed | repeat ) & OGC_UI_DOWN )
+				{
+					p->map = ( p->map + 1 ) % lobby.nmaps;
+					lobby.fresh = true;
+				}
+
+				for( int k = 1; k < SPLIT_MAX_PLAYERS; k++ )
+					lobby.p[k].map = p->map;
+			}
+		}
+		else
+		{
+			if(( pressed | repeat ) & OGC_UI_LEFT )
+				p->model = ( p->model + lobby.nmodels - 1 ) % lobby.nmodels;
+			if(( pressed | repeat ) & OGC_UI_RIGHT )
+				p->model = ( p->model + 1 ) % lobby.nmodels;
+			if(( pressed | repeat ) & OGC_UI_UP )
+				p->map = ( p->map + lobby.nmaps - 1 ) % lobby.nmaps;
+			if(( pressed | repeat ) & OGC_UI_DOWN )
+				p->map = ( p->map + 1 ) % lobby.nmaps;
+		}
 
 		// player 1 cuts the screen for two players
 		if( i == 0 && ( pressed & OGC_UI_START ))
@@ -1797,7 +1928,7 @@ void CL_SplitLobbyDraw( void )
 		CL_SplitFill( 0, 0, W, H, 8, 10, 22, 255 );
 
 	CL_SplitFill( 0, 0, W, 4, 255, 160, 0, 255 );
-	UI_TextCenter( W / 2, 14, "PANTALLA DIVIDIDA", 255, 200, 40 );
+	UI_TextCenter( W / 2, 14, lobby.coop ? "PANTALLA DIVIDIDA - CAMPANA COOPERATIVA" : "PANTALLA DIVIDIDA - DEATHMATCH", 255, 200, 40 );
 
 	for( i = 0; i < SPLIT_MAX_PLAYERS; i++ )
 	{
@@ -1852,11 +1983,19 @@ void CL_SplitLobbyDraw( void )
 
 		UI_TextCenter( x + w / 2, ty, "Personaje", 160, 160, 160 );
 		ty += th + 2;
-		Q_snprintf( text, sizeof( text ), p->ready ? "%s" : "< %s >", lobby.models[p->model] );
-		UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
+
+		if( lobby.coop )
+			UI_TextCenter( x + w / 2, ty, "Freeman", 255, 255, 120 );
+		else
+		{
+			Q_snprintf( text, sizeof( text ), p->ready ? "%s" : "< %s >", lobby.models[p->model] );
+			UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
+		}
+
 		ty += th + 6;
 
 		// the picture of the character, in what is left of the card
+		if( !lobby.coop )
 		{
 			const int room = ( y + h - th - 16 ) - ty - ( th * 2 + 14 );
 			const int ph = Q_min( 96, room );
@@ -1868,11 +2007,38 @@ void CL_SplitLobbyDraw( void )
 			}
 		}
 
-		UI_TextCenter( x + w / 2, ty, "Mapa", 160, 160, 160 );
-		ty += th + 2;
-		Q_snprintf( text, sizeof( text ), p->ready ? "%s" : "^ %s v", lobby.maps[p->map] );
-		UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
-		ty += th + 12;
+		if( lobby.coop )
+		{
+			const int sl = bound( 0, lobby.slot, SV_COOP_SLOTS - 1 );
+			const qboolean cont = lobby.slothas[sl] && !lobby.fresh;
+
+			if( i == 0 )
+			{
+				Q_snprintf( text, sizeof( text ), p->ready ? "Ranura %d" : "< Ranura %d >", sl + 1 );
+				UI_TextCenter( x + w / 2, ty, text, 160, 200, 255 );
+				ty += th + 2;
+				UI_TextCenter( x + w / 2, ty, cont ? "Continua en" : lobby.slothas[sl] ? "Nueva (borra)" : "Nueva en", 160, 160, 160 );
+				ty += th + 2;
+				Q_snprintf( text, sizeof( text ), p->ready || cont ? "%s" : "^ %s v", cont ? lobby.slotmap[sl] : lobby.maps[p->map] );
+				UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
+			}
+			else
+			{
+				UI_TextCenter( x + w / 2, ty, "Campana del J1", 160, 160, 160 );
+				ty += th + 2;
+				UI_TextCenter( x + w / 2, ty, cont ? lobby.slotmap[sl] : lobby.maps[lobby.p[0].map], 255, 255, 120 );
+			}
+
+			ty += th + 12;
+		}
+		else
+		{
+			UI_TextCenter( x + w / 2, ty, "Mapa", 160, 160, 160 );
+			ty += th + 2;
+			Q_snprintf( text, sizeof( text ), p->ready ? "%s" : "^ %s v", lobby.maps[p->map] );
+			UI_TextCenter( x + w / 2, ty, text, 255, 255, 120 );
+			ty += th + 12;
+		}
 
 		if( p->ready )
 			UI_TextCenter( x + w / 2, y + h - th - 8, "LISTO", 90, 255, 120 );
@@ -1885,14 +2051,22 @@ void CL_SplitLobbyDraw( void )
 
 		if( lobby.counting )
 		{
-			Q_snprintf( text, sizeof( text ), "Mapa: %s   Empieza en %d   (B: cancelar)",
-				lobby.maps[bound( 0, lobby.winner, lobby.nmaps - 1 )], (int)ceil( lobby.end - host.realtime ));
+			const int sl = bound( 0, lobby.slot, SV_COOP_SLOTS - 1 );
+
+			if( lobby.coop && lobby.slothas[sl] && !lobby.fresh )
+				Q_snprintf( text, sizeof( text ), "Continua: %s   Empieza en %d   (B: cancelar)",
+					lobby.slotmap[sl], (int)ceil( lobby.end - host.realtime ));
+			else
+				Q_snprintf( text, sizeof( text ), "Mapa: %s   Empieza en %d   (B: cancelar)",
+					lobby.maps[bound( 0, lobby.winner, lobby.nmaps - 1 )], (int)ceil( lobby.end - host.realtime ));
 			UI_TextCenter( W / 2, by, text, 120, 255, 140 );
 		}
 		else if( joined >= 2 && ready == joined )
 			UI_TextCenter( W / 2, by, "Todos listos", 120, 255, 140 );
 		else if( joined < 2 )
 			UI_TextCenter( W / 2, by, "Hacen falta al menos dos jugadores", 255, 200, 90 );
+		else if( lobby.coop )
+			UI_TextCenter( W / 2, by, "Todos confirman con A - el jugador 1 lleva la campana", 255, 200, 90 );
 		else UI_TextCenter( W / 2, by, "Todos confirman con A - gana el mapa mas votado", 255, 200, 90 );
 
 		if( joined == 2 )
@@ -1901,7 +2075,11 @@ void CL_SplitLobbyDraw( void )
 			UI_TextCenter( W / 2, by + th + 4, text, 200, 200, 200 );
 		}
 
-		UI_TextCenter( W / 2, by + th * 2 + 8, "Izq/Der personaje   Arriba/Abajo mapa   B atras   Home salir", 150, 150, 150 );
+		if( joined == 0 )
+			UI_TextCenter( W / 2, by + th * 2 + 8, "Arriba/Abajo (antes de unirte): modo deathmatch / campana cooperativa", 150, 150, 150 );
+		else if( lobby.coop )
+			UI_TextCenter( W / 2, by + th * 2 + 8, "J1: Izq/Der ranura   Arriba/Abajo campana nueva   B atras   Home salir", 150, 150, 150 );
+		else UI_TextCenter( W / 2, by + th * 2 + 8, "Izq/Der personaje   Arriba/Abajo mapa   B atras   Home salir", 150, 150, 150 );
 	}
 }
 
@@ -1913,6 +2091,7 @@ void CL_SplitUIInit( void )
 	Cvar_RegisterVariable( &wii_split_set2 );
 	Cvar_RegisterVariable( &wii_split_set3 );
 	Cvar_Get( "wii_split_lastmap", "", FCVAR_ARCHIVE, "map picked last time in the split screen lobby" );
+	Cvar_Get( "wii_coop_lastmap", "", FCVAR_ARCHIVE, "map picked last time in the co-op campaign lobby" );
 
 	Cmd_AddCommand( "wii_splitlobby", Lobby_Start_f, "open the split screen lobby (controllers, characters, map)" );
 

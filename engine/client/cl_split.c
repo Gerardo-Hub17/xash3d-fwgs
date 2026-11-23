@@ -108,6 +108,7 @@ void CL_SplitInit( void )
 	Cvar_RegisterVariable( &wii_split_model3 );
 	Cmd_AddCommand( "wii_split_input", CL_SplitInput_f, "show what the controllers of the extra split screen players report" );
 	Cmd_AddCommand( "wii_split_info", SV_SplitInfo_f, "show the server side state of the split screen players (optional player number)" );
+	SV_CoopInit();
 	CL_SplitUIInit();
 }
 

@@ -1001,3 +1001,230 @@ void SV_SplitInfo_f( void )
 			SV_SplitPrintInfo( i );
 	}
 }
+
+/*
+=============================================================================
+
+Campaign co-op save
+
+The co-op campaign has save files of its own, save/coop1.cop to coop3.cop, so
+it never touches the single player saves (save/*.sav, *.HL1...). The engine
+does not save the world of a multiplayer game, so this is a progress save: the
+map the players are at and what each one carries (health, armor, weapons,
+ammo), written when the game changes level. The game dll hands that state over
+in the cvars coop_p1 to coop_p4 (plain text, it only needs the engine to keep it)
+and the map the leader is going to in coop_map, then runs coop_save.
+
+  coop_save [slot]   write the file (slot defaults to wii_coop_slot)
+  coop_load [slot]   read it into the cvars; "map <coop_map>" starts the game
+
+=============================================================================
+*/
+#define COOP_PLAYERS	4
+#define COOP_BLOB	1024
+
+static CVAR_DEFINE_AUTO( wii_coop_slot, "1", FCVAR_ARCHIVE, "co-op campaign save slot (1 to 3)" );
+
+static int SV_CoopSlotOf( int slot )
+{
+	return bound( 1, slot, SV_COOP_SLOTS );
+}
+
+static void SV_CoopPath( int slot, char *path, size_t size )
+{
+	Q_snprintf( path, size, DEFAULT_SAVE_DIRECTORY "coop%d.cop", SV_CoopSlotOf( slot ));
+}
+
+// the text after "key=" of a line of the file
+static const char *SV_CoopLine( const char *text, const char *key, char *out, size_t size )
+{
+	const size_t keylen = Q_strlen( key );
+	const char *p = text;
+
+	out[0] = 0;
+
+	while( *p )
+	{
+		const char *end = Q_strchr( p, '\n' );
+		size_t len = end ? (size_t)( end - p ) : Q_strlen( p );
+
+		if( len > keylen && !Q_strncmp( p, key, keylen ) && p[keylen] == '=' )
+		{
+			size_t n = Q_min( len - keylen - 1, size - 1 );
+
+			memcpy( out, p + keylen + 1, n );
+			out[n] = 0;
+
+			// a line ends with \r on some systems
+			while( n > 0 && ( out[n - 1] == '\r' || out[n - 1] == ' ' ))
+				out[--n] = 0;
+
+			return out;
+		}
+
+		if( !end )
+			break;
+
+		p = end + 1;
+	}
+
+	return NULL;
+}
+
+static char *SV_CoopRead( int slot )
+{
+	char path[MAX_QPATH];
+	fs_offset_t len = 0;
+	char *file;
+	char *text;
+
+	SV_CoopPath( slot, path, sizeof( path ));
+	file = (char *)FS_LoadFile( path, &len, false );
+
+	if( !file )
+		return NULL;
+
+	// a terminated copy
+	text = (char *)Mem_Malloc( host.mempool, len + 1 );
+	memcpy( text, file, len );
+	text[len] = 0;
+	Mem_Free( file );
+
+	if( Q_strncmp( text, "COOP1", 5 ))
+	{
+		Mem_Free( text );
+		return NULL;
+	}
+
+	return text;
+}
+
+qboolean SV_CoopSlotInfo( int slot, char *map, size_t size )
+{
+	char *text = SV_CoopRead( slot );
+	char value[MAX_QPATH];
+
+	if( map && size )
+		map[0] = 0;
+
+	if( !text )
+		return false;
+
+	if( SV_CoopLine( text, "map", value, sizeof( value )) && value[0] )
+	{
+		if( map && size )
+			Q_strncpy( map, value, size );
+		Mem_Free( text );
+		return true;
+	}
+
+	Mem_Free( text );
+	return false;
+}
+
+static void SV_CoopWrite( int slot )
+{
+	char path[MAX_QPATH], *text;
+	const size_t size = COOP_PLAYERS * ( COOP_BLOB + 16 ) + 256;
+	const char *map = Cvar_VariableString( "coop_map" );
+	size_t len;
+	int i;
+
+	if( COM_StringEmptyOrNULL( map ) && SV_Active( ))
+		map = sv.name;
+
+	if( COM_StringEmptyOrNULL( map ))
+	{
+		Con_Printf( S_ERROR "coop_save: no map to save\n" );
+		return;
+	}
+
+	text = (char *)Mem_Malloc( host.mempool, size );
+	len = Q_snprintf( text, size, "COOP1\nmap=%s\nskill=%d\n", map, (int)Cvar_VariableValue( "skill" ));
+
+	for( i = 1; i <= COOP_PLAYERS && len < size; i++ )
+		len += Q_snprintf( text + len, size - len, "p%d=%s\n", i, Cvar_VariableString( va( "coop_p%d", i )));
+
+	SV_CoopPath( slot, path, sizeof( path ));
+
+	if( FS_WriteFile( path, text, len ))
+		Con_Printf( "co-op campaign saved in slot %d (%s)\n", SV_CoopSlotOf( slot ), map );
+	else Con_Printf( S_ERROR "coop_save: can't write %s\n", path );
+
+	Mem_Free( text );
+}
+
+qboolean SV_CoopLoad( int slot )
+{
+	char *text = SV_CoopRead( slot );
+	char value[COOP_BLOB], map[MAX_QPATH];
+	int i;
+
+	if( !text )
+		return false;
+
+	if( !SV_CoopLine( text, "map", map, sizeof( map )) || !map[0] )
+	{
+		Mem_Free( text );
+		return false;
+	}
+
+	Cvar_Set( "coop_map", map );
+
+	if( SV_CoopLine( text, "skill", value, sizeof( value )))
+		Cvar_Set( "skill", value );
+
+	for( i = 1; i <= COOP_PLAYERS; i++ )
+	{
+		if( !SV_CoopLine( text, va( "p%d", i ), value, sizeof( value )))
+			value[0] = 0;
+
+		Cvar_Set( va( "coop_p%d", i ), value );
+	}
+
+	Mem_Free( text );
+	return true;
+}
+
+// a new campaign in a slot: nobody carries anything and the first map is the one chosen
+void SV_CoopNew( int slot, const char *map )
+{
+	int i;
+
+	for( i = 1; i <= COOP_PLAYERS; i++ )
+		Cvar_Set( va( "coop_p%d", i ), "" );
+
+	Cvar_Set( "coop_map", map );
+	SV_CoopWrite( slot );
+}
+
+static void SV_CoopSave_f( void )
+{
+	SV_CoopWrite( Cmd_Argc() > 1 ? Q_atoi( Cmd_Argv( 1 )) : (int)wii_coop_slot.value );
+}
+
+static void SV_CoopLoad_f( void )
+{
+	int slot = Cmd_Argc() > 1 ? Q_atoi( Cmd_Argv( 1 )) : (int)wii_coop_slot.value;
+
+	if( SV_CoopLoad( slot ))
+		Con_Printf( "co-op campaign of slot %d: map %s (start it with: map %s)\n", SV_CoopSlotOf( slot ),
+			Cvar_VariableString( "coop_map" ), Cvar_VariableString( "coop_map" ));
+	else Con_Printf( "co-op campaign: nothing saved in slot %d\n", SV_CoopSlotOf( slot ));
+}
+
+void SV_CoopInit( void )
+{
+	int i;
+
+	Cvar_RegisterVariable( &wii_coop_slot );
+
+	// what the players carry: plain text the game dll writes and reads, never archived
+	Cvar_Get( "coop_map", "", 0, "map of the co-op campaign (game dll -> engine)" );
+
+	for( i = 1; i <= COOP_PLAYERS; i++ )
+		Cvar_Get( va( "coop_p%d", i ), "", 0, "what a co-op player carries (game dll -> engine)" );
+
+	Cmd_AddCommand( "coop_save", SV_CoopSave_f, "write the co-op campaign save (optional slot 1 to 3)" );
+	Cmd_AddCommand( "coop_load", SV_CoopLoad_f, "read the co-op campaign save into the cvars (optional slot 1 to 3)" );
+}
