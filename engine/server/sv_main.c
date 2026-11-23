@@ -574,6 +574,11 @@ static qboolean SV_IsSimulating( void )
 	if( !SV_HasActivePlayers( ))
 		return false;
 
+	// co-op campaign: the first level starts in a moving tram, so nothing moves until the
+	// extra players of the split screen are in (they come in a moment after player 1)
+	if( SV_CoopHold( ))
+		return false;
+
 	// allow to freeze everything in singleplayer
 	if( svs.maxclients <= 1 && sv.playersonly )
 		return false;

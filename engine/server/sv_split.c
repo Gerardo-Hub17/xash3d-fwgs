@@ -1213,6 +1213,67 @@ static void SV_CoopLoad_f( void )
 	else Con_Printf( "co-op campaign: nothing saved in slot %d\n", SV_CoopSlotOf( slot ));
 }
 
+/*
+=============
+SV_CoopHold
+
+The levels of the campaign begin with things already in motion (the tram of the
+first one). In a split screen game player 1 is in the game some moments before the
+others, and with a slow load that was enough for the tram to leave without them. So
+the world is held, like a pause, from the start of the map until every player of the
+lobby is in, or until a few seconds have passed if one never comes.
+=============
+*/
+#define COOP_HOLD_TIMEOUT	25.0
+
+qboolean SV_CoopHold( void )
+{
+	static int spawncount = -1;
+	static qboolean done;
+	static double since;
+	int i, have = 0, need;
+	const int mode = (int)Cvar_VariableValue( "wii_split" );
+
+	if( !coop.value || svs.maxclients < 2 || Host_IsDedicated() || ( mode != 1 && mode != 2 ))
+		return false;
+
+	// a new map: the wait begins again
+	if( spawncount != svs.spawncount )
+	{
+		spawncount = svs.spawncount;
+		done = false;
+		since = host.realtime;
+	}
+
+	if( done )
+		return false;
+
+	need = bound( 2, (int)Cvar_VariableValue( "wii_split_players" ), SPLIT_MAX_PLAYERS );
+
+	for( i = 0; i < svs.maxclients; i++ )
+	{
+		if( svs.clients[i].state == cs_spawned )
+			have++;
+	}
+
+	if( have >= need )
+	{
+		done = true;
+		Con_Printf( "[COOP] %d players in after %.1f s: the world starts (gx_split_lod %d, gx_split_fps %d)\n", have,
+			host.realtime - since, (int)Cvar_VariableValue( "gx_split_lod" ), (int)Cvar_VariableValue( "gx_split_fps" ));
+		return false;
+	}
+
+	if( host.realtime - since > COOP_HOLD_TIMEOUT )
+	{
+		done = true;
+		Con_Printf( "[COOP] only %d of %d players after %.0f s: the world starts anyway\n", have, need, COOP_HOLD_TIMEOUT );
+		return false;
+	}
+
+	return true;
+}
+
 void SV_CoopInit( void )
 {
 	int i;

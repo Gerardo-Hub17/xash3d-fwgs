@@ -704,7 +704,8 @@ void SV_SplitInfo_f( void );
 void SV_CoopInit( void );
 qboolean SV_CoopSlotInfo( int slot, char *map, size_t size );	// the map the save of that slot is at
 qboolean SV_CoopLoad( int slot );				// puts it in the cvars the game reads (map in coop_map)
-void SV_CoopNew( int slot, const char *map );			// empty campaign in that slot
+void SV_CoopNew( int slot, const char *map );
+qboolean SV_CoopHold( void );					// the world waits until all the players are in			// empty campaign in that slot
 void SV_SplitPrintInfo( int player );
 qboolean SV_SplitTakeAngles( int player, vec3_t angles );
 void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg );
