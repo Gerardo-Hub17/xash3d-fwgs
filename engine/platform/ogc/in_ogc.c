@@ -885,6 +885,7 @@ los botones de los mandos como el teclado USB.
 */
 static void OGC_SendKey( int key, qboolean down );
 static qboolean OGC_SwingBlocksFire( void );
+static double ogc_wsel_until;	// hasta cuando puede estar abierto el menu de seleccion de arma
 
 // toque corto de Inicio/Start = ESC; mantenido ~1s = consola
 #define OGC_HOME_LONG 0.8
@@ -984,6 +985,11 @@ static void OGC_SendKey( int key, qboolean down )
 		( key != OGC_ACT_MENU && key != OGC_ACT_HOME )))
 		return;
 
+	// el menu de seleccion de arma del HUD sigue abierto unos segundos tras arma anterior/siguiente
+	// y se confirma con el boton de disparo: ese disparo no se bloquea (ver OGC_SwingBlocksFire)
+	if( down && ( key == K_DPAD_LEFT || key == K_DPAD_RIGHT ))
+		ogc_wsel_until = host.realtime + 5.0;
+
 	// palanca por gesto en "solo gesto": con la palanca en la mano el boton de disparo no ataca
 	if( key == K_R1_BUTTON )
 	{
@@ -994,6 +1000,7 @@ static void OGC_SendKey( int key, qboolean down )
 			if( OGC_SwingBlocksFire( ))
 				return;
 
+			ogc_wsel_until = 0.0;	// el disparo confirma (y cierra) la seleccion de arma
 			fire_sent = true;
 		}
 		else
@@ -1396,9 +1403,13 @@ static float OGC_AccelJerk( float x, float y, float z, float *prev, qboolean *ha
 	return Q_max( d, m );
 }
 
-// con "solo gesto" el boton de disparo no ataca con la palanca en la mano
+// con "solo gesto" el boton de disparo no ataca con la palanca en la mano; mientras el menu de
+// seleccion de arma esta abierto si pasa, porque con el se confirma el cambio (en HL no dispara)
 static qboolean OGC_SwingBlocksFire( void )
 {
+	if( host.realtime < ogc_wsel_until )
+		return false;
+
 	return (int)wii_swing.value >= 2 && ogc_src == OGC_SRC_WII && OGC_WeaponIsMelee();
 }
 
