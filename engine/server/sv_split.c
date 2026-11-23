@@ -1198,6 +1198,28 @@ void SV_CoopNew( int slot, const char *map )
 	SV_CoopWrite( slot );
 }
 
+qboolean SV_CoopDelete( int slot )
+{
+	char path[MAX_QPATH];
+
+	SV_CoopPath( slot, path, sizeof( path ));
+
+	if( !FS_FileExists( path, true ))
+		return false;
+
+	FS_Delete( path );
+	Con_Printf( "co-op campaign of slot %d deleted\n", SV_CoopSlotOf( slot ));
+	return true;
+}
+
+static void SV_CoopDelete_f( void )
+{
+	const int slot = Cmd_Argc() > 1 ? Q_atoi( Cmd_Argv( 1 )) : (int)wii_coop_slot.value;
+
+	if( !SV_CoopDelete( slot ))
+		Con_Printf( "co-op campaign: nothing saved in slot %d\n", SV_CoopSlotOf( slot ));
+}
+
 static void SV_CoopSave_f( void )
 {
 	SV_CoopWrite( Cmd_Argc() > 1 ? Q_atoi( Cmd_Argv( 1 )) : (int)wii_coop_slot.value );
@@ -1287,5 +1309,6 @@ void SV_CoopInit( void )
 		Cvar_Get( va( "coop_p%d", i ), "", 0, "what a co-op player carries (game dll -> engine)" );
 
 	Cmd_AddCommand( "coop_save", SV_CoopSave_f, "write the co-op campaign save (optional slot 1 to 3)" );
+	Cmd_AddCommand( "coop_delete", SV_CoopDelete_f, "delete the co-op campaign save (optional slot 1 to 3)" );
 	Cmd_AddCommand( "coop_load", SV_CoopLoad_f, "read the co-op campaign save into the cvars (optional slot 1 to 3)" );
 }

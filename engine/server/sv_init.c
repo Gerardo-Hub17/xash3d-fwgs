@@ -607,7 +607,9 @@ void SV_ActivateServer( int runPhysics )
 
 	if( runPhysics )
 	{
-		numFrames = (svs.maxclients <= 1) ? 2 : 8;
+		// co-op campaign: like the single player game. Eight frames are 0.8 s of the first
+		// level's tram leaving the station before the players were in it
+		numFrames = ( svs.maxclients <= 1 || coop.value ) ? 2 : 8;
 		sv.frametime = SV_SPAWN_TIME;
 	}
 	else

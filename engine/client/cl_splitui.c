@@ -1162,6 +1162,8 @@ static struct
 	qboolean	fresh;		// start a new campaign even if the slot has a save
 	qboolean	slothas[SV_COOP_SLOTS];
 	char		slotmap[SV_COOP_SLOTS][48];
+	double		deltime;	// B pressed once to delete the slot: the second press has to come before this
+	double		delshow;	// "slot deleted" message until
 } lobby;
 
 qboolean CL_SplitLobbyActive( void )
@@ -1791,6 +1793,29 @@ static void Lobby_Frame( void )
 			if( i == 0 && ( pressed & ( OGC_UI_UP | OGC_UI_DOWN )) && Lobby_Joined() == 0 )
 				Lobby_SetMode( !lobby.coop );
 
+			// co-op, nobody joined: Left / Right pick the save slot, B twice deletes it
+			if( i == 0 && lobby.coop && Lobby_Joined() == 0 )
+			{
+				if( pressed & ( OGC_UI_LEFT | OGC_UI_RIGHT ))
+				{
+					lobby.slot = ( lobby.slot + ( pressed & OGC_UI_LEFT ? SV_COOP_SLOTS - 1 : 1 )) % SV_COOP_SLOTS;
+					lobby.fresh = false;
+					lobby.deltime = 0.0;
+				}
+
+				if(( pressed & OGC_UI_BACK ) && lobby.slothas[lobby.slot] )
+				{
+					if( now < lobby.deltime )
+					{
+						SV_CoopDelete( lobby.slot + 1 );
+						lobby.slothas[lobby.slot] = SV_CoopSlotInfo( lobby.slot + 1, lobby.slotmap[lobby.slot], sizeof( lobby.slotmap[lobby.slot] ));
+						lobby.deltime = 0.0;
+						lobby.delshow = now + 3.0;
+					}
+					else lobby.deltime = now + 3.0;
+				}
+			}
+
 			// first confirmation: + / Start takes the place
 			if( pressed & OGC_UI_START )
 			{
@@ -2075,7 +2100,20 @@ void CL_SplitLobbyDraw( void )
 			UI_TextCenter( W / 2, by + th + 4, text, 200, 200, 200 );
 		}
 
-		if( joined == 0 )
+		if( joined == 0 && lobby.coop )
+		{
+			const int sl = bound( 0, lobby.slot, SV_COOP_SLOTS - 1 );
+
+			if( host.realtime < lobby.deltime )
+				Q_snprintf( text, sizeof( text ), "Pulsa B otra vez para BORRAR la ranura %d (%s)", sl + 1, lobby.slotmap[sl] );
+			else if( host.realtime < lobby.delshow )
+				Q_snprintf( text, sizeof( text ), "Ranura %d borrada", sl + 1 );
+			else Q_snprintf( text, sizeof( text ), "Ranura %d: %s   Izq/Der cambia   B dos veces borra   Arriba/Abajo modo",
+				sl + 1, lobby.slothas[sl] ? lobby.slotmap[sl] : "vacia" );
+
+			UI_TextCenter( W / 2, by + th * 2 + 8, text, host.realtime < lobby.deltime ? 255 : 150, host.realtime < lobby.deltime ? 90 : 150, host.realtime < lobby.deltime ? 90 : 150 );
+		}
+		else if( joined == 0 )
 			UI_TextCenter( W / 2, by + th * 2 + 8, "Arriba/Abajo (antes de unirte): modo deathmatch / campana cooperativa", 150, 150, 150 );
 		else if( lobby.coop )
 			UI_TextCenter( W / 2, by + th * 2 + 8, "J1: Izq/Der ranura   Arriba/Abajo campana nueva   B atras   Home salir", 150, 150, 150 );
