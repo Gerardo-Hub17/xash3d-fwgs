@@ -577,6 +577,11 @@ void GX_OnContextCreated( void )
 	if( FBitSet( rmode->viTVMode, VI_NON_INTERLACE ))
 		VIDEO_WaitVSync();
 
+	// the engine already knows a size from vid_ogc.c (R_Init_Video); say if it differs from
+	// the EFB, since everything the engine lays out (HUD, menus, mouse) uses that one
+	gEngfuncs.Con_Printf( "[VIDEO] motor %dx%d, EFB %dx%d\n", gpGlobals->width, gpGlobals->height,
+		rmode->fbWidth, rmode->efbHeight );
+
 	gpGlobals->width = rmode->fbWidth;
 	gpGlobals->height = rmode->efbHeight;
 	gpGlobals->desktopBitsPixel = 24;

@@ -276,9 +276,39 @@ void VID_SwapBuffers( void )
 	current_xfb ^= 1;
 }
 
+// Size the engine must believe it is drawing at. The software path is a fixed 320x240 buffer;
+// the GX renderer draws into the real EFB of the video mode the console picked (640x480, or
+// 640x528 on PAL). It used to report 320x240 for both: vid_width/vid_height said 320x240 and
+// every VID_SetMode (any cvar that restarts the video) shrank the engine's screen size back to
+// it while the EFB stayed at 640x480.
+static void VID_GetModeSize( int *w, int *h )
+{
+	*w = FB_WIDTH;
+	*h = FB_HEIGHT;
+
+	if( gx_hw_renderer )
+	{
+		GXRModeObj *m = VIDEO_GetPreferredMode( NULL );
+
+		if( m && m->fbWidth > 0 && m->efbHeight > 0 )
+		{
+			*w = m->fbWidth;
+			*h = m->efbHeight;
+		}
+		else
+		{
+			*w = 640;
+			*h = 480;
+		}
+	}
+}
+
 qboolean VID_SetMode( void )
 {
-	return R_ChangeDisplaySettings( FB_WIDTH, FB_HEIGHT, 0 ) == rserr_ok;
+	int w, h;
+
+	VID_GetModeSize( &w, &h );
+	return R_ChangeDisplaySettings( w, h, 0 ) == rserr_ok;
 }
 
 qboolean R_Init_Video( ref_graphic_apis_t type )
@@ -321,9 +351,8 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 
 rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode )
 {
-	width = FB_WIDTH;
-	height = FB_HEIGHT;
-	Con_Reportf( "%s: forzado %dx%d\n", __func__, width, height );
+	VID_GetModeSize( &width, &height );
+	Con_Reportf( "%s: forzado %dx%d (%s)\n", __func__, width, height, gx_hw_renderer ? "GX" : "software" );
 	R_SaveVideoMode( width, height, width, height, false );
 
 	if( sw_initialized )
