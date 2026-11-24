@@ -578,6 +578,7 @@ private:
 
 	bool m_bPanel;
 	bool m_bTeamMenu;
+	int m_iPanelKind; // MENU_TEAM / MENU_CLASS_T / MENU_CLASS_CT while that stock menu is open, else 0
 	int m_nLines;
 	int m_iTitleLine;
 	int m_iSelLine;

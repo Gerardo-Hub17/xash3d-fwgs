@@ -90,6 +90,7 @@ void CHudMenu :: InitHUDData( void )
 	m_iTitleLine = -1;
 	m_iSelLine = -1;
 	m_bTeamMenu = false;
+	m_iPanelKind = 0;
 	m_szMapInfo[0] = 0;
 	SetPanelOpen( false );
 	Reset();
@@ -171,7 +172,23 @@ void CHudMenu :: SelectMenuItem( int menu_item )
 	if ( (menu_item > 0) && (m_bitsValidSlots & (1 << (menu_item-1))) )
 	{
 		char szbuf[32];
-		sprintf( szbuf, "menuselect %d\n", menu_item );
+		const char *cmd = "menuselect";
+
+		// The server only listens to "menuselect" for the stock team / class menus when the
+		// client asked for the old text menus (_vgui_menus 0). If it believes we have VGUI it
+		// silently drops it, and nothing comes after choosing the team. "jointeam" and
+		// "joinclass" are what the VGUI menus send and work in both cases.
+		if( m_bPanel && menu_item != 10 )
+		{
+			if( m_iPanelKind == MENU_TEAM )
+				cmd = "jointeam";
+			else if( m_iPanelKind == MENU_CLASS_T || m_iPanelKind == MENU_CLASS_CT )
+				cmd = "joinclass";
+		}
+
+		sprintf( szbuf, "%s %d\n", cmd, menu_item );
+		if( m_bPanel )
+			gEngfuncs.Con_Printf( "[MENU] envio '%s %d' (_vgui_menus=%g)\n", cmd, menu_item, gEngfuncs.pfnGetCvarFloat( "_vgui_menus" ));
 		ClientCmd( szbuf );
 
 		UserCmd_OldStyleMenuClose();
@@ -283,7 +300,16 @@ int CHudMenu::MsgFunc_VGUIMenu( const char *pszName, int iSize, void *pbuf )
 	if( m_bPanel )
 	{
 		m_flShutoffTime = -1;
-		gEngfuncs.Con_Printf( "[MENU] VGUIMenu tipo=%d teclas=0x%x\n", menuType, m_bitsValidSlots );
+		gEngfuncs.Con_Printf( "[MENU] VGUIMenu tipo=%d teclas=0x%x (_vgui_menus=%g)\n", menuType, m_bitsValidSlots, gEngfuncs.pfnGetCvarFloat( "_vgui_menus" ));
+
+		// config.cfg or a late exec can bring the archived "1" back after HUD_Init; if the
+		// server is sending VGUI menus that is probably what happened. Set it again so the
+		// menus that come next (class, buy) arrive as text menus.
+		if( gEngfuncs.pfnGetCvarFloat( "_vgui_menus" ) != 0.0f )
+		{
+			gEngfuncs.Con_Printf( "[MENU] _vgui_menus estaba en 1: se vuelve a poner en 0\n" );
+			gEngfuncs.Cvar_Set( "_vgui_menus", "0" );
+		}
 	}
 
 	ShowVGUIMenu(menuType);
@@ -676,6 +702,7 @@ bool CHudMenu::ShowPanelFor( int menuType )
 		return false;
 
 	OpenPanel( text, menuType == MENU_TEAM );
+	m_iPanelKind = menuType; // after OpenPanel, which clears it for the text menus
 	return true;
 }
 
@@ -683,6 +710,7 @@ void CHudMenu::OpenPanel( const char *text, bool teamMenu )
 {
 	BuildPanel( text );
 
+	m_iPanelKind = 0;
 	m_bTeamMenu = teamMenu;
 	if( teamMenu )
 		LoadMapInfo();
