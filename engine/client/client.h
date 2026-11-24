@@ -1247,6 +1247,12 @@ void CL_SplitDrawHUD( void );
 qboolean CL_SplitGrab( int player );
 void CL_SplitMenuToggle( int player );
 
+// menu de ajustes de un jugador (+): sensibilidad, zona muerta, botones, palanca por gesto
+void CL_WiiMenuOpen( int profile );
+qboolean CL_WiiMenuActive( void );
+void CL_WiiMenuFrame( void );
+void CL_WiiMenuDraw( void );
+
 // menu del juego abierto (cvar _wii_menu_open): la cruceta lo maneja con menu_prev/next/ok/cancel
 qboolean CL_MenuPickActive( void );
 void CL_MenuPickAction( int act );

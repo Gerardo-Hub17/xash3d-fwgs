@@ -323,6 +323,53 @@ draw hudsprite routine
 // the crosshair follows the view, not the HUD, so it ignores the HUD margins
 static qboolean cl_hud_nomargin;
 
+/*
+The Counter-Strike client draws its own crosshair with FillRGBA lines around the centre of the
+screen, so the engine cannot move it like the sprite crosshair. Two things are published for it:
+_wii_aim_x/_wii_aim_y: where the IR pointer is, -1..1 over the view, 0 when the view is not
+aimed with the pointer; and _wii_xh_draw: 1 while it draws, so those lines skip the HUD margins
+just like the sprite crosshair does.
+*/
+static convar_t *cl_wii_aim_x, *cl_wii_aim_y, *cl_wii_xh_draw;
+
+static void CL_UpdateAimCvars( void )
+{
+	float px = 0.0f, py = 0.0f;
+
+	if( !cl_wii_aim_x )
+	{
+		cl_wii_aim_x = Cvar_Get( "_wii_aim_x", "0", 0, "IR pointer, -1..1 over the view (internal)" );
+		cl_wii_aim_y = Cvar_Get( "_wii_aim_y", "0", 0, "IR pointer, -1..1 over the view (internal)" );
+		cl_wii_xh_draw = Cvar_Get( "_wii_xh_draw", "0", 0, "the client is drawing its crosshair (internal)" );
+	}
+
+#if XASH_OGC
+	if( OGC_AimIsPointer( ) && !CL_SplitActive( ))
+	{
+		OGC_GetPointer( &px, &py );
+		px = bound( -1.0f, px, 1.0f );
+		py = bound( -1.0f, py, 1.0f );
+	}
+#endif
+
+	Cvar_DirectSetValue( cl_wii_aim_x, px );
+	Cvar_DirectSetValue( cl_wii_aim_y, py );
+}
+
+// a rectangle thinner than a few pixels only shows up if its edges fall on whole pixels: a
+// 1 logical pixel line scaled by the HUD margins is 0.9 px wide and, depending on where it
+// lands, covers no pixel centre at all (the vertical lines of the CS crosshair vanished)
+static void CL_SnapThinRect( float *x, float *y, float *w, float *h )
+{
+	if( *w >= 3.0f && *h >= 3.0f )
+		return;
+
+	*x = floorf( *x + 0.5f );
+	*y = floorf( *y + 0.5f );
+	*w = Q_max( 1.0f, floorf( *w + 0.5f ));
+	*h = Q_max( 1.0f, floorf( *h + 0.5f ));
+}
+
 void SPR_AdjustSize( float *x, float *y, float *w, float *h )
 {
 	float mx = 0.0f, my = 0.0f; // inset per side, as a fraction of the screen
@@ -981,6 +1028,7 @@ void CL_DrawHUD( int state )
 	case CL_ACTIVE:
 		if( !cl.intermission )
 			CL_DrawScreenFade ();
+		CL_UpdateAimCvars ();
 		CL_DrawCrosshair ();
 		CL_DrawCenterPrint ();
 		clgame.dllFuncs.pfnRedraw( cl.time, cl.intermission );
@@ -989,6 +1037,7 @@ void CL_DrawHUD( int state )
 		break;
 	case CL_PAUSED:
 		CL_DrawScreenFade ();
+		CL_UpdateAimCvars ();
 		CL_DrawCrosshair ();
 		CL_DrawCenterPrint ();
 		clgame.dllFuncs.pfnRedraw( cl.time, cl.intermission );
@@ -1794,7 +1843,10 @@ static void GAME_EXPORT CL_FillRGBA( int x, int y, int w, int h, int r, int g, i
 	b = bound( 0, b, 255 );
 	a = bound( 0, a, 255 );
 
+	cl_hud_nomargin = cl_wii_xh_draw && cl_wii_xh_draw->value != 0.0f;
 	SPR_AdjustSize( &x_, &y_, &w_, &h_ );
+	cl_hud_nomargin = false;
+	CL_SnapThinRect( &x_, &y_, &w_, &h_ );
 
 	ref.dllFuncs.FillRGBA( kRenderTransAdd, x_, y_, w_, h_, r, g, b, a );
 }
@@ -3367,7 +3419,10 @@ static void GAME_EXPORT CL_FillRGBABlend( int x, int y, int w, int h, int r, int
 	b = bound( 0, b, 255 );
 	a = bound( 0, a, 255 );
 
+	cl_hud_nomargin = cl_wii_xh_draw && cl_wii_xh_draw->value != 0.0f;
 	SPR_AdjustSize( &x_, &y_, &w_, &h_ );
+	cl_hud_nomargin = false;
+	CL_SnapThinRect( &x_, &y_, &w_, &h_ );
 
 	ref.dllFuncs.FillRGBA( kRenderTransTexture, x_, y_, w_, h_, r, g, b, a );
 }

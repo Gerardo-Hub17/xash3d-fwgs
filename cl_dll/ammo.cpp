@@ -1188,13 +1188,24 @@ void CHudAmmo::DrawSpriteCrosshair()
 	gEngfuncs.pfnSPR_DrawHoles( 0, x, y, &m_rcStaticRc );
 }
 
-#define WEST_XPOS (ScreenWidth / 2 - flCrosshairDistance - iLength + 1)
-#define EAST_XPOS (flCrosshairDistance + ScreenWidth / 2)
-#define EAST_WEST_YPOS (ScreenHeight / 2)
+// On the Wii the crosshair sits where the IR pointer is: the engine publishes it in
+// _wii_aim_x/_wii_aim_y (-1..1 over the view, 0 when not aiming with the pointer)
+static int s_iAimX, s_iAimY;
 
-#define NORTH_YPOS (ScreenHeight / 2 - flCrosshairDistance - iLength + 1)
-#define SOUTH_YPOS (ScreenHeight / 2 + flCrosshairDistance)
-#define NORTH_SOUTH_XPOS (ScreenWidth / 2)
+#define WEST_XPOS (ScreenWidth / 2 + s_iAimX - flCrosshairDistance - iLength + 1)
+#define EAST_XPOS (flCrosshairDistance + ScreenWidth / 2 + s_iAimX)
+#define EAST_WEST_YPOS (ScreenHeight / 2 + s_iAimY)
+
+#define NORTH_YPOS (ScreenHeight / 2 + s_iAimY - flCrosshairDistance - iLength + 1)
+#define SOUTH_YPOS (ScreenHeight / 2 + s_iAimY + flCrosshairDistance)
+#define NORTH_SOUTH_XPOS (ScreenWidth / 2 + s_iAimX)
+
+// tells the engine the crosshair lines are being drawn (they ignore the HUD margins)
+struct CrosshairDrawScope
+{
+	CrosshairDrawScope() { gEngfuncs.Cvar_SetValue( "_wii_xh_draw", 1.0f ); }
+	~CrosshairDrawScope() { gEngfuncs.Cvar_SetValue( "_wii_xh_draw", 0.0f ); }
+};
 
 int Distances[30][2] =
 {
@@ -1530,8 +1541,8 @@ void CHudAmmo::DrawCrosshair( int weaponId )
 	wrect_t outer;
 
 	/* calculate the coordinates */
-	center_x = ( ScreenWidth / 2 ) * gHUD.m_flScale;
-	center_y = ( ScreenHeight / 2 ) * gHUD.m_flScale;
+	center_x = ( ScreenWidth / 2 + s_iAimX ) * gHUD.m_flScale;
+	center_y = ( ScreenHeight / 2 + s_iAimY ) * gHUD.m_flScale;
 
 	gap = ScaleForRes( GetCrosshairGap( weaponId ), ScreenHeight * gHUD.m_flScale );
 	length = ScaleForRes( xhair_size->value, ScreenHeight * gHUD.m_flScale );
@@ -1705,6 +1716,11 @@ void CHudAmmo::DrawCrosshair()
 	{
 		flCrosshairDistance = m_flCrosshairDistance;
 	}
+
+	s_iAimX = (int)( gEngfuncs.pfnGetCvarFloat( "_wii_aim_x" ) * ScreenWidth * 0.5f );
+	s_iAimY = (int)( gEngfuncs.pfnGetCvarFloat( "_wii_aim_y" ) * ScreenHeight * 0.5f );
+
+	CrosshairDrawScope xhScope;
 
 	// drawing
 	if ( g_iXash && xhair_enable->value )

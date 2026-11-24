@@ -54,6 +54,14 @@ static CVAR_DEFINE_AUTO( wii_gun_home, "0.35", FCVAR_ARCHIVE, "where the weapon 
 static CVAR_DEFINE_AUTO( wii_aspect, "0", FCVAR_ARCHIVE, "TV aspect ratio used to draw (0 = follow the Wii system setting, 1 = 4:3, 2 = 16:9)" );
 static CVAR_DEFINE_AUTO( wii_ir_cursor, "1", FCVAR_ARCHIVE, "show the pointer in game as the aiming reticle" );
 static CVAR_DEFINE_AUTO( wii_nunchuk_sens, "320", FCVAR_ARCHIVE, "Nunchuk stick sensitivity (128=lento, 320=normal, 512=rapido)" );
+static CVAR_DEFINE_AUTO( wii_nunchuk_deadzone, "0.2441", FCVAR_ARCHIVE, "Nunchuk stick dead zone (0..0.6)" );
+static CVAR_DEFINE_AUTO( wii_swing, "0", FCVAR_ARCHIVE, "melee by gesture: 0 = fire button only, 1 = button or gesture, 2 = gesture only" );
+static CVAR_DEFINE_AUTO( wii_swing_dev, "0", FCVAR_ARCHIVE, "what you swing: 0 = Nunchuk, 1 = Wii remote, 2 = both" );
+static CVAR_DEFINE_AUTO( wii_swing_sens, "100", FCVAR_ARCHIVE, "gesture sensitivity in percent (higher = a lighter swing is enough)" );
+static CVAR_DEFINE_AUTO( wii_menu_pause, "1", FCVAR_ARCHIVE, "pause the game while the settings menu (+) is open in single player" );
+static CVAR_DEFINE_AUTO( wii_map_wii, "", FCVAR_ARCHIVE, "button layout of the Wii remote + Nunchuk (internal)" );
+static CVAR_DEFINE_AUTO( wii_map_classic, "", FCVAR_ARCHIVE, "button layout of the Classic Controller (internal)" );
+static CVAR_DEFINE_AUTO( wii_map_gc, "", FCVAR_ARCHIVE, "button layout of the GameCube pad (internal)" );
 static CVAR_DEFINE_AUTO( wii_buttons, "1", FCVAR_ARCHIVE, "read the remote and nunchuk buttons straight from WPAD" );
 static CVAR_DEFINE_AUTO( wii_rumble, "1", FCVAR_ARCHIVE, "controller vibration strength (0 = off, 1 = full)" );
 static CVAR_DEFINE_AUTO( wii_gun_tilt, "1", FCVAR_ARCHIVE, "weapon rolls with the Wii remote (0 = off, negative = inverted)" );
@@ -112,6 +120,9 @@ enum
 	OGC_ACT_PICK_NEXT,		// ... siguiente
 	OGC_ACT_PICK_OK,		// ... aceptar (manda slotN)
 	OGC_ACT_PICK_CANCEL,		// ... cancelar (slot10 o cerrar)
+	OGC_ACT_MENU,			// menu de ajustes del jugador (+ / B en GameCube)
+	OGC_ACT_DROP,			// drop: suelta el arma en la mano
+	OGC_ACT_BUY,			// buy: abre la tienda
 	OGC_OSK_BASE,			// + OSK_ACT_*
 };
 
@@ -123,27 +134,7 @@ Three layouts, one set of engine keys. The keys are picked so the stock
 bindings already land on the right actions, which keeps every scheme visible
 and rebindable from Options -> Controls instead of hidden in a config file.
 */
-static const ogc_btn_t ogc_map_wiimote[] =
-{
-    { WPAD_BUTTON_LEFT,      K_DPAD_LEFT   }, // invprev
-    { WPAD_BUTTON_RIGHT,     K_DPAD_RIGHT  }, // invnext
-    { WPAD_BUTTON_DOWN,      K_R2_BUTTON   }, // +attack2
-    { WPAD_BUTTON_UP,        K_Y_BUTTON    }, // flashlight
-
-    { WPAD_NUNCHUK_BUTTON_C, K_B_BUTTON    }, // +use
-    { WPAD_NUNCHUK_BUTTON_Z, K_R1_BUTTON   }, // +attack
-
-    { WPAD_BUTTON_1,         OGC_ACT_SCORES    }, // marcador (TAB)
-    { WPAD_BUTTON_2,         OGC_ACT_QUICKSAVE }, // savequick
-
-    { WPAD_BUTTON_PLUS,      OGC_ACT_CHAT  }, // chat
-    { WPAD_BUTTON_MINUS,     K_X_BUTTON    }, // +reload
-
-    { WPAD_BUTTON_A,         K_A_BUTTON    }, // +jump
-    { WPAD_BUTTON_B,         K_L1_BUTTON   }, // +duck
-
-    { WPAD_BUTTON_HOME,      OGC_ACT_HOME  }, // ESC (mantenido: consola)
-};
+/* ogc_map_wiimote: ver ogc_profs (remapeo de botones) mas abajo */
 
 // con el teclado en pantalla visible: A y B son clic, el puntero IR elige tecla
 static const ogc_btn_t ogc_osk_wiimote[] =
@@ -167,26 +158,6 @@ The classic controller reports through the same word as the nunchuk and the
 two overlap bit for bit, so which table applies is decided by the expansion
 WPAD_Probe reports rather than by ORing them together.
 */
-static const ogc_btn_t ogc_map_classic[] =
-{
-        // L y R (gatillos grandes) disparan: R primario, L secundario.
-        // ZL y ZR (los pequenos) hacen de agacharse y linterna.
-        { WPAD_CLASSIC_BUTTON_FULL_R, K_R1_BUTTON    }, // +attack
-        { WPAD_CLASSIC_BUTTON_FULL_L, K_R2_BUTTON    }, // +attack2
-        { WPAD_CLASSIC_BUTTON_ZR,     K_Y_BUTTON     }, // linterna (impulse 100)
-        { WPAD_CLASSIC_BUTTON_ZL,     K_L1_BUTTON    }, // +duck
-        { WPAD_CLASSIC_BUTTON_A,      K_A_BUTTON     }, // +jump
-        { WPAD_CLASSIC_BUTTON_X,      K_B_BUTTON     }, // +use
-        { WPAD_CLASSIC_BUTTON_Y,      K_X_BUTTON     }, // +reload
-        { WPAD_CLASSIC_BUTTON_B,      OGC_ACT_QUICKSAVE }, // autoguardado
-        { WPAD_CLASSIC_BUTTON_PLUS,   OGC_ACT_CHAT   }, // chat
-        { WPAD_CLASSIC_BUTTON_MINUS,  OGC_ACT_SCORES }, // marcador multijugador
-        { WPAD_CLASSIC_BUTTON_UP,     K_DPAD_UP      }, // spray
-        { WPAD_CLASSIC_BUTTON_DOWN,   K_DPAD_DOWN    }, // lastinv
-        { WPAD_CLASSIC_BUTTON_LEFT,   K_DPAD_LEFT    }, // invprev
-        { WPAD_CLASSIC_BUTTON_RIGHT,  K_DPAD_RIGHT   }, // invnext
-        { WPAD_CLASSIC_BUTTON_HOME,   OGC_ACT_HOME   }, // ESC (mantenido: consola)
-};
 
 static const ogc_btn_t ogc_osk_classic[] =
 {
@@ -202,21 +173,6 @@ static const ogc_btn_t ogc_osk_classic[] =
         { WPAD_CLASSIC_BUTTON_HOME,   OGC_ACT_HOME                 },
 };
 
-static const ogc_btn_t ogc_map_gamecube[] =
-{
-        { PAD_TRIGGER_R,     K_R1_BUTTON   },   // +attack
-        { PAD_TRIGGER_L,     K_R2_BUTTON   },   // +attack2
-        { PAD_TRIGGER_Z,     K_L1_BUTTON   },   // +duck
-        { PAD_BUTTON_A,      K_A_BUTTON    },   // +jump
-        { PAD_BUTTON_X,      K_B_BUTTON    },   // +use
-        { PAD_BUTTON_Y,      K_X_BUTTON    },   // +reload
-        { PAD_BUTTON_B,      OGC_ACT_QUICKSAVE }, // autoguardado
-        { PAD_BUTTON_UP,     K_Y_BUTTON    },   // linterna (impulse 100)
-        { PAD_BUTTON_DOWN,   OGC_ACT_SCORES },  // marcador multijugador
-        { PAD_BUTTON_LEFT,   K_DPAD_LEFT   },   // invprev
-        { PAD_BUTTON_RIGHT,  K_DPAD_RIGHT  },   // invnext
-        { PAD_BUTTON_START,  OGC_ACT_HOME  },   // ESC (mantenido: consola)
-};
 
 static const ogc_btn_t ogc_osk_gamecube[] =
 {
@@ -245,7 +201,7 @@ static const ogc_btn_t ogc_pick_wiimote[] =
     { WPAD_BUTTON_DOWN,      OGC_ACT_PICK_NEXT   },
     { WPAD_BUTTON_RIGHT,     OGC_ACT_PICK_NEXT   },
     { WPAD_BUTTON_A,         OGC_ACT_PICK_OK     },
-    { WPAD_BUTTON_2,         OGC_ACT_PICK_OK     },
+    { WPAD_BUTTON_2,         OGC_ACT_PICK_CANCEL },	// 2 abre la tienda: con un menu abierto lo cierra
     { WPAD_BUTTON_B,         OGC_ACT_PICK_CANCEL },
     { WPAD_BUTTON_1,         OGC_ACT_PICK_CANCEL },
 };
@@ -854,6 +810,14 @@ void OGC_InputInit( void )
 	Cvar_RegisterVariable( &wii_ir_cursor );
 	Cvar_RegisterVariable( &wii_aspect );
 Cvar_RegisterVariable( &wii_nunchuk_sens );
+	Cvar_RegisterVariable( &wii_nunchuk_deadzone );
+	Cvar_RegisterVariable( &wii_swing );
+	Cvar_RegisterVariable( &wii_swing_dev );
+	Cvar_RegisterVariable( &wii_swing_sens );
+	Cvar_RegisterVariable( &wii_menu_pause );
+	Cvar_RegisterVariable( &wii_map_wii );
+	Cvar_RegisterVariable( &wii_map_classic );
+	Cvar_RegisterVariable( &wii_map_gc );
 	Cvar_RegisterVariable( &wii_buttons );
 	Cvar_RegisterVariable( &wii_showinput );
 	Cmd_AddCommand( "wii_firestats", OGC_FireStats_f, "show (and clear) the +attack usercmd log" );
@@ -920,6 +884,7 @@ el menu abierto, la tecla sigue yendo al menu (volver atras). Lo usan tanto
 los botones de los mandos como el teclado USB.
 */
 static void OGC_SendKey( int key, qboolean down );
+static qboolean OGC_SwingBlocksFire( void );
 
 // toque corto de Inicio/Start = ESC; mantenido ~1s = consola
 #define OGC_HOME_LONG 0.8
@@ -948,29 +913,46 @@ static void OGC_SendAction( int act, qboolean down )
 		break;
 
 	case OGC_ACT_QUICKSAVE:
-		// pantalla dividida: el autoguardado no pinta nada, B del GameCube abre el menu del jugador
+		// pantalla dividida: el autoguardado no pinta nada
 		if( CL_SplitActive( ))
-		{
-			if( down && ogc_src == OGC_SRC_GC )
-				CL_SplitMenuToggle( 0 );
 			break;
-		}
 
 		if( down && cls.key_dest == key_game && Cmd_Exists( "savequick" ))
 		Cbuf_AddText( "savequick\n" );
 		break;
 
 	case OGC_ACT_CHAT:
-		// pantalla dividida: el boton del chat abre el menu propio del jugador 1
 		if( CL_SplitActive( ))
-		{
-			if( down )
-				CL_SplitMenuToggle( 0 );
 			break;
-		}
 
 		if( down && cls.key_dest == key_game && Cmd_Exists( "messagemode" ))
 		Cbuf_AddText( "messagemode\n" );
+		break;
+
+	case OGC_ACT_DROP:
+		// drop: suelta el arma en la mano. Es un comando del servidor: el cliente lo reenvia,
+		// asi que no hay Cmd_Exists que comprobar
+		if( down && cls.state == ca_active && cls.key_dest == key_game )
+			Cbuf_AddText( "drop\n" );
+		break;
+
+	case OGC_ACT_BUY:
+		// buy: la tienda del servidor; solo en la zona de compra y a tiempo, si no el
+		// servidor lo dice en un mensaje
+		if( down && cls.state == ca_active && cls.key_dest == key_game )
+			Cbuf_AddText( "buy\n" );
+		break;
+
+	case OGC_ACT_MENU:
+		// + (Wiimote, Classic) o B (GameCube): pantalla dividida = menu del jugador 1,
+		// un jugador = menu de ajustes. Con el menu abierto cierra el propio menu.
+		if( !down )
+			break;
+
+		if( CL_SplitActive( ))
+			CL_SplitMenuToggle( 0 );
+		else if( !CL_WiiMenuActive( ) && cls.state == ca_active && cls.key_dest == key_game )
+			CL_WiiMenuOpen( OGC_MapProfileNow( ));
 		break;
 
 	case OGC_ACT_HOME:
@@ -1013,8 +995,29 @@ static void OGC_SendKey( int key, qboolean down )
 	// ellos mismos: las pulsaciones no llegan al juego (las soltadas si, para que
 	// no quede nada apretado)
 	if( down && CL_SplitGrab( 0 ) && ( CL_SplitLobbyActive( ) ||
-		( key != OGC_ACT_CHAT && key != OGC_ACT_QUICKSAVE && key != OGC_ACT_HOME )))
+		( key != OGC_ACT_MENU && key != OGC_ACT_HOME )))
 		return;
+
+	// palanca por gesto en "solo gesto": con la palanca en la mano el boton de disparo no ataca
+	if( key == K_R1_BUTTON )
+	{
+		static qboolean fire_sent;
+
+		if( down )
+		{
+			if( OGC_SwingBlocksFire( ))
+				return;
+
+			fire_sent = true;
+		}
+		else
+		{
+			if( !fire_sent )
+				return;
+
+			fire_sent = false;
+		}
+	}
 
 	if( key >= OGC_ACT_BASE )
 	{
@@ -1030,6 +1033,473 @@ static void OGC_SendKey( int key, qboolean down )
 	}
 
 	Key_Event( key, down );
+}
+
+/*
+Remapeo de botones (menu de ajustes, boton +).
+
+Cada mando tiene su propia lista de botones fisicos y su propia asignacion
+(un Classic no tiene sentido en un Wiimote): perfil 0 = Wiimote (+ Nunchuk),
+1 = Classic Controller, 2 = GameCube. La asignacion es "accion -> boton"; dos
+acciones no comparten boton (al elegir uno ocupado se intercambian) y se guarda
+en un cvar por perfil con una letra por accion ('a' = primer boton de la lista,
+'-' = ninguno). Hay botones fijos que no se pueden mover: Inicio/Home (ESC) y el
+boton del menu (+ en Wiimote y Classic, B en GameCube).
+*/
+enum { OGC_PROF_WII, OGC_PROF_CLASSIC, OGC_PROF_GC, OGC_PROF_COUNT };
+
+typedef struct { u32 mask; const char *name; } ogc_pbtn_t;
+typedef struct { const char *name; int key; } ogc_action_t;
+
+#define OGC_NACTIONS 14
+
+static const ogc_action_t ogc_actions[OGC_NACTIONS] =
+{
+	{ "Disparo",		K_R1_BUTTON },
+	{ "Disparo secundario",	K_R2_BUTTON },
+	{ "Saltar",		K_A_BUTTON },
+	{ "Agacharse",		K_L1_BUTTON },
+	{ "Usar",		K_B_BUTTON },
+	{ "Recargar",		K_X_BUTTON },
+	{ "Linterna",		K_Y_BUTTON },
+	{ "Arma anterior",	K_DPAD_LEFT },
+	{ "Arma siguiente",	K_DPAD_RIGHT },
+	{ "Ultima arma",	K_DPAD_DOWN },
+	{ "Soltar arma",	OGC_ACT_DROP },
+	{ "Marcador",		OGC_ACT_SCORES },
+	{ "Tienda",		OGC_ACT_BUY },
+	{ "Chat",		OGC_ACT_CHAT },
+};
+
+static const ogc_pbtn_t ogc_pb_wii[] =
+{
+	{ WPAD_BUTTON_UP,        "Cruz arriba" },
+	{ WPAD_BUTTON_DOWN,      "Cruz abajo" },
+	{ WPAD_BUTTON_LEFT,      "Cruz izquierda" },
+	{ WPAD_BUTTON_RIGHT,     "Cruz derecha" },
+	{ WPAD_BUTTON_A,         "A" },
+	{ WPAD_BUTTON_B,         "B" },
+	{ WPAD_BUTTON_1,         "1" },
+	{ WPAD_BUTTON_2,         "2" },
+	{ WPAD_BUTTON_MINUS,     "Menos (-)" },
+	{ WPAD_NUNCHUK_BUTTON_C, "C (Nunchuk)" },
+	{ WPAD_NUNCHUK_BUTTON_Z, "Z (Nunchuk)" },
+};
+
+static const ogc_pbtn_t ogc_pb_classic[] =
+{
+	{ WPAD_CLASSIC_BUTTON_UP,     "Cruz arriba" },
+	{ WPAD_CLASSIC_BUTTON_DOWN,   "Cruz abajo" },
+	{ WPAD_CLASSIC_BUTTON_LEFT,   "Cruz izquierda" },
+	{ WPAD_CLASSIC_BUTTON_RIGHT,  "Cruz derecha" },
+	{ WPAD_CLASSIC_BUTTON_A,      "A" },
+	{ WPAD_CLASSIC_BUTTON_B,      "B" },
+	{ WPAD_CLASSIC_BUTTON_X,      "X" },
+	{ WPAD_CLASSIC_BUTTON_Y,      "Y" },
+	{ WPAD_CLASSIC_BUTTON_FULL_L, "L" },
+	{ WPAD_CLASSIC_BUTTON_FULL_R, "R" },
+	{ WPAD_CLASSIC_BUTTON_ZL,     "ZL" },
+	{ WPAD_CLASSIC_BUTTON_ZR,     "ZR" },
+	{ WPAD_CLASSIC_BUTTON_MINUS,  "Menos (-)" },
+};
+
+// B es el boton del menu en GameCube; Start es Inicio
+static const ogc_pbtn_t ogc_pb_gc[] =
+{
+	{ PAD_BUTTON_UP,     "Cruz arriba" },
+	{ PAD_BUTTON_DOWN,   "Cruz abajo" },
+	{ PAD_BUTTON_LEFT,   "Cruz izquierda" },
+	{ PAD_BUTTON_RIGHT,  "Cruz derecha" },
+	{ PAD_BUTTON_A,      "A" },
+	{ PAD_BUTTON_X,      "X" },
+	{ PAD_BUTTON_Y,      "Y" },
+	{ PAD_TRIGGER_Z,     "Z" },
+	{ PAD_TRIGGER_L,     "L" },
+	{ PAD_TRIGGER_R,     "R" },
+};
+
+// valores de fabrica, en el orden de ogc_actions (0 = sin boton)
+static const u32 ogc_def_wii[OGC_NACTIONS] =
+{
+	WPAD_NUNCHUK_BUTTON_Z, WPAD_BUTTON_DOWN, WPAD_BUTTON_A, WPAD_BUTTON_B, WPAD_NUNCHUK_BUTTON_C,
+	WPAD_BUTTON_MINUS, 0, WPAD_BUTTON_LEFT, WPAD_BUTTON_RIGHT, 0, WPAD_BUTTON_UP,
+	WPAD_BUTTON_1, WPAD_BUTTON_2, 0,
+};
+
+static const u32 ogc_def_classic[OGC_NACTIONS] =
+{
+	WPAD_CLASSIC_BUTTON_FULL_R, WPAD_CLASSIC_BUTTON_FULL_L, WPAD_CLASSIC_BUTTON_A, WPAD_CLASSIC_BUTTON_ZL,
+	WPAD_CLASSIC_BUTTON_X, WPAD_CLASSIC_BUTTON_Y, WPAD_CLASSIC_BUTTON_ZR, WPAD_CLASSIC_BUTTON_LEFT,
+	WPAD_CLASSIC_BUTTON_RIGHT, WPAD_CLASSIC_BUTTON_DOWN, WPAD_CLASSIC_BUTTON_UP,
+	WPAD_CLASSIC_BUTTON_MINUS, WPAD_CLASSIC_BUTTON_B, 0,
+};
+
+static const u32 ogc_def_gc[OGC_NACTIONS] =
+{
+	PAD_TRIGGER_R, PAD_TRIGGER_L, PAD_BUTTON_A, PAD_TRIGGER_Z, PAD_BUTTON_X, PAD_BUTTON_Y, 0,
+	PAD_BUTTON_LEFT, PAD_BUTTON_RIGHT, 0, PAD_BUTTON_UP, 0, PAD_BUTTON_DOWN, 0,
+};
+
+typedef struct
+{
+	const ogc_pbtn_t	*btns;
+	int			nbtns;
+	const u32		*def;
+	u32			menu_mask, home_mask;
+	convar_t		*cvar;
+} ogc_prof_t;
+
+static const ogc_prof_t ogc_profs[OGC_PROF_COUNT] =
+{
+	{ ogc_pb_wii, ARRAYSIZE( ogc_pb_wii ), ogc_def_wii, WPAD_BUTTON_PLUS, WPAD_BUTTON_HOME, &wii_map_wii },
+	{ ogc_pb_classic, ARRAYSIZE( ogc_pb_classic ), ogc_def_classic, WPAD_CLASSIC_BUTTON_PLUS, WPAD_CLASSIC_BUTTON_HOME, &wii_map_classic },
+	{ ogc_pb_gc, ARRAYSIZE( ogc_pb_gc ), ogc_def_gc, PAD_BUTTON_B, PAD_BUTTON_START, &wii_map_gc },
+};
+
+#define OGC_EFF_MAX ( OGC_NACTIONS + 2 )
+static u32 ogc_assign[OGC_PROF_COUNT][OGC_NACTIONS];	// boton (mascara) de cada accion
+static ogc_btn_t ogc_eff[OGC_PROF_COUNT][OGC_EFF_MAX];	// la tabla que usa OGC_EmitButtons
+static int ogc_eff_n[OGC_PROF_COUNT];
+static char ogc_map_seen[OGC_PROF_COUNT][OGC_NACTIONS + 8];
+static qboolean ogc_map_ready[OGC_PROF_COUNT];
+
+static void OGC_MapRebuild( int p )
+{
+	int a, n = 0;
+
+	for( a = 0; a < OGC_NACTIONS; a++ )
+	{
+		if( !ogc_assign[p][a] )
+			continue;
+
+		ogc_eff[p][n].mask = ogc_assign[p][a];
+		ogc_eff[p][n].key = ogc_actions[a].key;
+		n++;
+	}
+
+	ogc_eff[p][n].mask = ogc_profs[p].menu_mask;
+	ogc_eff[p][n].key = OGC_ACT_MENU;
+	n++;
+	ogc_eff[p][n].mask = ogc_profs[p].home_mask;
+	ogc_eff[p][n].key = OGC_ACT_HOME;
+	n++;
+
+	ogc_eff_n[p] = n;
+}
+
+static int OGC_MapIndexOf( int p, u32 mask )
+{
+	int i;
+
+	if( !mask )
+		return -1;
+
+	for( i = 0; i < ogc_profs[p].nbtns; i++ )
+		if( ogc_profs[p].btns[i].mask == mask )
+			return i;
+
+	return -1;
+}
+
+static void OGC_MapLoad( int p )
+{
+	const ogc_prof_t *pr = &ogc_profs[p];
+	const char *s = pr->cvar->string;
+	int a, b;
+
+	for( a = 0; a < OGC_NACTIONS; a++ )
+		ogc_assign[p][a] = pr->def[a];
+
+	if( s && Q_strlen( s ) == OGC_NACTIONS )
+	{
+		for( a = 0; a < OGC_NACTIONS; a++ )
+		{
+			if( s[a] == '-' )
+				ogc_assign[p][a] = 0;
+			else if( s[a] >= 'a' && s[a] - 'a' < pr->nbtns )
+				ogc_assign[p][a] = pr->btns[s[a] - 'a'].mask;
+		}
+
+		// un boton, una accion: si el cvar viene mal, gana la primera
+		for( a = 1; a < OGC_NACTIONS; a++ )
+			for( b = 0; b < a; b++ )
+				if( ogc_assign[p][a] && ogc_assign[p][a] == ogc_assign[p][b] )
+					ogc_assign[p][a] = 0;
+	}
+
+	Q_strncpy( ogc_map_seen[p], s ? s : "", sizeof( ogc_map_seen[p] ));
+	OGC_MapRebuild( p );
+	ogc_map_ready[p] = true;
+}
+
+// carga las asignaciones la primera vez y cuando el cvar cambia (config.cfg se lee despues de arrancar)
+static void OGC_MapCheck( void )
+{
+	int p;
+
+	for( p = 0; p < OGC_PROF_COUNT; p++ )
+		if( !ogc_map_ready[p] || Q_strcmp( ogc_map_seen[p], ogc_profs[p].cvar->string ))
+			OGC_MapLoad( p );
+}
+
+static void OGC_MapSave( int p )
+{
+	char s[OGC_NACTIONS + 1];
+	int a, idx;
+
+	for( a = 0; a < OGC_NACTIONS; a++ )
+	{
+		idx = OGC_MapIndexOf( p, ogc_assign[p][a] );
+		s[a] = idx < 0 ? '-' : (char)( 'a' + idx );
+	}
+
+	s[OGC_NACTIONS] = 0;
+	Cvar_DirectSet( ogc_profs[p].cvar, s );
+	Q_strncpy( ogc_map_seen[p], s, sizeof( ogc_map_seen[p] ));
+	OGC_MapRebuild( p );
+}
+
+static qboolean OGC_HasNunchuk( void )
+{
+	u32 type = WPAD_EXP_NONE;
+
+	return WPAD_Probe( WPAD_CHAN_0, &type ) == WPAD_ERR_NONE && type == WPAD_EXP_NUNCHUK;
+}
+
+// los botones del Nunchuk solo se ofrecen con un Nunchuk conectado
+static qboolean OGC_MapChoiceAvailable( int p, int btn )
+{
+	if( p == OGC_PROF_WII && ( ogc_pb_wii[btn].mask == WPAD_NUNCHUK_BUTTON_C || ogc_pb_wii[btn].mask == WPAD_NUNCHUK_BUTTON_Z ))
+		return OGC_HasNunchuk();
+
+	return true;
+}
+
+// ---- lo que usa el menu de ajustes (cl_splitui.c) ----
+int OGC_MapProfileNow( void )
+{
+	if( ogc_src == OGC_SRC_CLASSIC )
+		return OGC_PROF_CLASSIC;
+	if( ogc_src == OGC_SRC_GC )
+		return OGC_PROF_GC;
+	return OGC_PROF_WII;
+}
+
+const char *OGC_MapProfileName( int p )
+{
+	if( p == OGC_PROF_CLASSIC )
+		return "Classic Controller";
+	if( p == OGC_PROF_GC )
+		return "GameCube";
+	return OGC_HasNunchuk() ? "Wiimote + Nunchuk" : "Wiimote";
+}
+
+qboolean OGC_MapHasNunchuk( void )
+{
+	return OGC_HasNunchuk();
+}
+
+int OGC_MapActionCount( void )
+{
+	return OGC_NACTIONS;
+}
+
+const char *OGC_MapActionName( int a )
+{
+	return a >= 0 && a < OGC_NACTIONS ? ogc_actions[a].name : "";
+}
+
+const char *OGC_MapButtonName( int p, int a )
+{
+	int idx;
+
+	if( p < 0 || p >= OGC_PROF_COUNT || a < 0 || a >= OGC_NACTIONS )
+		return "";
+
+	OGC_MapCheck();
+	idx = OGC_MapIndexOf( p, ogc_assign[p][a] );
+
+	return idx < 0 ? "Ninguno" : ogc_profs[p].btns[idx].name;
+}
+
+// siguiente (dir 1) o anterior (dir -1) boton para una accion; si esta ocupado se intercambian
+void OGC_MapCycle( int p, int a, int dir )
+{
+	const ogc_prof_t *pr;
+	u32 target, old;
+	int cur, n, tries, o;
+
+	if( p < 0 || p >= OGC_PROF_COUNT || a < 0 || a >= OGC_NACTIONS )
+		return;
+
+	OGC_MapCheck();
+	pr = &ogc_profs[p];
+	n = pr->nbtns + 1;	// 0 = ninguno, 1.. = botones
+	cur = OGC_MapIndexOf( p, ogc_assign[p][a] ) + 1;
+	dir = dir < 0 ? -1 : 1;
+
+	for( tries = 0; tries < n; tries++ )
+	{
+		cur = ( cur + dir + n ) % n;
+
+		if( cur == 0 || OGC_MapChoiceAvailable( p, cur - 1 ))
+			break;
+	}
+
+	target = cur ? pr->btns[cur - 1].mask : 0;
+	old = ogc_assign[p][a];
+
+	if( target == old )
+		return;
+
+	if( target )
+	{
+		for( o = 0; o < OGC_NACTIONS; o++ )
+			if( o != a && ogc_assign[p][o] == target )
+				ogc_assign[p][o] = old;
+	}
+
+	ogc_assign[p][a] = target;
+	OGC_MapSave( p );
+}
+
+void OGC_MapReset( int p )
+{
+	if( p < 0 || p >= OGC_PROF_COUNT )
+		return;
+
+	Cvar_DirectSet( ogc_profs[p].cvar, "" );
+	OGC_MapLoad( p );
+}
+
+/*
+Palanca por gesto: con el arma cuerpo a cuerpo en la mano (palanca, cuchillo), mover
+el Nunchuk o el Wiimote como un golpe ataca. Se mide el tiron del acelerometro (cuanto
+cambia la aceleracion de un cuadro al siguiente, en g): andar con el Nunchuk en la mano
+da menos de 0.5 y un golpe de muneca mas de 2.
+*/
+static qboolean OGC_WeaponIsMelee( void )
+{
+	const model_t *m = clgame.viewent.model;
+
+	if( !m || !m->name[0] )
+		return false;
+
+	return Q_stristr( m->name, "crowbar" ) || Q_stristr( m->name, "knife" );
+}
+
+static float OGC_AccelJerk( float x, float y, float z, float *prev, qboolean *have )
+{
+	float dx, dy, dz, d, m;
+
+	if( isnan( x ) || isnan( y ) || isnan( z ) || isinf( x ) || isinf( y ) || isinf( z ))
+		return 0.0f;
+
+	if( !*have )
+	{
+		prev[0] = x; prev[1] = y; prev[2] = z;
+		*have = true;
+		return 0.0f;
+	}
+
+	dx = x - prev[0]; dy = y - prev[1]; dz = z - prev[2];
+	prev[0] = x; prev[1] = y; prev[2] = z;
+	d = sqrtf( dx * dx + dy * dy + dz * dz );
+	m = fabsf( sqrtf( x * x + y * y + z * z ) - 1.0f );	// lo que se aparta de la gravedad sola
+
+	return Q_max( d, m );
+}
+
+// con "solo gesto" el boton de disparo no ataca con la palanca en la mano
+static qboolean OGC_SwingBlocksFire( void )
+{
+	return (int)wii_swing.value >= 2 && ogc_src == OGC_SRC_WII && OGC_WeaponIsMelee();
+}
+
+static void OGC_SwingFrame( void )
+{
+	static double pulse_end, cooldown;
+	static float prev_w[3], prev_n[3];
+	static qboolean have_w, have_n;
+	WPADData *data;
+	u32 type = WPAD_EXP_NONE;
+	float peak = 0.0f, thresh;
+	int dev;
+	qboolean use_n, use_w;
+
+	// el golpe se suelta pase lo que pase
+	if( pulse_end > 0.0 && host.realtime >= pulse_end )
+	{
+		pulse_end = 0.0;
+		Cbuf_AddText( "-attack\n" );
+	}
+
+	if( (int)wii_swing.value <= 0 || ogc_src != OGC_SRC_WII || cls.state != ca_active
+		|| cls.key_dest != key_game || cl.paused || CL_SplitGrab( 0 ) || !OGC_WeaponIsMelee( ))
+	{
+		have_w = have_n = false;
+		return;
+	}
+
+	if( WPAD_Probe( WPAD_CHAN_0, &type ) != WPAD_ERR_NONE || type == WPAD_EXP_CLASSIC )
+	{
+		have_w = have_n = false;
+		return;
+	}
+
+	data = WPAD_Data( WPAD_CHAN_0 );
+	if( !data )
+		return;
+
+	dev = (int)wii_swing_dev.value;
+	use_n = ( dev == 0 || dev == 2 ) && type == WPAD_EXP_NUNCHUK;
+	use_w = dev == 1 || dev == 2 || !use_n;	// sin Nunchuk se usa el Wiimote
+
+	if( use_w )
+		peak = Q_max( peak, OGC_AccelJerk( data->gforce.x, data->gforce.y, data->gforce.z, prev_w, &have_w ));
+	else have_w = false;
+
+	if( use_n )
+		peak = Q_max( peak, OGC_AccelJerk( data->exp.nunchuk.gforce.x, data->exp.nunchuk.gforce.y,
+			data->exp.nunchuk.gforce.z, prev_n, &have_n ));
+	else have_n = false;
+
+	thresh = 1.5f / bound( 0.5f, wii_swing_sens.value * 0.01f, 2.0f );
+
+	if( wii_showinput.value && peak > 0.5f )
+		Con_Printf( "^3[SWING]^7 tiron=%.2f g (umbral %.2f)\n", peak, thresh );
+
+	if( peak >= thresh && pulse_end == 0.0 && host.realtime >= cooldown )
+	{
+		Cbuf_AddText( "+attack\n" );
+		pulse_end = host.realtime + 0.12;
+		cooldown = host.realtime + 0.5;
+		OGC_Rumble( 1.0f, 0.12f );
+	}
+}
+
+// suelta lo que hubiera apretado (al abrir el menu de ajustes)
+void OGC_MenuOpened( void )
+{
+	ogc_dev_t *devs[OGC_PROF_COUNT] = { &ogc_dev_wii, &ogc_dev_classic, &ogc_dev_gc };
+	int p, i, key;
+
+	OGC_MapCheck();
+
+	for( p = 0; p < OGC_PROF_COUNT; p++ )
+	{
+		for( i = 0; i < ogc_eff_n[p]; i++ )
+		{
+			key = ogc_eff[p][i].key;
+
+			if( !( devs[p]->active & ogc_eff[p][i].mask ) || key == OGC_ACT_HOME || key == OGC_ACT_MENU )
+				continue;
+
+			OGC_SendKey( key, false );
+		}
+
+		devs[p]->active = 0;
+	}
 }
 
 // mantener Inicio abre la consola (para escribir comandos con el teclado en pantalla)
@@ -1367,6 +1837,7 @@ void OGC_ButtonsFrame( void )
 	// (the GameCube pads are scanned above, for the same reason)
 	WPAD_ScanPads();
 OGC_PollNunchuk();
+	OGC_MapCheck();
 
 	if( wii_showinput.value )
 	{
@@ -1393,26 +1864,28 @@ OGC_PollNunchuk();
 
 	if( WPAD_Probe( WPAD_CHAN_0, &type ) == WPAD_ERR_NONE && type == WPAD_EXP_CLASSIC )
 	{
-		OGC_EmitButtons( ogc_map_classic, ARRAYSIZE( ogc_map_classic ),
+		OGC_EmitButtons( ogc_eff[OGC_PROF_CLASSIC], ogc_eff_n[OGC_PROF_CLASSIC],
 			ogc_osk_classic, ARRAYSIZE( ogc_osk_classic ),
 			ogc_pick_classic, ARRAYSIZE( ogc_pick_classic ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_dev_classic, OGC_SRC_CLASSIC );
 	}
 	else
 	{
-		OGC_EmitButtons( ogc_map_wiimote, ARRAYSIZE( ogc_map_wiimote ),
+		OGC_EmitButtons( ogc_eff[OGC_PROF_WII], ogc_eff_n[OGC_PROF_WII],
 			ogc_osk_wiimote, ARRAYSIZE( ogc_osk_wiimote ),
 			ogc_pick_wiimote, ARRAYSIZE( ogc_pick_wiimote ),
 			WPAD_ButtonsHeld( WPAD_CHAN_0 ), &ogc_dev_wii, OGC_SRC_WII );
 	}
 
-	OGC_EmitButtons( ogc_map_gamecube, ARRAYSIZE( ogc_map_gamecube ),
+	OGC_EmitButtons( ogc_eff[OGC_PROF_GC], ogc_eff_n[OGC_PROF_GC],
 		ogc_osk_gamecube, ARRAYSIZE( ogc_osk_gamecube ),
 		ogc_pick_gamecube, ARRAYSIZE( ogc_pick_gamecube ),
 		PAD_ButtonsHeld( PAD_CHAN0 ), &ogc_dev_gc, OGC_SRC_GC );
 
 	OGC_HomeFrame();
 	OGC_OskFrame();
+	OGC_SwingFrame();
+	CL_WiiMenuFrame();
 
         // Sticks del Classic Controller y del GameCube (el del Nunchuk va aparte)
         OGC_PollSticks( type );
@@ -2903,8 +3376,12 @@ static void OGC_PollNunchuk(void)
         ny = (s16)tmp;
     }
 
-    if (nx > -8000 && nx < 8000) nx = 0;
-    if (ny > -8000 && ny < 8000) ny = 0;
+    {
+        const int dz = (int)( bound( 0.0f, wii_nunchuk_deadzone.value, 0.6f ) * 32768.0f );
+
+        if (nx > -dz && nx < dz) nx = 0;
+        if (ny > -dz && ny < dz) ny = 0;
+    }
 
     // menu propio del jugador 1 (o lobby): el Nunchuk no mueve al personaje
     if (CL_SplitGrab( 0 ))

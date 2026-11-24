@@ -20,60 +20,75 @@ Todo lo que aparece a continuación se puede volver a enlazar desde Option-> Con
 
 ### Wii remote + nunchuk
 
-El Nunshuck es necesario en este esquema "Debido a que su stick es el que usarás para moverte"
+El Nunchuk es necesario en este esquema porque su stick es el que usas para moverte.
 
 | Botón | Acción |
 | --- | --- |
-| **B** (Activar) | Fuego |
+| **Z** (Nunchuk) | Fuego |
 | **A** | Saltar |
-| **Nunchuk C** | Usar / interactuar, y recargar |
-| **Nunchuk Z** | Agacharse |
-| **1** | Linterna |
-| **2** | Arma secundaria |
-| **D-pad up** | Recargar |
-| **D-pad down** | Última arma usada |
-| **D-pad left / right** | Previo / Siguiente arma|
-| **-** | Caminar (Mantén) |
-| **+** | Pausa |
-| **Home** | Menu |
+| **B** | Agacharse |
+| **C** (Nunchuk) | Usar / interactuar |
+| **-** | Recargar |
+| **1** | Marcador |
+| **2** | Tienda (con un menú abierto lo cierra) |
+| **D-pad arriba** | Soltar el arma (`drop`) |
+| **D-pad abajo** | Disparo secundario |
+| **D-pad izquierda / derecha** | Arma anterior / siguiente |
+| **+** | Menú de ajustes |
+| **Home** | Menú del juego (mantenido: consola) |
 
-Para apuntar se usa el puntero del mando. Apunta cerca del centro de la pantalla y solo se moverá el arma, lo que mantiene estable el apuntado de precisión; apunta hacia un borde y la vista girará, más rápido cuanto más te alejes. Los disparos siguen al puntero en lugar de a la cámara.
+La linterna no tiene botón por defecto (arriba pasó a soltar el arma); se asigna desde **+ → Configurar botones**.
+
+Para apuntar se usa el puntero del mando. Apunta cerca del centro de la pantalla y solo se moverá el arma, lo que mantiene estable el apuntado de precisión; apunta hacia un borde y la vista girará, más rápido cuanto más te alejes. La mira (las cuatro líneas) y los disparos siguen al puntero.
 
 ### Classic controller
 
 | Botón | Acción |
 | --- | --- |
 | **R** | Fuego |
-| **ZR** | Fuego secundaria |
-| **L** | Agacharse |
-| **ZL** | Caminar (mantenido) |
-| **a** | Saltado |
-| **b** | Usar / interactuar |
-| **x** | Recargar |
-| **y** | Linterna |
-| **D-pad left / right** | Previo / Siguiente Arma |
-| **D-pad down** | Última arma usada|
-| **+** | Pausa |
-| **Home** | Menu |
+| **L** | Disparo secundario |
+| **ZL** | Agacharse |
+| **ZR** | Linterna |
+| **A** | Saltar |
+| **X** | Usar / interactuar |
+| **Y** | Recargar |
+| **B** | Tienda |
+| **-** | Marcador |
+| **D-pad arriba** | Soltar el arma |
+| **D-pad abajo** | Última arma usada |
+| **D-pad izquierda / derecha** | Arma anterior / siguiente |
+| **+** | Menú de ajustes |
+| **Home** | Menú del juego (mantenido: consola) |
 
-El stick izquierdo mueve, el stick derecho mira. No hay apuntado por puntero en este esquema, así que `wii_ir 0` Vale la pena configurarlo si lo usas.
+El stick izquierdo mueve, el stick derecho mira. No hay apuntado por puntero en este esquema.
 
 ### GameCube controller
 
 | Botón | Acción |
 | --- | --- |
 | **R** | Fuego |
-| **Z** | Fuego secundario |
-| **L** | Agacharse |
+| **L** | Disparo secundario |
+| **Z** | Agacharse |
 | **A** | Saltar |
-| **B** | Usar / interactuar |
-| **X** | Recargar |
-| **Y** | Linterna |
-| **D-pad left / right** | Previo / Siguiente arma|
-| **D-pad down** | Última arma usada |
-| **Start** | Menu |
+| **X** | Usar / interactuar |
+| **Y** | Recargar |
+| **D-pad arriba** | Soltar el arma |
+| **D-pad abajo** | Tienda |
+| **D-pad izquierda / derecha** | Arma anterior / siguiente |
+| **B** | Menú de ajustes |
+| **Start** | Menú del juego (mantenido: consola) |
 
-Con el stick izquierdo te mueves, con el C-stick mueves la cámara.
+Con el stick izquierdo te mueves, con el C-stick mueves la cámara. Faltan botones en este mando: el marcador, la linterna y la última arma no tienen botón por defecto; se asignan desde **B → Configurar botones**.
+
+### Menú de ajustes (+ en Wiimote y Classic, B en GameCube)
+
+Se maneja con la cruz, A y B del mismo mando; con el menú abierto el resto de botones no actúan en el juego.
+
+- Sensibilidad y zona muerta del puntero o de la palanca (y del Nunchuk), seguir girando en el borde, palanca por gesto.
+- **Configurar botones**: cada mando tiene su propia lista y su asignación; dos acciones no comparten botón. Home/Start y el botón del menú son fijos.
+- **Cambiar de equipo**: abre el menú de equipo del servidor.
+- **Bots** (0 a 5, solo si tú eres el servidor): ajusta `bot_quota`; se vuelve a pedir al empezar cada mapa. Cvar `wii_cs_bots`.
+- Escribir chat (en línea) y restaurar ajustes.
 
 El esquema que está activo se decide según lo que esté conectado, de modo que un mando clásico y un mando de GameCube pueden estar conectados al mismo tiempo sin presentar conflictos entre sí. `wii_buttons 0` Desactiva la lectura directa y recurre a lo que sea que SDL interprete del mando (o controlador).
 
