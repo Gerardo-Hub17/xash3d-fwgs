@@ -37,7 +37,16 @@ public:
 	bool IsValid() const { return (m_fileData) ? true : false; }
 	bool Read(void *data, int length);
 
+	// Datos binarios (cadenas): nunca se les da la vuelta, aunque el archivo sea de otro endian
+	bool ReadBytes(void *data, int length);
+
+	// Archivo guardado con el otro endian (p.ej. un .nav de PC leido en la Wii, que es big-endian):
+	// con esto activo, Read() da la vuelta a cada entero/float de 16 o 32 bits que lee
+	void SetByteSwap(bool swap) { m_swap = swap; }
+	bool IsByteSwap() const { return m_swap; }
+
 private:
+	bool m_swap;
 	byte *m_fileData;
 	int m_fileDataLength;
 
@@ -47,6 +56,7 @@ private:
 
 inline SteamFile::SteamFile(const char *filename)
 {
+	m_swap = false;
 	m_fileData = (byte *)LOAD_FILE_FOR_ME(const_cast<char *>(filename), &m_fileDataLength);
 	m_cursor = m_fileData;
 	m_bytesLeft = m_fileDataLength;
@@ -61,7 +71,7 @@ inline SteamFile::~SteamFile()
 	}
 }
 
-inline bool SteamFile::Read(void *data, int length)
+inline bool SteamFile::ReadBytes(void *data, int length)
 {
 	if (length > m_bytesLeft || !m_cursor || m_bytesLeft <= 0)
 		return false;
@@ -71,6 +81,34 @@ inline bool SteamFile::Read(void *data, int length)
 	{
 		*readCursor++ = *m_cursor++;
 		m_bytesLeft--;
+	}
+
+	return true;
+}
+
+inline bool SteamFile::Read(void *data, int length)
+{
+	if (!ReadBytes(data, length))
+		return false;
+
+	if (m_swap)
+	{
+		// los escalares del .nav miden 1, 2 o 4 bytes; los vectores y extents son floats seguidos (multiplos de 4)
+		byte *p = static_cast<byte *>(data);
+
+		if (length == 2)
+		{
+			byte t = p[0]; p[0] = p[1]; p[1] = t;
+		}
+		else if (length >= 4 && (length % 4) == 0)
+		{
+			for (int i = 0; i < length; i += 4)
+			{
+				byte t;
+				t = p[i + 0]; p[i + 0] = p[i + 3]; p[i + 3] = t;
+				t = p[i + 1]; p[i + 1] = p[i + 2]; p[i + 2] = t;
+			}
+		}
 	}
 
 	return true;

@@ -115,6 +115,9 @@ public:
 	// heavyweight algorithms, invoked less often
 	virtual void Update() = 0;
 
+	// short text with what the bot is doing (only used by the slow-frame log on the Wii)
+	virtual void DescribeState(char *buf, int len) const { if (len > 0) buf[0] = '\0'; }
+
 	virtual void Run();
 	virtual void Walk();
 	virtual void Crouch();

@@ -8,6 +8,7 @@
 
 #include <list>
 #include <vector>
+#include <time.h>
 #include <algorithm>
 
 #include <fcntl.h>
@@ -1166,15 +1167,25 @@ void MergeGeneratedAreas()
 {
 	CONSOLE_ECHO("  Merging navigation areas...\n");
 
+	// The original code restarted the scan from the first area after EVERY merge, which is quadratic and took
+	// minutes on the Wii for a big map. Now a merge only repeats the same area, and the pass goes on from there;
+	// the outer loop repeats whole passes until one finds nothing left to merge.
 	bool merged;
+	bool anyMerged;
+	int mergeCount = 0;
+	const int areasBefore = int(TheNavAreaList.size());
+	const time_t startTime = time(nullptr);
 
 	do
 	{
-		merged = false;
+		anyMerged = false;
 
 		for (NavAreaList::iterator iter = TheNavAreaList.begin(); iter != TheNavAreaList.end(); iter++)
 		{
 			CNavArea *area = (*iter);
+
+retryArea:
+			merged = false;
 
 			// north edge
 			NavConnectList::iterator citer;
@@ -1202,7 +1213,12 @@ void MergeGeneratedAreas()
 			}
 
 			if (merged)
-				break;
+			{
+				// keep going with this same area, which may now merge with its new neighbors
+				anyMerged = true;
+				mergeCount++;
+				goto retryArea;
+			}
 
 			// south edge
 			for (citer = area->m_connect[SOUTH].begin(); citer != area->m_connect[SOUTH].end(); citer++)
@@ -1230,7 +1246,12 @@ void MergeGeneratedAreas()
 			}
 
 			if (merged)
-				break;
+			{
+				// keep going with this same area, which may now merge with its new neighbors
+				anyMerged = true;
+				mergeCount++;
+				goto retryArea;
+			}
 
 			// west edge
 			for (citer = area->m_connect[WEST].begin(); citer != area->m_connect[WEST].end(); citer++)
@@ -1258,7 +1279,12 @@ void MergeGeneratedAreas()
 			}
 
 			if (merged)
-				break;
+			{
+				// keep going with this same area, which may now merge with its new neighbors
+				anyMerged = true;
+				mergeCount++;
+				goto retryArea;
+			}
 
 			// east edge
 			for (citer = area->m_connect[EAST].begin(); citer != area->m_connect[EAST].end(); citer++)
@@ -1285,10 +1311,17 @@ void MergeGeneratedAreas()
 			}
 
 			if (merged)
-				break;
+			{
+				// keep going with this same area, which may now merge with its new neighbors
+				anyMerged = true;
+				mergeCount++;
+				goto retryArea;
+			}
 		}
 	}
-	while (merged);
+	while (anyMerged);
+
+	CONSOLE_ECHO("  Merged %d areas: %d -> %d areas in %d s\n", mergeCount, areasBefore, int(TheNavAreaList.size()), int(time(nullptr) - startTime));
 }
 
 // Return true if area is more or less square.

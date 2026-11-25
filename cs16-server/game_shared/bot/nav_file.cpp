@@ -97,6 +97,28 @@ void PlaceDirectory::Save(int fd)
 	}
 }
 
+// The .nav files that ship with the game were made on a PC (little-endian) but the Wii is big-endian.
+// The magic number tells which byte order a file was saved with, and the reader flips every value of a
+// foreign file while loading. Files written by this build use the native order, so they stay valid too.
+static bool ReadNavMagic(SteamFile *file)
+{
+	unsigned int magic;
+	if (!file->Read(&magic, sizeof(unsigned int)))
+		return false;
+
+	if (magic == NAV_MAGIC_NUMBER)
+		return true;
+
+	unsigned int swapped = ((magic & 0x000000FFu) << 24) | ((magic & 0x0000FF00u) << 8)
+		| ((magic & 0x00FF0000u) >> 8) | ((magic & 0xFF000000u) >> 24);
+
+	if (swapped != NAV_MAGIC_NUMBER)
+		return false;
+
+	file->SetByteSwap(true);
+	return true;
+}
+
 bool PlaceDirectory::Load(SteamFile *file)
 {
 	// read number of entries
@@ -115,7 +137,7 @@ bool PlaceDirectory::Load(SteamFile *file)
 		if (!file->Read(&len, sizeof(unsigned short)) || len == 0 || len > sizeof(placeName))
 			return false;
 
-		if (!file->Read(placeName, len))
+		if (!file->ReadBytes(placeName, len))
 			return false;
 
 		placeName[len - 1] = '\0';
@@ -764,11 +786,9 @@ void SanityCheckNavigationMap(const char *mapName)
 		return;
 	}
 
-	// check magic number
-	bool result;
-	unsigned int magic;
-	result = navFile.Read(&magic, sizeof(unsigned int));
-	if (!result || magic != NAV_MAGIC_NUMBER)
+	// check magic number (accepts files saved with either byte order)
+	bool result = ReadNavMagic(&navFile);
+	if (!result)
 	{
 		CONSOLE_ECHO("ERROR: Invalid navigation file '%s'.\n", navFilename);
 		return;
@@ -830,15 +850,16 @@ NavErrorType LoadNavigationMap()
 	if (!navFile.IsValid())
 		return NAV_CANT_ACCESS_FILE;
 
-	// check magic number
-	bool result;
-	unsigned int magic;
-	result = navFile.Read(&magic, sizeof(unsigned int));
-	if (!result || magic != NAV_MAGIC_NUMBER)
+	// check magic number (accepts files saved with either byte order)
+	bool result = ReadNavMagic(&navFile);
+	if (!result)
 	{
 		CONSOLE_ECHO("ERROR: Invalid navigation file '%s'.\n", filename);
 		return NAV_INVALID_FILE;
 	}
+
+	if (navFile.IsByteSwap())
+		CONSOLE_ECHO("Navigation file '%s' has the other byte order, converting while loading.\n", filename);
 
 	// read file version number
 	unsigned int version;

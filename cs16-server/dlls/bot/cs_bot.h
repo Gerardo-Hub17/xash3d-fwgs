@@ -444,6 +444,11 @@ public:
 	TaskType GetTask() const;
 	CBaseEntity *GetTaskEntity();
 
+	virtual void DescribeState(char *buf, int len) const
+	{
+		Q_snprintf(buf, len, "state=%s task=%d mode=%d", m_state ? m_state->GetName() : "-", int(m_task), int(m_processMode));
+	}
+
 	// behavior modifiers
 	enum DispositionType
 	{

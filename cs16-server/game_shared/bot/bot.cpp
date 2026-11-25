@@ -1,5 +1,9 @@
 #include "precompiled.h"
 
+#ifdef GEKKO
+#include <sys/time.h>
+#endif
+
 // Nasty Hack.  See client.cpp/ClientCommand()
 const char *BotArgs[4] = {};
 bool UseBotArgs = false;
@@ -62,20 +66,64 @@ Vector CBot::GetAutoaimVector(float flDelta)
 	return gpGlobals->v_forward;
 }
 
+#ifdef GEKKO
+// Wall clock in ms, to find out which bot (and doing what) eats the frame on the Wii
+static double BotWallMs()
+{
+	struct timeval tv;
+	gettimeofday(&tv, nullptr);
+	return double(tv.tv_sec) * 1000.0 + double(tv.tv_usec) / 1000.0;
+}
+
+static void BotLogSlow(CBot *bot, const char *what, double ms)
+{
+	// at most one line per second, so a bad stretch doesn't flood the log
+	static float s_nextLog = 0.0f;
+	if (gpGlobals->time < s_nextLog)
+		return;
+
+	s_nextLog = gpGlobals->time + 1.0f;
+
+	char desc[96];
+	bot->DescribeState(desc, sizeof(desc));
+
+	CONSOLE_ECHO("[BOT-SLOW] %s %s took %d ms | %s | pos %d %d %d | t=%.1f\n",
+		STRING(bot->pev->netname), what, int(ms), desc,
+		int(bot->pev->origin.x), int(bot->pev->origin.y), int(bot->pev->origin.z), gpGlobals->time);
+}
+#endif
+
 void CBot::BotThink()
 {
 	if (gpGlobals->time >= m_flNextBotThink)
 	{
 		m_flNextBotThink = gpGlobals->time + g_flBotCommandInterval;
 
+#ifdef GEKKO
+		double t0 = BotWallMs();
+#endif
 		Upkeep();
+
+#ifdef GEKKO
+		double t1 = BotWallMs();
+		if (t1 - t0 >= 150.0)
+			BotLogSlow(this, "Upkeep", t1 - t0);
+#endif
 
 		if (gpGlobals->time >= m_flNextFullBotThink)
 		{
 			m_flNextFullBotThink = gpGlobals->time + g_flBotFullThinkInterval;
 
 			ResetCommand();
+#ifdef GEKKO
+			t0 = BotWallMs();
+#endif
 			Update();
+#ifdef GEKKO
+			t1 = BotWallMs();
+			if (t1 - t0 >= 150.0)
+				BotLogSlow(this, "Update", t1 - t0);
+#endif
 		}
 		ExecuteCommand();
 	}
