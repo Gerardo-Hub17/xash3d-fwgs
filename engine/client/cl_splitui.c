@@ -586,6 +586,298 @@ static void UI_DrawDead( int player, int x, int y, int w, int h )
 	UI_TextCenter( x + w / 2, y + h - th - 4, "Dispara para reaparecer", 220, 220, 220 );
 }
 
+/*
+=============
+Screen messages of the extra players (game_text, titles.txt entries): the game sends them to
+every player but only the client of player 1 reads them. They are shown like the game's own
+CHudMessage does (fade, flicker is left out, typewriter), inside the view of the player.
+=============
+*/
+#define UI_TEXTS	4
+
+typedef struct
+{
+	qboolean	used;
+	split_text_t	t;
+	double		start;
+} ui_text_t;
+
+static ui_text_t ui_text[SPLIT_MAX_PLAYERS][UI_TEXTS];
+static int ui_text_spawn = -1;
+
+// a HudText names an entry of titles.txt; the ones that are not there are shown as plain text
+static void UI_TextResolve( split_text_t *t )
+{
+	client_textmessage_t *m;
+	char name[sizeof( t->text )];
+
+	if( !t->named )
+		return;
+
+	t->named = false;
+	Q_strncpy( name, t->text[0] == '#' ? t->text + 1 : t->text, sizeof( name ));
+	m = CL_TextMessageGet( name );
+
+	if( m && m->pMessage )
+	{
+		t->x = m->x;
+		t->y = m->y;
+		t->effect = m->effect;
+		t->r1 = m->r1; t->g1 = m->g1; t->b1 = m->b1; t->a1 = m->a1;
+		t->r2 = m->r2; t->g2 = m->g2; t->b2 = m->b2; t->a2 = m->a2;
+		t->fadein = m->fadein;
+		t->fadeout = m->fadeout;
+		t->holdtime = m->holdtime;
+		t->fxtime = m->fxtime;
+		Q_strncpy( t->text, m->pMessage, sizeof( t->text ));
+		return;
+	}
+
+	t->effect = 2;
+	t->r1 = t->g1 = t->b1 = t->a1 = 100;
+	t->r2 = 240; t->g2 = 110; t->b2 = 0; t->a2 = 0;
+	t->x = -1.0f;
+	t->y = 0.7f;
+	t->fadein = 0.01f;
+	t->fadeout = 1.5f;
+	t->fxtime = 0.25f;
+	t->holdtime = 5.0f;
+}
+
+static void UI_TextAdd( int player, const split_text_t *in )
+{
+	ui_text_t *list = ui_text[player];
+	split_text_t t = *in;
+	int i, slot = 0;
+
+	UI_TextResolve( &t );
+
+	for( i = 0; i < UI_TEXTS; i++ )
+	{
+		if( !list[i].used )
+			continue;
+
+		// the same message again does not start over
+		if( !Q_strcmp( list[i].t.text, t.text ))
+			return;
+
+		// only one message at a time in the same place
+		if( fabsf( list[i].t.y - t.y ) < 0.0001f && fabsf( list[i].t.x - t.x ) < 0.0001f )
+			list[i].used = false;
+	}
+
+	for( i = 0; i < UI_TEXTS; i++ )
+	{
+		if( !list[i].used )
+		{
+			slot = i;
+			break;
+		}
+	}
+
+	list[slot].used = true;
+	list[slot].t = t;
+	list[slot].start = t.time;
+}
+
+static int UI_TextAlpha( float blend )
+{
+	return bound( 0, 255 - (int)blend, 255 );
+}
+
+static void UI_TextDraw( const split_text_t *t, float time, int vx, int vy, int vw, int vh )
+{
+	const int th = CL_SplitTextHeight();
+	const float length = (float)Q_strlen( t->text );
+	float fadeTime, fadeBlend = 0.0f, charTime = 0.0f;
+	int i, lines = 1, totalw = 0, linew = 0, y;
+	const char *p;
+
+	for( p = t->text; *p; p++ )
+	{
+		if( *p == '\n' )
+		{
+			lines++;
+			totalw = Q_max( totalw, linew );
+			linew = 0;
+			continue;
+		}
+
+		{
+			const char one[2] = { *p, 0 };
+			linew += CL_SplitTextWidth( one );
+		}
+	}
+
+	totalw = Q_max( totalw, linew );
+
+	if( t->effect == 2 )
+	{
+		fadeTime = t->fadein * length + t->holdtime;
+
+		if( time > fadeTime && t->fadeout > 0.0f )
+			fadeBlend = ( time - fadeTime ) / t->fadeout * 255.0f;
+	}
+	else
+	{
+		fadeTime = t->fadein + t->holdtime;
+
+		if( time < t->fadein )
+			fadeBlend = t->fadein > 0.0f ? ( t->fadein - time ) / t->fadein * 255.0f : 0.0f;
+		else if( time > fadeTime )
+			fadeBlend = t->fadeout > 0.0f ? ( time - fadeTime ) / t->fadeout * 255.0f : 255.0f;
+	}
+
+	// vertical place of the block: -1 centered, negative counts from the bottom
+	if( t->y == -1.0f )
+		y = ( vh - lines * th ) / 2;
+	else if( t->y < 0.0f )
+		y = (int)( ( 1.0f + t->y ) * vh ) - lines * th;
+	else y = (int)( t->y * vh );
+
+	y = bound( 0, y, Q_max( 0, vh - lines * th ));
+	y += vy;
+
+	p = t->text;
+
+	for( i = 0; i < lines; i++ )
+	{
+		char line[256];
+		int n = 0, width, x, j;
+
+		while( p[n] && p[n] != '\n' && n < (int)sizeof( line ) - 1 )
+		{
+			line[n] = p[n];
+			n++;
+		}
+
+		line[n] = 0;
+		width = CL_SplitTextWidth( line );
+
+		if( t->x == -1.0f )
+			x = ( vw - width ) / 2;
+		else if( t->x < 0.0f )
+			x = (int)( ( 1.0f + t->x ) * vw ) - totalw;
+		else x = (int)( t->x * vw );
+
+		x = bound( 0, x, Q_max( 0, vw - width ));
+		x += vx;
+
+		if( t->effect != 2 )
+		{
+			// fade in and out
+			CL_SplitDrawText( x, y, line, t->r1, t->g1, t->b1, UI_TextAlpha( fadeBlend ));
+		}
+		else
+		{
+			// typewriter: every letter appears fadein seconds after the previous one, in the second colour,
+			// and settles into the first one fxtime seconds later
+			int settled = 0, shown = 0;
+			char prefix[256];
+
+			for( j = 0; j < n; j++ )
+			{
+				const float ct = charTime + t->fadein * ( j + 1 );
+
+				if( ct > time )
+					break;
+
+				shown = j + 1;
+
+				if( time > fadeTime || time - ct > t->fxtime )
+					settled = j + 1;
+			}
+
+			if( settled > 0 )
+			{
+				Q_strncpy( prefix, line, settled + 1 );
+				prefix[settled] = 0;
+				CL_SplitDrawText( x, y, prefix, t->r1, t->g1, t->b1, UI_TextAlpha( fadeBlend ));
+			}
+
+			for( j = settled; j < shown; j++ )
+			{
+				const float ct = charTime + t->fadein * ( j + 1 );
+				const float blend = 255.0f - ( t->fxtime > 0.0f ? ( time - ct ) / t->fxtime * 255.0f : 0.0f );
+				const int b = bound( 0, (int)blend, 255 );
+				char one[2] = { line[j], 0 };
+
+				Q_strncpy( prefix, line, j + 1 );
+				prefix[j] = 0;
+
+				CL_SplitDrawText( x + CL_SplitTextWidth( prefix ), y, one,
+					( t->r1 * ( 255 - b ) + t->r2 * b ) >> 8,
+					( t->g1 * ( 255 - b ) + t->g2 * b ) >> 8,
+					( t->b1 * ( 255 - b ) + t->b2 * b ) >> 8, 255 );
+			}
+		}
+
+		charTime += t->fadein * n;
+		p += n;
+
+		if( *p == '\n' )
+			p++;
+
+		y += th;
+	}
+}
+
+static void UI_DrawTexts( int player, int x, int y, int w, int h )
+{
+	ui_text_t *list = ui_text[player];
+	split_text_t in;
+	int i;
+
+	// a new map: what was on the screen is gone
+	if( ui_text_spawn != svs.spawncount )
+	{
+		memset( ui_text, 0, sizeof( ui_text ));
+		ui_text_spawn = svs.spawncount;
+	}
+
+	while( SV_SplitPopText( player, &in ))
+		UI_TextAdd( player, &in );
+
+	// the safe zone, like the rest of the HUD
+	{
+		const int ix = (int)( w * bound( 0.0f, hud_margin_x.value, 20.0f ) * 0.01f );
+		const int iy = (int)( h * bound( 0.0f, hud_margin_y.value, 20.0f ) * 0.01f );
+
+		x += ix; w -= 2 * ix;
+		y += iy; h -= 2 * iy;
+	}
+
+	for( i = 0; i < UI_TEXTS; i++ )
+	{
+		const split_text_t *t = &list[i].t;
+		float time, end;
+
+		if( !list[i].used )
+			continue;
+
+		time = (float)( sv.time - list[i].start );
+
+		if( time < 0.0f )
+		{
+			// the game's clock went back (a loaded game): start over
+			list[i].start = sv.time;
+			time = 0.0f;
+		}
+
+		if( t->effect == 2 )
+			end = t->fadein * Q_strlen( t->text ) + t->fadeout + t->holdtime;
+		else end = t->fadein + t->fadeout + t->holdtime;
+
+		if( time > end )
+		{
+			list[i].used = false;
+			continue;
+		}
+
+		UI_TextDraw( t, time, x, y, w, h );
+	}
+}
+
 static void HUD_PlainCrosshair( int cx, int cy, int h, float k, float scale, int cr, int cg, int cb );
 
 static void UI_DrawHUDText( int player, int x, int y, int w, int h )
@@ -597,9 +889,13 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 	int weapon, clip, res1, res2;
 	char text[64];
 	int bw, bh, by;
+	int hide;
 
 	if( !SV_SplitGetView( player, NULL, NULL, NULL, &health, &armor, &frags ))
 		return;
+
+	// the parts of the HUD the game keeps off (before the suit, for one)
+	hide = SV_SplitGetHideHud( player );
 
 	// the safe zone of the screen
 	{
@@ -622,7 +918,9 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 		int xr = 255, xg = 255, xb = 255;
 
 		CL_SplitCrosshairStyle( player, &xs, &xr, &xg, &xb );
-		HUD_PlainCrosshair( x + w / 2, y + h / 2, h, k, xs, xr, xg, xb );
+
+		if( !( hide & ( SPLIT_HIDE_WEAPONS | SPLIT_HIDE_ALL )))
+			HUD_PlainCrosshair( x + w / 2, y + h / 2, h, k, xs, xr, xg, xb );
 	}
 	else
 	{
@@ -631,6 +929,9 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 	}
 
 	// health and armour, bottom left
+	if( hide & ( SPLIT_HIDE_HEALTH | SPLIT_HIDE_ALL ))
+		goto ammo;
+
 	by = y + h - my - th;
 	CL_SplitFill( x + mx - 4, by - th - 8, mx + (int)( 54.0f / k ) + bw + 8, th * 2 + 14, 0, 0, 0, 120 );
 
@@ -652,8 +953,9 @@ static void UI_DrawHUDText( int player, int x, int y, int w, int h )
 	Q_snprintf( text, sizeof( text ), "FR %d", (int)frags );
 	UI_TextRight( x + w - mx, y + my, text, 255, 220, 100 );
 
+ammo:
 	// ammo, bottom right
-	if( SV_SplitGetAmmo( player, &weapon, &clip, &res1, &res2 ) && health > 0.0f )
+	if( SV_SplitGetAmmo( player, &weapon, &clip, &res1, &res2 ) && health > 0.0f && !( hide & ( SPLIT_HIDE_WEAPONS | SPLIT_HIDE_ALL )))
 	{
 		const int ay = y + h - my - th;
 
@@ -927,6 +1229,8 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	hudview_t v;
 	int r, g, b, a, fh, y0, bx, cx, cy;
 	const hudweapon_t *ws = NULL;
+	int hide;
+	qboolean showhealth, showweapon, showflash;
 
 	if( !SV_SplitGetView( player, NULL, NULL, NULL, &health, &armor, &frags ))
 		return;
@@ -965,6 +1269,13 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	SV_SplitGetAmmo( player, &weapon, &clip, &res1, &res2 );
 	SV_SplitGetFlashlight( player, &flashon, &charge );
 
+	// what the game keeps off the HUD: all of it before the HEV suit (the start of the campaign), the
+	// weapon part while a turret is driven, and so on; the same the client dll applies to player 1
+	hide = SV_SplitGetHideHud( player );
+	showhealth = !( hide & ( SPLIT_HIDE_HEALTH | SPLIT_HIDE_ALL ));
+	showweapon = !( hide & ( SPLIT_HIDE_WEAPONS | SPLIT_HIDE_ALL ));
+	showflash = !( hide & ( SPLIT_HIDE_FLASHLIGHT | SPLIT_HIDE_ALL ));
+
 	if( haveweapon )
 		ws = HUD_WeaponSprites( wname, hud.res );
 
@@ -979,7 +1290,11 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 
 		CL_SplitCrosshairStyle( player, &xs, &xr, &xg, &xb );
 
-		if( ws && ws->crosshair.ok )
+		if( !showweapon || weapon <= 0 )
+		{
+			// no weapon in hand or the HUD of the weapons is off: no crosshair
+		}
+		else if( ws && ws->crosshair.ok )
 		{
 			const wrect_t *rc = &ws->crosshair.rc;
 			const float cw = ( rc->right - rc->left ) * v.sx * xs, ch = ( rc->bottom - rc->top ) * v.sy * xs;
@@ -994,6 +1309,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	y0 = v.h - fh - fh / 2;
 
 	// health: a cross and three digits, red when it is low
+	if( showhealth )
 	{
 		const int cw = hud.cross.rc.right - hud.cross.rc.left;
 
@@ -1006,7 +1322,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	}
 
 	// armour: the suit fills up from the bottom
-	if( hud.suit_empty.ok && hud.suit_full.ok )
+	if( showhealth && hud.suit_empty.ok && hud.suit_full.ok )
 	{
 		const wrect_t *e = &hud.suit_empty.rc, *f = &hud.suit_full.rc;
 		const int height = f->bottom - e->top;
@@ -1029,7 +1345,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	}
 
 	// ammo: clip | reserve and the icon of the ammunition
-	if( ws && ( ammo1 || ammo2 ))
+	if( showweapon && ws && ( ammo1 || ammo2 ))
 	{
 		const int aw = hud.number[0].rc.right - hud.number[0].rc.left;
 		int ax, ay = y0;
@@ -1077,7 +1393,7 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 	}
 
 	// flashlight, top right
-	if( hud.flash_empty.ok && hud.flash_full.ok )
+	if( showflash && hud.flash_empty.ok && hud.flash_full.ok )
 	{
 		const int fw = hud.flash_full.rc.right - hud.flash_full.rc.left;
 		const float bat = bound( 0.0f, charge * 0.01f, 1.0f );
@@ -1108,7 +1424,10 @@ static void UI_DrawHUD( int player, int x, int y, int w, int h )
 void CL_SplitUIDrawHUD( int player, int x, int y, int w, int h )
 {
 	if( player > 0 )
+	{
 		UI_DrawHUD( player, x, y, w, h );
+		UI_DrawTexts( player, x, y, w, h );
+	}
 
 	if( ui_menu[player].open )
 		UI_DrawMenu( player, x, y, w, h );

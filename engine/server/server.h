@@ -716,6 +716,29 @@ void SV_SplitClearScores( void );
 qboolean SV_SplitGetAmmo( int player, int *weapon, int *clip, int *reserve1, int *reserve2 );
 qboolean SV_SplitGetWeaponInfo( int player, char *name, size_t size, qboolean *ammo1, qboolean *ammo2 );
 void SV_SplitGetFlashlight( int player, qboolean *on, int *charge );
+
+// what the HUD of the extra players hides, with the bits of the game (HIDEHUD_*)
+#define SPLIT_HIDE_WEAPONS	( 1 << 0 )
+#define SPLIT_HIDE_FLASHLIGHT	( 1 << 1 )
+#define SPLIT_HIDE_ALL		( 1 << 2 )
+#define SPLIT_HIDE_HEALTH	( 1 << 3 )
+int SV_SplitGetHideHud( int player );
+
+// screen messages (game_text, titles) the game sent to an extra player: the client of player 1
+// shows its own, nobody reads the ones of a fake client
+typedef struct
+{
+	qboolean	named;			// text is the name of a titles.txt entry (HudText), not the message itself
+	float		x, y;
+	int		effect;
+	int		r1, g1, b1, a1;
+	int		r2, g2, b2, a2;
+	float		fadein, fadeout, holdtime, fxtime;
+	char		text[512];
+	double		time;			// sv.time when it arrived
+} split_text_t;
+
+qboolean SV_SplitPopText( int player, split_text_t *out );
 void SV_SplitNoteEvent( const edict_t *invoker, const char *eventname );
 unsigned SV_SplitGetFire( int player, qboolean *alt );
 qboolean SV_SplitGetViewModel( int player, int *modelindex, int *sequence, int *body, unsigned *animcount );

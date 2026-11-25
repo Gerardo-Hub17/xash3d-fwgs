@@ -51,6 +51,7 @@ static const struct
 };
 
 #define SPLIT_EXTRA	( SPLIT_MAX_PLAYERS - 1 )
+#define SPLIT_TEXTQ	6
 #define SPLIT_WEAPONS	32
 #define SPLIT_AMMO	32
 
@@ -94,6 +95,11 @@ typedef struct
 	char		wname[SPLIT_WEAPONS][32];	// weapon id -> "weapon_9mmhandgun"
 	qboolean	flashon;	// flashlight
 	int		flashbat;	// 0 to 100
+	int		hidehud;	// HideWeapon: parts of the HUD the game hides (SPLIT_HIDE_*)
+
+	// screen messages waiting for the client to take them
+	split_text_t	texts[SPLIT_TEXTQ];
+	int		texthead, textcount;
 
 	// the game plays the firing animation of a weapon from a client event, which nobody
 	// receives for a fake client: count the events the player causes instead
@@ -194,6 +200,8 @@ qboolean SV_SplitStart( int player, const char *name, const char *model )
 	p->firecount = 0;
 	p->flashon = false;
 	p->flashbat = 100;
+	p->hidehud = 0;
+	p->texthead = p->textcount = 0;
 	p->vmname = 0;
 	p->vmindex = 0;
 	p->curweapon = 0;
@@ -491,6 +499,8 @@ player's HUD (weapon animations, ammo) because nobody reads the messages of a
 fake client
 =============
 */
+static void SV_SplitPushText( sv_splitp_t *p, const split_text_t *t );
+
 void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 {
 	const int player = SV_SplitPlayerOf( ent );
@@ -510,6 +520,36 @@ void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 		p->animseq = MSG_ReadByte( msg );
 		p->animbody = MSG_ReadByte( msg );
 		p->animcount++;
+	}
+	else if( cmd == svc_temp_entity )
+	{
+		// game_text and env_hudmessage: the same fields the client parses (CL_ParseTextMessage)
+		if( MSG_ReadByte( msg ) == TE_TEXTMESSAGE )
+		{
+			split_text_t t;
+
+			memset( &t, 0, sizeof( t ));
+			MSG_ReadByte( msg ); // channel: not needed, the client keeps its own list
+			t.x = (float)( (short)MSG_ReadShort( msg ) / 8192.0f );
+			t.y = (float)( (short)MSG_ReadShort( msg ) / 8192.0f );
+			t.effect = MSG_ReadByte( msg );
+			t.r1 = MSG_ReadByte( msg );
+			t.g1 = MSG_ReadByte( msg );
+			t.b1 = MSG_ReadByte( msg );
+			t.a1 = MSG_ReadByte( msg );
+			t.r2 = MSG_ReadByte( msg );
+			t.g2 = MSG_ReadByte( msg );
+			t.b2 = MSG_ReadByte( msg );
+			t.a2 = MSG_ReadByte( msg );
+			t.fadein = (float)( MSG_ReadWord( msg ) / 256.0f );
+			t.fadeout = (float)( MSG_ReadWord( msg ) / 256.0f );
+			t.holdtime = (float)( MSG_ReadWord( msg ) / 256.0f );
+			t.fxtime = t.effect == 2 ? (float)( MSG_ReadWord( msg ) / 256.0f ) : 0.0f;
+			Q_strncpy( t.text, MSG_ReadString( msg ), sizeof( t.text ));
+
+			if( !msg->bOverflow )
+				SV_SplitPushText( p, &t );
+		}
 	}
 	else if( cmd > svc_lastmsg )
 	{
@@ -581,9 +621,86 @@ void SV_SplitSniffMessage( const edict_t *ent, sizebuf_t *msg )
 		}
 		else if( !Q_strcmp( name, "FlashBat" ))
 			p->flashbat = MSG_ReadByte( msg ) * 100 / 255;
+		else if( !Q_strcmp( name, "HideWeapon" ))
+			p->hidehud = MSG_ReadByte( msg );
+		else if( !Q_strcmp( name, "HudText" ))
+		{
+			// the name of an entry of titles.txt (env_message), or the text itself
+			split_text_t t;
+
+			memset( &t, 0, sizeof( t ));
+			t.named = true;
+			Q_strncpy( t.text, MSG_ReadString( msg ), sizeof( t.text ));
+
+			if( !msg->bOverflow && t.text[0] )
+				SV_SplitPushText( p, &t );
+		}
 	}
 
 	MSG_SeekToBit( msg, 0, SEEK_SET );
+}
+
+/*
+=============
+SV_SplitPushText
+
+a screen message arrived for the player (called by the sniffer, the client takes it later)
+=============
+*/
+static void SV_SplitPushText( sv_splitp_t *p, const split_text_t *t )
+{
+	int slot;
+
+	if( p->textcount >= SPLIT_TEXTQ )
+	{
+		// the oldest goes
+		p->texthead = ( p->texthead + 1 ) % SPLIT_TEXTQ;
+		p->textcount--;
+	}
+
+	slot = ( p->texthead + p->textcount ) % SPLIT_TEXTQ;
+	p->texts[slot] = *t;
+	p->texts[slot].time = sv.time;
+	p->textcount++;
+}
+
+qboolean SV_SplitPopText( int player, split_text_t *out )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+
+	if( !p || !SV_SplitActive( player ) || p->textcount <= 0 )
+		return false;
+
+	*out = p->texts[p->texthead];
+	p->texthead = ( p->texthead + 1 ) % SPLIT_TEXTQ;
+	p->textcount--;
+
+	return true;
+}
+
+/*
+=============
+SV_SplitGetHideHud
+
+the parts of the HUD that are off for the player. Like the client of player 1, none of it
+shows before the HEV suit is picked up (the start of the campaign), whatever the game says
+=============
+*/
+int SV_SplitGetHideHud( int player )
+{
+	sv_splitp_t *p = SV_SplitSlot( player );
+	int hide;
+
+	if( !p || !SV_SplitActive( player ))
+		return 0;
+
+	hide = p->hidehud;
+
+	// WEAPON_SUIT is bit 31 of what the player carries
+	if( !( (unsigned)p->edict->v.weapons & ( 1u << 31 )))
+		hide |= SPLIT_HIDE_WEAPONS | SPLIT_HIDE_FLASHLIGHT | SPLIT_HIDE_HEALTH;
+
+	return hide;
 }
 
 /*
