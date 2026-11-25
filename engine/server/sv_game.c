@@ -1292,6 +1292,11 @@ static int GAME_EXPORT pfnPrecacheModel( const char *s )
 		return 0;
 
 #if XASH_OGC
+	// only while the level loads. Once the game runs, the game DLL precaches again (a bot gets its
+	// weapons, a round restarts...): every one of those calls used to do a heap check, an fsync to the
+	// SD card and draw a whole loading screen frame, which froze the game for minutes with the
+	// sound looping, and showed the loading screen each time a bot was added
+	if( sv.state == ss_loading )
 	{
 		extern convar_t wii_loadlog;
 		extern void OGC_DebugFlush( void );

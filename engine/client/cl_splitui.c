@@ -1786,6 +1786,7 @@ enum
 	WMR_BUTTONS,
 	WMR_TEAM,	// Counter-Strike: elegir otro equipo
 	WMR_BOTS,	// Counter-Strike: cuantos bots (0-5), solo el que hace de servidor
+	WMR_BOTS_OK,	// confirmar: agrega/quita los bots elegidos y reinicia la ronda
 	WMR_SAVE,
 	WMR_CHAT,
 	WMR_RESET,
@@ -1838,6 +1839,29 @@ static void WM_ApplyBots( void )
 	Cbuf_AddText( va( "bot_quota %d\n", bound( 0, (int)wii_cs_bots.value, WM_MAX_BOTS )));
 }
 
+// los bots que se estan eligiendo en el menu, sin aplicar hasta confirmar (-1: aun no se toco)
+static int wm_botspend = -1;
+
+static int WM_BotsPending( void )
+{
+	if( wm_botspend < 0 )
+		wm_botspend = bound( 0, (int)wii_cs_bots.value, WM_MAX_BOTS );
+
+	return bound( 0, wm_botspend, WM_BotLimit( ));
+}
+
+// confirmar: los bots elegidos entran de una vez y la ronda se reinicia para jugar con ellos.
+// El servidor agrega un bot cada 0.3 s, por eso el reinicio espera 3 s
+static void WM_ConfirmBots( void )
+{
+	const int v = WM_BotsPending();
+
+	Cvar_SetValue( "wii_cs_bots", v );
+	WM_ApplyBots();
+	Cbuf_AddText( "sv_restart 3\n" );
+	wm_botspend = -1;
+}
+
 // al empezar cada mapa se piden los bots que se eligieron la ultima vez
 static void WM_BotsOnNewMap( void )
 {
@@ -1864,6 +1888,7 @@ static void WM_Close( void )
 		return;
 
 	wm.open = false;
+	wm_botspend = -1;	// lo elegido sin confirmar se descarta
 
 	if( wm.paused )
 	{
@@ -1941,7 +1966,10 @@ static int WM_Rows( int *ids )
 		ids[n++] = WMR_TEAM;
 
 		if( WM_BotLimit() > 0 )
+		{
 			ids[n++] = WMR_BOTS;
+			ids[n++] = WMR_BOTS_OK;
+		}
 	}
 	else
 		ids[n++] = WMR_SAVE;
@@ -2004,7 +2032,8 @@ static const char *WM_RowLabel( int id )
 	case WMR_PAUSE:		return "Pausar al abrir el menu";
 	case WMR_BUTTONS:	return "Configurar botones";
 	case WMR_TEAM:		return "Cambiar de equipo";
-	case WMR_BOTS:		return "Bots";
+	case WMR_BOTS:		return "Bots a agregar";
+	case WMR_BOTS_OK:	return "Confirmar bots y reiniciar ronda";
 	case WMR_SAVE:		return "Guardado rapido";
 	case WMR_CHAT:		return "Escribir chat";
 	case WMR_RESET:		return "Restaurar ajustes";
@@ -2052,12 +2081,20 @@ static qboolean WM_RowValue( int id, char *out, size_t size )
 		Q_strncpy( out, Cvar_VariableValue( "wii_menu_pause" ) != 0.0f ? "Si" : "No", size );
 		return true;
 	case WMR_BOTS:
-		v = bound( 0, (int)wii_cs_bots.value, WM_BotLimit( ));
+		v = WM_BotsPending();
 		if( v > 0 )
 			Q_snprintf( out, size, "%d", v );
 		else
 			Q_strncpy( out, "Ninguno", size );
 		return true;
+	case WMR_BOTS_OK:
+		// los que hay ahora (los de la ultima confirmacion) y que cambia
+		v = bound( 0, (int)wii_cs_bots.value, WM_BotLimit( ));
+		if( WM_BotsPending() == v )
+			Q_snprintf( out, size, "ahora: %d", v );
+		else
+			Q_snprintf( out, size, "%d -> %d", v, WM_BotsPending( ));
+		return false;
 	}
 
 	out[0] = 0;
@@ -2095,10 +2132,9 @@ static void WM_RowAdjust( int id, int dir )
 		Cvar_SetValue( "wii_menu_pause", Cvar_VariableValue( "wii_menu_pause" ) != 0.0f ? 0.0f : 1.0f );
 		break;
 	case WMR_BOTS:
-		// bot_quota agrega o quita bots hasta llegar al numero pedido
-		v = bound( 0, (int)wii_cs_bots.value + dir, WM_BotLimit( ));
-		Cvar_SetValue( "wii_cs_bots", v );
-		WM_ApplyBots();
+		// solo se elige: los bots entran al confirmar (WMR_BOTS_OK), asi no hay un cambio
+		// en la partida por cada vez que se pulsa la cruz
+		wm_botspend = bound( 0, WM_BotsPending() + dir, WM_BotLimit( ));
 		break;
 	}
 }
@@ -2216,6 +2252,10 @@ void CL_WiiMenuFrame( void )
 			case WMR_CHAT:
 				WM_Close();
 				Cbuf_AddText( "messagemode\n" );
+				break;
+			case WMR_BOTS_OK:
+				WM_ConfirmBots();	// antes de cerrar: cerrar descarta lo pendiente
+				WM_Close();
 				break;
 			case WMR_RESET:
 				WM_ResetSettings();

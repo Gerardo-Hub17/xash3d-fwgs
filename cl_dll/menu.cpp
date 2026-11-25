@@ -535,8 +535,9 @@ static void PanelFrame( int x, int y, int w, int h, int r, int g, int b )
 	FillRGBA( x + w - 1, y, 1, h, r, g, b, 255 );
 }
 
-// greedy word wrap into a box maxH pixels tall
-static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, int r, int g, int b )
+// greedy word wrap into a box maxH pixels tall; returns the height the text takes. With measure
+// nothing is drawn and maxH does not cut: it is the height of all of it
+static int PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, int r, int g, int b, bool measure = false )
 {
 	char para[256], cur[256], test[256], word[96];
 	const int y0 = y;
@@ -545,6 +546,12 @@ static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, 
 	auto put = [&]( const char *str ) -> bool
 	{
 		char fit[256];
+
+		if( measure )
+		{
+			y += lh;
+			return true;
+		}
 
 		if( y - y0 + lh > maxH )
 			return false;
@@ -596,7 +603,7 @@ static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, 
 			if( cur[0] && DrawUtils::ConsoleStringLen( test ) > w )
 			{
 				if( !put( cur ))
-					return;
+					return y - y0;
 
 				strlcpy( cur, word, sizeof( cur ));
 			}
@@ -604,8 +611,10 @@ static void PanelWrap( const char *text, int x, int y, int w, int lh, int maxH, 
 		}
 
 		if( cur[0] && !put( cur ))
-			return;
+			return y - y0;
 	}
+
+	return y - y0;
 }
 
 // the stock text menus the server asks for by name (titles.txt key)
@@ -910,17 +919,25 @@ void CHudMenu::DrawPanel( float flTime )
 	}
 
 	const int sw = ScreenWidth, sh = ScreenHeight;
-	const int mx = sw / 16, my = sh / 14; // keep clear of the edge of the TV
+	const int mx = sw / 16; // keep clear of the edge of the TV
+	int my = sh / 14;
 	const bool wantInfo = m_bTeamMenu && m_szMapInfo[0];
 	const char *title = m_iTitleLine >= 0 ? m_Lines[m_iTitleLine].text : "MENU";
 
-	// layout: double size letters (legible on a TV) when everything fits, normal size if not
-	int mul, lh, lhS, pad, rowH, numW, colW, pw, ph;
+	// layout: double size letters (legible on a TV) when everything fits. The buy menus have ten
+	// lines, which did not fit with the roomy spacing and fell back to the 8 pixel letters that
+	// nobody could read: the second try keeps the double size and tightens the spacing and the
+	// margin of the screen, the normal size is the last resort
+	int mul, lh, lhS, pad, rowH, numW, colW, pw, ph, gap, blank;
 	bool info;
 
-	for( mul = 2;; mul = 1 )
+	for( int variant = 0;; variant++ )
 	{
 		int dummy;
+		const bool compact = variant == 1;
+
+		mul = variant < 2 ? 2 : 1;
+		my = compact ? sh / 30 : sh / 14;
 
 		SetTextMul( 1 );
 		DrawUtils::ConsoleStringSize( "Wg", &dummy, &lhS );
@@ -932,8 +949,10 @@ void CHudMenu::DrawPanel( float flTime )
 		if( lh < lhS )
 			lh = lhS;
 
-		pad = lh / 2 + 3;
-		rowH = lh + lh / 2 + 2;
+		pad = compact ? lh / 4 + 2 : lh / 2 + 3;
+		rowH = compact ? lh + 6 : lh + lh / 2 + 2;
+		gap = compact ? 1 : 3;
+		blank = compact ? lh / 4 : lh / 2;
 		numW = DrawUtils::ConsoleStringLen( "00" );
 
 		// width of the option column
@@ -970,11 +989,11 @@ void CHudMenu::DrawPanel( float flTime )
 				continue;
 
 			if( m_Lines[i].slot )
-				bodyH += rowH + 3;
+				bodyH += rowH + gap;
 			else if( m_Lines[i].text[0] )
 				bodyH += lh + 2;
 			else
-				bodyH += lh / 2;
+				bodyH += blank;
 		}
 
 		const int phRows = pad * 2 + bodyH + lh + pad;
@@ -984,7 +1003,7 @@ void CHudMenu::DrawPanel( float flTime )
 			ph = max( ph, ( pad + rowH + 8 ) + ( lhS * 16 + pad ) + pad + lh + 4 );
 
 		// big text whenever the options fit; the description is the one that gives way
-		if( mul == 1 || phRows <= sh - my * 2 )
+		if( variant >= 2 || phRows <= sh - my * 2 )
 			break;
 	}
 
@@ -1040,7 +1059,7 @@ void CHudMenu::DrawPanel( float flTime )
 			PanelText( x0 + pad / 2 + 2, y + ( rowH - lh ) / 2, num, r, g, b );
 			PanelText( x0 + pad / 2 + numW + 4, y + ( rowH - lh ) / 2, fit, r, g, b );
 
-			y += rowH + 3;
+			y += rowH + gap;
 		}
 		else if( pl.text[0] )
 		{
@@ -1048,7 +1067,7 @@ void CHudMenu::DrawPanel( float flTime )
 			PanelText( px + pad, y, fit, 225, 225, 225 );
 			y += lh + 2;
 		}
-		else y += lh / 2;
+		else y += blank;
 	}
 
 	// what the buttons do: big if it fits
@@ -1075,8 +1094,23 @@ void CHudMenu::DrawPanel( float flTime )
 		FillRGBABlend( ix, top, iw, ih, 0, 0, 0, 130 );
 		PanelFrame( ix, top, iw, ih, 170, 105, 0 );
 
-		SetTextMul( 1 );
-		PanelWrap( m_szMapInfo, ix + pad / 2 + 2, top + pad / 2, iw - pad - 4, lhS, ih - pad, 255, 222, 140 );
+		// the description in double size letters too when all of it fits, else normal size
+		const int tw = iw - pad - 4, avail = ih - pad;
+		int dmul = 2, dlh;
+
+		SetTextMul( 2 );
+		DrawUtils::ConsoleStringSize( "Wg", &numW, &dlh );
+		if( dlh < lhS )
+			dlh = lhS;
+
+		if( PanelWrap( m_szMapInfo, 0, 0, tw, dlh, avail, 0, 0, 0, true ) > avail )
+		{
+			dmul = 1;
+			dlh = lhS;
+		}
+
+		SetTextMul( dmul );
+		PanelWrap( m_szMapInfo, ix + pad / 2 + 2, top + pad / 2, tw, dlh, avail, 255, 222, 140 );
 	}
 
 	SetTextMul( 1 );
