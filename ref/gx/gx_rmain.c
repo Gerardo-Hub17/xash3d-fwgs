@@ -855,6 +855,8 @@ static void R_DrawEntitiesOnList( void )
         Assert( RI.currententity != NULL );
         Assert( RI.currentmodel  != NULL );
 
+        OGC_GXMark( RI.currentmodel->name, RI.currententity->index, RI.currententity->curstate.sequence );
+
         switch( RI.currentmodel->type )
         {
         case mod_brush:  R_DrawBrushModel(  RI.currententity ); break;
@@ -864,6 +866,7 @@ static void R_DrawEntitiesOnList( void )
         }
     }
 
+    OGC_GXMark( "alpha texture chains", 0, 0 );
     GXPT_END( 29 );
     R_DrawAlphaTextureChains();
     GXPT_END( 36 );
@@ -881,16 +884,21 @@ static void R_DrawEntitiesOnList( void )
         Assert( RI.currentmodel  != NULL );
 
         if( RI.currentmodel->type == mod_sprite && !R_SplitCullEntity( RI.currententity ))
+        {
+            OGC_GXMark( RI.currentmodel->name, RI.currententity->index, 0 );
             R_DrawSpriteModel( RI.currententity );
+        }
     }
 
     GXPT_END( 30 );
     GX_ResetEffectState();
+    OGC_GXMark( "efx opaque", 0, 0 );
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
         gEngfuncs.CL_DrawEFX( tr.frametime, false );
     GXPT_END( 31 );
 
     GX_ResetEffectState();
+    OGC_GXMark( "tri normal", 0, 0 );
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
         gEngfuncs.pfnDrawNormalTriangles();
     GXPT_END( 32 );
@@ -915,6 +923,8 @@ static void R_DrawEntitiesOnList( void )
         Assert( RI.currententity != NULL );
         Assert( RI.currentmodel  != NULL );
 
+        OGC_GXMark( RI.currentmodel ? RI.currentmodel->name : "trans entity", RI.currententity->index, RI.currententity->curstate.sequence );
+
         switch( RI.currentmodel->type )
         {
         case mod_brush:  R_DrawBrushModel(  RI.currententity ); break;
@@ -926,6 +936,7 @@ static void R_DrawEntitiesOnList( void )
     }
     GXPT_END( 33 );
     GX_ResetEffectState();
+    OGC_GXMark( "tri trans", 0, 0 );
     if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
     {
         GX_SetTevOp( GX_TEVSTAGE0, GX_MODULATE );
@@ -934,6 +945,7 @@ static void R_DrawEntitiesOnList( void )
     GXPT_END( 34 );
 
     GX_ResetEffectState();
+    OGC_GXMark( "efx trans", 0, 0 );
     if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
     {
         R_AllowFog( false );
@@ -1054,6 +1066,7 @@ void R_RenderScene( void )
 
     R_CheckGLFog();
     double __t_w = Platform_DoubleTime();
+    OGC_GXMark( "world", RI.rvp.viewentity, (int)RI.rvp.flags );
     R_DrawWorld();
     OGC_ProfAdd( 15, Platform_DoubleTime() - __t_w );
     R_CheckFog();
@@ -1063,6 +1076,7 @@ void R_RenderScene( void )
     __t_w = Platform_DoubleTime();
     R_DrawEntitiesOnList();
     OGC_ProfAdd( 16, Platform_DoubleTime() - __t_w );
+    OGC_GXMark( "water", 0, 0 );
     R_DrawWaterSurfaces();
 	g_gx_frame_time_ms = (Platform_DoubleTime() - __t_start) * 1000.0;
 OGC_ProfAdd( 14, Platform_DoubleTime() - __t_start );

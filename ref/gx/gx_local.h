@@ -36,6 +36,7 @@ GNU General Public License for more details.
 /* sin esta declaracion C asume que devuelve int y todos los tiempos del renderer salian 0 */
 extern double Platform_DoubleTime( void );
 extern void OGC_ProfAdd( int bucket, double dt );
+extern void OGC_GXMark( const char *what, int a, int b ); // sys_gxtrace.c: what is being drawn, for the GPU hang report
 extern void OGC_ProfSetInterval( int interval );
 extern void OGC_ProfFrameInfo( int models, int studiotris, int worldtris, int particles );
 

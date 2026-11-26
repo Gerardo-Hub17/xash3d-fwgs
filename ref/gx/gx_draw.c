@@ -480,6 +480,8 @@ void R_Set2DMode( qboolean enable )
 {
 	static u8 savedProjType = GX_PERSPECTIVE;
 
+	OGC_GXMark( enable ? "2d" : "3d", 0, 0 );
+
 	if( enable )
 	{
 		if( glState.in2DMode )

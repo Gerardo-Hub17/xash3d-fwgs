@@ -173,6 +173,7 @@ void OGC_SetArgv0( const char *argv0 );
 const char *OGC_BaseDir( void );
 qboolean OGC_MountSD( void );
 void OGC_ProfAdd( int bucket, double dt );
+void OGC_GXHangReport( void ); // sys_gxtrace.c: where the GPU stopped (called by the hang watchdog)
 void OGC_ProfBytes( int bucket, double bytes );
 void OGC_ProfNote( int kind, const char *name, double dt );
 void OGC_NetDiag( int in_seq, int out_seq, int acked, float loss );

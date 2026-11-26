@@ -338,6 +338,12 @@ if(XASH_OGC_ALLOCTRACE)
         -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=memalign -Wl,--wrap=free)
 endif()
 
+option(XASH_OGC_GXTRACE "remember the last GX primitives and say which draw the GPU was stuck in when the hang watchdog fires (diagnostic)" ON)
+if(XASH_OGC_GXTRACE)
+    target_compile_definitions(xash PUBLIC -DXASH_OGC_GXTRACE=1)
+    target_link_options(xash PRIVATE -Wl,--wrap=GX_Begin)
+endif()
+
 option(XASH_OGC_HEAPPROBE "report free memory, pool totals and texture memory at each map load" OFF)
 if(XASH_OGC_HEAPPROBE)
     target_compile_definitions(xash PUBLIC -DXASH_OGC_HEAPPROBE=1)

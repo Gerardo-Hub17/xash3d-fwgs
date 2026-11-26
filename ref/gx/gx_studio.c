@@ -1265,6 +1265,10 @@ static void R_StudioDrawNormalMesh( short *ptricmds, vec3_t *pstudionorms, float
 		{
 			unsigned int rgba;
 
+			// los indices ya los validó R_StudioCheckCmds antes de GX_Begin: NUNCA salir de este
+			// bucle antes de escribir todos los vertices que GX_Begin anunció, la GPU se queda
+			// esperando los que faltan, se come los comandos siguientes como si fueran vertices
+			// y el FIFO se atasca (el cuelgue)
 			if( likely( fast ))
 				rgba = g_studio.arraycolor32[ptricmds[1]] | alpha;
 			else
@@ -1414,8 +1418,111 @@ mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 	return ptexture;
 }
 
+/*
+=============
+R_StudioCheckCmds
+
+The triangle commands of a mesh are a list of strips ended by a zero. If the mesh
+data is not the one the header describes (a model replaced while an entity still
+used it, a wrong submodel), walking it never finds a sensible end: the GPU gets
+millions of vertices and the game freezes. This walks the list once (only the
+strip headers, it is cheap) and refuses a list that leaves the file.
+=============
+*/
+static qboolean R_StudioCheckCmds( const short *ptricmds )
+{
+	const byte *base = (const byte *)m_pStudioHeader;
+	const byte *end = ( m_pStudioHeader->length > 0 ) ? base + m_pStudioHeader->length : NULL;
+	const byte *p = (const byte *)ptricmds;
+	const unsigned int nverts = (unsigned int)m_pSubModel->numverts;
+	const unsigned int nnorms = (unsigned int)m_pSubModel->numnorms;
+	static int reported;
+	int why = 0, badn = 0, badv = 0, badnorm = 0;
+
+	if( p < base || ( end && p >= end ))
+	{
+		why = 1;
+		goto bad;
+	}
+
+	for( ;; )
+	{
+		const short *v;
+		int n, k;
+
+		if( end && p + 2 > end )
+		{
+			why = 2;
+			goto bad;
+		}
+
+		n = *(const short *)p;
+		p += 2;
+
+		if( !n )
+			return true;
+
+		if( n < 0 ) n = -n;
+
+		if( n > MAXSTUDIOVERTS )
+		{
+			why = 3;
+			badn = n;
+			goto bad;
+		}
+
+		v = (const short *)p;
+		p += n * 8; // 4 shorts per vertex
+
+		if( end && p > end )
+		{
+			why = 4;
+			badn = n;
+			goto bad;
+		}
+
+		// vertex and normal indices: a list that is not the one the header describes (for
+		// instance one that was not byte swapped) is sensible in its strip lengths but its
+		// indices are garbage. GX_Begin has to be given a list that is complete.
+		for( k = 0; k < n; k++, v += 4 )
+		{
+			if( (unsigned int)(unsigned short)v[0] >= nverts )
+			{
+				why = 5;
+				badv = (unsigned short)v[0];
+				goto bad;
+			}
+
+			if( (unsigned int)(unsigned short)v[1] >= nnorms )
+			{
+				why = 6;
+				badnorm = (unsigned short)v[1];
+				goto bad;
+			}
+		}
+	}
+
+bad:
+	if( reported < 12 )
+	{
+		const cl_entity_t *e = RI.currententity;
+
+		reported++;
+		gEngfuncs.Con_Printf( S_ERROR "[STUDIO] bad triangle list (%d: n %d vert %d/%u norm %d/%u), mesh skipped: model %s ent %d seq %d body %d header %p length %d cmds at %d\n",
+			why, badn, badv, nverts, badnorm, nnorms,
+			( e && e->model ) ? e->model->name : "?", e ? e->index : -1, e ? e->curstate.sequence : -1,
+			e ? e->curstate.body : -1, (const void *)m_pStudioHeader, m_pStudioHeader->length,
+			(int)( (const byte *)ptricmds - base ));
+	}
+
+	return false;
+}
+
 static void R_StudioSubmitMesh( short *ptricmds, vec3_t *pstudionorms, float s, float t, float shellscale, int tesslevel )
 {
+	if( unlikely( !R_StudioCheckCmds( ptricmds )))
+		return;
+
 	if( tesslevel > 0 )
 	{
 	}
@@ -1436,6 +1543,22 @@ static void R_StudioDrawPointsImpl( void )
 	qboolean		need_sort = false;
 
 	if( !m_pStudioHeader ) return;
+
+	// a submodel bigger than the tables (or a negative count) would overwrite the memory that
+	// follows them; this is what a header that is not the model's own looks like
+	if( m_pSubModel->numverts < 0 || m_pSubModel->numverts > MAXSTUDIOVERTS
+		|| m_pSubModel->numnorms < 0 || m_pSubModel->numnorms > MAXSTUDIOVERTS
+		|| m_pSubModel->nummesh < 0 || m_pSubModel->nummesh > MAXSTUDIOMESHES )
+	{
+		static int reported;
+
+		if( reported++ < 8 )
+			gEngfuncs.Con_Printf( S_ERROR "[STUDIO] bad submodel (verts %d norms %d meshes %d), skipped: model %s\n",
+				m_pSubModel->numverts, m_pSubModel->numnorms, m_pSubModel->nummesh,
+				( RI.currententity && RI.currententity->model ) ? RI.currententity->model->name : "?" );
+
+		return;
+	}
 
 	g_studio.numverts = 0;
 
@@ -1638,6 +1761,8 @@ for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 
 		R_StudioSetupSkin( m_pStudioHeader, pskinref[pmesh->skinref] );
 
+		OGC_GXMark(( RI.currententity && RI.currententity->model ) ? RI.currententity->model->name : "studio",
+			RI.currententity ? RI.currententity->index : -1, j );
 		R_StudioSubmitMesh( ptricmds, pstudionorms, s, t, shellscale, 0 );
 
 		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
@@ -2776,6 +2901,8 @@ static void R_DrawViewModelImpl( void )
 		GX_SetChanMatColor( GX_COLOR0A0, white );
 		R_AllowFog( true );
 	}
+
+	OGC_GXMark( RI.currententity->model->name, own ? 1001 : 1000, view->curstate.sequence ); // 1000 = viewmodel of player 1, 1001 = lent to an extra player
 
 	switch( RI.currententity->model->type )
 	{
